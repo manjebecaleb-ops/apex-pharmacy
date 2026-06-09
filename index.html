@@ -3,30 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>APEX | Sovereign Cloud ERP</title>
-    <!-- PRODUCTION LIBRARIES -->
+    <title>APEX | Sovereign Enterprise ERP</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; background-color: #020617; color: white; }
         .active-tab { background: #10b981 !important; color: white !important; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(10px); }
     </style>
 </head>
 <body>
     <div id="apex-root"></div>
 
-    <!-- 1. FIREBASE CLOUD ENGINE -->
+    <!-- 1. CLOUD ENGINE (FIREBASE) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+        // !!! YOUR CONFIG !!!
         const firebaseConfig = {
             apiKey: "AIzaSyAAazqZ1XnzpQ6A_cCHyQEsgXxq5jVVLXE",
             authDomain: "apex-pharmacy-a69b5.firebaseapp.com",
@@ -48,14 +46,12 @@
 
         const App = () => {
             const [view, setView] = useState('DASHBOARD');
-            const [user, setUser] = useState(null);
-            const [data, setData] = useState({ inventory: [], sales: [], users: [], patients: [], expenses: [] });
+            const [user, setUser] = useState({username: 'admin', role: 'MANAGER'});
+            const [data, setData] = useState({ inventory: [], sales: [], users: [], patients: [] });
             const [cart, setCart] = useState([]);
             const [search, setSearch] = useState("");
-            const [isSwahili, setIsSwahili] = useState(true);
-            const [devClicks, setDevClicks] = useState(0);
 
-            // REAL-TIME SYNC
+            // REAL-TIME CLOUD SYNC
             useEffect(() => {
                 if (!window.db) return;
                 const unsubInv = window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setData(p => ({...p, inventory: s.docs.map(d=>({id:d.id, ...d.data()}))})));
@@ -64,26 +60,7 @@
                 return () => { unsubInv(); unsubSales(); unsubPatients(); };
             }, []);
 
-            // BOOTSTRAP: Admin Creator
-            useEffect(() => {
-                const init = async () => {
-                    const q = window.api.query(window.api.collection(window.db, "users"), window.api.where("username", "==", "admin"));
-                    const snap = await window.api.getDocs(q);
-                    if (snap.empty) {
-                        await window.api.addDoc(window.api.collection(window.db, "users"), { username: "admin", pin: "1234", role: "MANAGER", status: "ACTIVE" });
-                    }
-                };
-                if(window.db) init();
-            }, []);
-
-            const handleLogin = async () => {
-                const u = document.getElementById('u_box').value, p = document.getElementById('p_box').value;
-                const q = window.api.query(window.api.collection(window.db, "users"), window.api.where("username", "==", u), window.api.where("pin", "==", p));
-                const snap = await window.api.getDocs(q);
-                if (!snap.empty) { setUser(snap.docs[0].data()); setView('DASHBOARD'); }
-                else alert("Access Denied");
-            };
-
+            // FUNCTIONS
             const addToCart = (p) => {
                 setCart(prev => {
                     const ex = prev.find(i => i.id === p.id);
@@ -92,139 +69,150 @@
                 });
             };
 
-            const finalizeSale = async (method) => {
+            const finalizeSale = async () => {
                 const total = cart.reduce((s,i)=>s+(i.price*i.qty),0);
-                await window.api.addDoc(window.api.collection(window.db, "sales"), { 
-                    total, timestamp: new Date().toISOString(), soldBy: user.username, method 
-                });
+                await window.api.addDoc(window.api.collection(window.db, "sales"), { total, timestamp: new Date().toISOString(), soldBy: user.username, items: cart });
                 for(const i of cart) await window.api.updateDoc(window.api.doc(window.db, "inventory", i.id), { stock: i.stock - i.qty });
-                setCart([]); alert(isSwahili ? "Mauzo Yamekamilika!" : "Sale Finalized!");
+                setCart([]); alert("Sale Completed!");
             };
 
-            const isRole = (roles) => roles.includes(user?.role);
-
-            // --- UI: LOGIN ---
-            if (view === 'LOGIN') {
-                return (
-                    <div className="h-screen flex items-center justify-center bg-black">
-                        <div className="bg-slate-900 p-12 rounded-[3.5rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
-                            <h1 className="text-4xl font-black text-emerald-500 mb-2 italic">APEX</h1>
-                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-10 tracking-[0.3em]">Sovereign Cloud Vault</p>
-                            <input id="u_box" placeholder="Username" className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold" />
-                            <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-8 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[1em]" />
-                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black shadow-lg hover:bg-emerald-500 transition-all">ACCESS SYSTEM</button>
-                        </div>
-                    </div>
-                );
-            }
+            const STG_DATA = [
+                { disease: "Malaria", treatment: "AL (Mseto) for 3 days", dose: "Weight based: 15-24kg = 2 tabs x2" },
+                { disease: "Pneumonia", treatment: "Amoxicillin or Ceftriaxone", dose: "Pediatric: 25mg/kg x2" },
+                { disease: "UTI", treatment: "Nitrofurantoin or Cipro", dose: "Adult: 100mg x2 for 5 days" }
+            ];
 
             return (
                 <div className="flex h-screen overflow-hidden bg-slate-950">
                     {/* SIDEBAR */}
                     <aside className="w-72 bg-black border-r border-slate-800 p-8 flex flex-col shrink-0">
-                        <div className="flex items-center gap-3 mb-10">
-                            <div className="w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black">A</div>
-                            <h2 className="text-xl font-black tracking-tighter">APEX <span className="text-emerald-600 italic">Pro</span></h2>
-                        </div>
+                        <h2 className="text-2xl font-black text-emerald-500 mb-10 italic">APEX PRO</h2>
                         <nav className="flex-1 space-y-1">
-                            {['DASHBOARD', 'POS', 'STOO', 'PATIENTS', 'REPORTS'].map(v => (
+                            {['DASHBOARD', 'POS', 'STOO', 'PATIENTS', 'REPORTS', 'STG'].map(v => (
                                 <button key={v} onClick={()=>setView(v)} className={`w-full text-left p-4 rounded-2xl font-black text-[10px] tracking-widest transition-all ${view===v?'active-tab':'text-slate-500 hover:bg-slate-900'}`}>{v}</button>
                             ))}
                         </nav>
-                        <button onClick={()=>setIsSwahili(!isSwahili)} className="mb-4 text-[10px] font-black text-slate-600 uppercase tracking-widest">{isSwahili ? 'English' : 'Swahili'}</button>
-                        <button onClick={()=>window.location.reload()} className="text-rose-500 font-bold text-[10px] uppercase tracking-widest">Logout</button>
-                        <div className="mt-4 text-[8px] text-slate-800 cursor-pointer" onClick={()=>{setDevClicks(devClicks+1); if(devClicks>=6) setView('DEV')}}>v2.0.4 CORE_SYNC</div>
+                        <button onClick={()=>window.location.reload()} className="text-rose-500 font-bold text-xs uppercase mt-10">Logout</button>
                     </aside>
 
                     {/* MAIN */}
-                    <main className="flex-1 p-10 overflow-auto no-scrollbar">
+                    <main className="flex-1 p-10 overflow-auto no-scrollbar bg-slate-950">
                         
                         {view === 'DASHBOARD' && (
-                            <div className="animate-in fade-in duration-700">
-                                <h2 className="text-3xl font-black mb-8 tracking-tighter">Director's Overview</h2>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className="bg-slate-900 p-8 rounded-[2.5rem] border border-slate-800 shadow-xl border-l-8 border-emerald-500">
-                                        <p className="text-slate-500 text-xs font-bold uppercase mb-2">Daily Revenue</p>
-                                        <h3 className="text-3xl font-black text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} TZS</h3>
+                            <div>
+                                <h2 className="text-3xl font-black mb-8">Business Health</h2>
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div className="bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-xl border-l-8 border-emerald-500">
+                                        <p className="text-slate-500 text-xs font-bold uppercase">Total Revenue</p>
+                                        <h3 className="text-4xl font-black text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} <span className="text-sm">TZS</span></h3>
                                     </div>
-                                    <div className="bg-slate-900 p-8 rounded-[2.5rem] border border-slate-800 shadow-xl border-l-8 border-blue-500">
-                                        <p className="text-slate-500 text-xs font-bold uppercase mb-2">Inventory Items</p>
-                                        <h3 className="text-3xl font-black text-blue-400">{data.inventory.length}</h3>
-                                    </div>
-                                    <div className="bg-slate-900 p-8 rounded-[2.5rem] border border-slate-800 shadow-xl border-l-8 border-rose-500">
-                                        <p className="text-slate-500 text-xs font-bold uppercase mb-2">Deni Balances</p>
-                                        <h3 className="text-3xl font-black text-rose-400">{data.patients.reduce((a,b)=>a+(b.creditBalance||0),0).toLocaleString()}</h3>
+                                    <div className="bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-xl border-l-8 border-blue-500">
+                                        <p className="text-slate-500 text-xs font-bold uppercase">Patients in Vault</p>
+                                        <h3 className="text-4xl font-black text-blue-400">{data.patients.length}</h3>
                                     </div>
                                 </div>
                             </div>
                         )}
 
                         {view === 'POS' && (
-                            <div className="flex gap-8 h-full animate-in slide-in-from-bottom duration-500">
-                                <div className="flex-1 space-y-6 overflow-y-auto no-scrollbar">
-                                    <input placeholder="Search brand, generic or symptom..." className="w-full p-5 bg-slate-900 border border-slate-800 rounded-[2rem] text-xl font-bold outline-none focus:border-emerald-500" onChange={(e)=>setSearch(e.target.value.toLowerCase())} />
+                            <div className="flex gap-8 h-full">
+                                <div className="flex-1 space-y-6">
+                                    <input placeholder="Search brand or generic..." className="w-full p-5 bg-slate-900 border border-slate-800 rounded-[2rem] text-xl font-bold outline-none focus:border-emerald-500" onChange={(e)=>setSearch(e.target.value.toLowerCase())} />
                                     <div className="grid grid-cols-2 gap-4">
                                         {data.inventory.filter(p => p.brandName.toLowerCase().includes(search)).map(p => (
-                                            <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer active:scale-95 transition-all shadow-xl">
-                                                <p className="font-black text-xl mb-1 tracking-tight">{p.brandName}</p>
-                                                <p className="text-[10px] text-slate-500 font-bold uppercase mb-4">{p.strength} • {p.genericName}</p>
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-2xl font-black text-emerald-400">{p.price.toLocaleString()}</span>
-                                                    <span className="text-[10px] font-black text-slate-600">STK: {p.stock}</span>
-                                                </div>
+                                            <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer shadow-xl active:scale-95 transition-all">
+                                                <p className="font-black text-xl mb-1">{p.brandName}</p>
+                                                <p className="text-2xl font-black text-emerald-400">{p.price.toLocaleString()} TZS</p>
+                                                <p className="text-[10px] opacity-30">STOCK: {p.stock}</p>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
-                                <div className="w-96 bg-white text-slate-900 p-8 rounded-[3rem] shadow-2xl h-fit border-t-8 border-emerald-600 sticky top-0 flex flex-col">
-                                    <h3 className="font-black text-2xl mb-8 tracking-tighter">Active Bill</h3>
-                                    <div className="space-y-4 mb-8 overflow-auto max-h-64 no-scrollbar">
-                                        {cart.map(i => (
-                                            <div key={i.id} className="flex justify-between border-b border-slate-100 pb-2">
-                                                <div className="flex items-center gap-3">
-                                                    <span className="bg-emerald-100 text-emerald-700 w-6 h-6 flex items-center justify-center rounded-lg text-xs font-black">{i.qty}</span>
-                                                    <span className="font-bold text-sm">{i.brandName}</span>
-                                                </div>
-                                                <span className="font-black">{(i.price * i.qty).toLocaleString()}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="flex justify-between font-black text-4xl mb-10 tracking-tighter">
+                                <div className="w-96 bg-white text-slate-900 p-8 rounded-[3rem] shadow-2xl h-fit border-t-8 border-emerald-600">
+                                    <h3 className="font-black text-xl mb-6">Patient Bill</h3>
+                                    {cart.map(i => (
+                                        <div key={i.id} className="flex justify-between border-b pb-2 text-sm font-bold">
+                                            <span>{i.brandName} x{i.qty}</span>
+                                            <span>{(i.price * i.qty).toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                    <div className="flex justify-between font-black text-3xl mb-8 mt-4">
                                         <span>Total:</span>
                                         <span className="text-emerald-600">{cart.reduce((s,i)=>s+(i.price*i.qty),0).toLocaleString()}</span>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <button onClick={()=>finalizeSale('CASH')} className="bg-emerald-600 text-white py-5 rounded-3xl font-black shadow-lg">CASH</button>
-                                        <button onClick={()=>finalizeSale('MOBILE')} className="bg-blue-600 text-white py-5 rounded-3xl font-black shadow-lg">MOBILE</button>
-                                    </div>
+                                    <button onClick={finalizeSale} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black shadow-lg">FINALIZE</button>
                                 </div>
                             </div>
                         )}
 
                         {view === 'STOO' && (
-                            <div className="bg-slate-900 p-10 rounded-[3rem] border border-slate-800 shadow-sm animate-in fade-in duration-500">
+                            <div className="p-10 bg-slate-900 border border-slate-800 rounded-[3rem] shadow-sm">
                                 <div className="flex justify-between items-center mb-10">
-                                    <h2 className="text-2xl font-black tracking-widest uppercase">Inventory Engine</h2>
+                                    <h2 className="text-2xl font-black text-emerald-500">Inventory Engine</h2>
                                     <button onClick={async ()=>{
-                                        const n = prompt("Brand Name:"); const p = prompt("Selling Price:"); const s = prompt("Stock Qty:");
-                                        if(n) await window.api.addDoc(window.api.collection(window.db, "inventory"), { brandName: n.toUpperCase(), price: Number(p), stock: Number(s), createdAt: new Date().toISOString() });
-                                    }} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg">+ Add Stock</button>
+                                        const n = prompt("Brand:"); const p = prompt("Price:"); const s = prompt("Stock:");
+                                        if(n) await window.api.addDoc(window.api.collection(window.db, "inventory"), { brandName: n.toUpperCase(), price: Number(p), stock: Number(s) });
+                                    }} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black">+ Add Stock</button>
                                 </div>
                                 <table className="w-full text-left">
-                                    <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800"><th>Product</th><th>Stock</th><th className="text-right">Price</th></tr></thead>
+                                    <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800"><th>Name</th><th>Stock</th><th className="text-right">Price</th></tr></thead>
                                     <tbody className="font-bold">{data.inventory.map(p => (
-                                        <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50 transition-all"><td className="py-4 font-black">{p.brandName}</td><td>{p.stock}</td><td className="text-right text-emerald-400">{Number(p.price).toLocaleString()}</td></tr>
+                                        <tr key={p.id} className="border-b border-slate-800/50"><td className="py-4 font-black">{p.brandName}</td><td>{p.stock}</td><td className="text-right text-emerald-400">{Number(p.price).toLocaleString()}</td></tr>
                                     ))}</tbody>
                                 </table>
                             </div>
                         )}
 
-                        {view === 'DEV' && (
-                             <div className="h-full bg-black rounded-[3rem] p-20 border border-rose-900 text-rose-500 font-mono">
-                                <h1 className="text-4xl font-black mb-10">CORE_MAINTENANCE_ACTIVE</h1>
-                                <p className="text-sm mb-10 opacity-50 italic">System logic overrides and global database purge authorized.</p>
-                                <button onClick={()=>setView('DASHBOARD')} className="bg-rose-900 text-white px-10 py-4 rounded-2xl font-black">EXIT TERMINAL</button>
-                             </div>
+                        {view === 'PATIENTS' && (
+                            <div className="p-10 bg-slate-900 border border-slate-800 rounded-[3rem]">
+                                <div className="flex justify-between items-center mb-10">
+                                    <h2 className="text-2xl font-black">Patient Registry</h2>
+                                    <button onClick={async ()=>{
+                                        const n = prompt("Full Name:"); const c = prompt("NHIF / Card ID:");
+                                        if(n) await window.api.addDoc(window.api.collection(window.db, "patients"), { name: n, cardId: c });
+                                    }} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg">+ Register Patient</button>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {data.patients.map(pt => (
+                                        <div key={pt.id} className="p-6 bg-black rounded-3xl border border-slate-800">
+                                            <p className="font-black text-lg text-emerald-500 uppercase">{pt.name}</p>
+                                            <p className="text-xs text-slate-500 font-bold uppercase mt-1 tracking-widest">ID: {pt.cardId}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'REPORTS' && (
+                            <div className="p-10 bg-slate-900 border border-slate-800 rounded-[3rem]">
+                                <h2 className="text-2xl font-black mb-8">Sales Audit Log</h2>
+                                <div className="space-y-2">
+                                    {data.sales.map(s => (
+                                        <div key={s.id} className="flex justify-between p-5 bg-black rounded-2xl border border-slate-800">
+                                            <div className="flex gap-4 items-center">
+                                                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                                                <span className="text-xs font-bold text-slate-500">{new Date(s.timestamp).toLocaleString()}</span>
+                                            </div>
+                                            <span className="font-black text-emerald-400">+{s.total.toLocaleString()} TZS</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'STG' && (
+                            <div className="p-10 bg-slate-900 border border-slate-800 rounded-[3rem]">
+                                <h2 className="text-2xl font-black mb-8">Medicine Intelligence (STG)</h2>
+                                <div className="space-y-4">
+                                    {STG_DATA.map((item, i) => (
+                                        <div key={i} className="p-6 bg-black rounded-3xl border border-slate-800">
+                                            <h4 className="text-emerald-500 font-black text-lg underline">{item.disease}</h4>
+                                            <p className="text-sm mt-2 text-slate-300 font-bold">Standard Treatment: <span className="text-white">{item.treatment}</span></p>
+                                            <p className="text-xs mt-1 text-slate-500 italic">{item.dose}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         )}
                     </main>
                 </div>
