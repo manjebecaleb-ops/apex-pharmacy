@@ -14,7 +14,7 @@
     <!-- 1. FIREBASE INITIALIZATION -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, query, where, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
@@ -27,64 +27,109 @@ const firebaseConfig = {
   measurementId: "G-SVDCM1Y693"
 };
 
-        try {
-            const app = initializeApp(firebaseConfig);
-            window.db = getFirestore(app);
-            console.log("Firebase Connected ✅");
-        } catch (e) {
-            console.error("Firebase Failed ❌", e);
-        }
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app);
+        window.api = { collection, query, where, getDocs, addDoc };
     </script>
 
-    <!-- 2. APEX INTERFACE LOGIC -->
+    <!-- 2. APEX APPLICATION ENGINE -->
     <script type="text/babel">
-        const { useState } = React;
+        const { useState, useEffect } = React;
 
         const App = () => {
-            const [view, setView] = useState('LANDING'); // Views: LANDING, LOGIN, DASHBOARD
+            const [view, setView] = useState('LANDING');
+            const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(false);
 
-            // VIEW 1: LANDING (The screen you see now)
+            // BOOTSTRAP: Create first Admin if DB is empty
+            useEffect(() => {
+                const setupAdmin = async () => {
+                    const q = window.api.query(window.api.collection(window.db, "users"));
+                    const snap = await window.api.getDocs(q);
+                    if (snap.empty) {
+                        await window.api.addDoc(window.api.collection(window.db, "users"), {
+                            username: "admin",
+                            pin: "1234",
+                            role: "MANAGER"
+                        });
+                        console.log("Master Admin Created: admin / 1234");
+                    }
+                };
+                if (window.db) setupAdmin();
+            }, []);
+
+            // LOGIN LOGIC
+            const handleLogin = async () => {
+                const u = document.getElementById('u_input').value;
+                const p = document.getElementById('p_input').value;
+                
+                setLoading(true);
+                const q = window.api.query(
+                    window.api.collection(window.db, "users"), 
+                    window.api.where("username", "==", u),
+                    window.api.where("pin", "==", p)
+                );
+                
+                const snap = await window.api.getDocs(q);
+                
+                if (!snap.empty) {
+                    setUser(snap.docs[0].data());
+                    setView('DASHBOARD');
+                } else {
+                    alert("Access Denied: Invalid Username or PIN");
+                }
+                setLoading(false);
+            };
+
             if (view === 'LANDING') {
                 return (
                     <div className="flex h-screen items-center justify-center">
                         <div className="text-center bg-slate-800 p-16 rounded-[3rem] shadow-2xl border border-slate-700">
                             <h1 className="text-6xl font-black text-emerald-500 italic">APEX</h1>
-                            <p className="text-slate-400 mt-4 uppercase font-bold tracking-widest">System is Live</p>
+                            <button onClick={() => setView('LOGIN')} className="mt-10 bg-emerald-600 px-10 py-4 rounded-2xl font-black text-xl hover:bg-emerald-500 transition-all">ENTER VAULT</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (view === 'LOGIN') {
+                return (
+                    <div className="flex h-screen items-center justify-center">
+                        <div className="bg-white text-slate-900 p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm text-center">
+                            <h2 className="text-3xl font-black mb-8">Authorize</h2>
+                            <input id="u_input" type="text" placeholder="Username" className="w-full p-4 mb-4 bg-slate-100 rounded-2xl outline-none" />
+                            <input id="p_input" type="password" placeholder="PIN" className="w-full p-4 mb-8 bg-slate-100 rounded-2xl outline-none" />
                             <button 
-                                onClick={() => setView('LOGIN')}
-                                className="mt-10 bg-emerald-600 px-10 py-4 rounded-2xl font-black text-xl hover:bg-emerald-500 transition-all active:scale-95"
+                                onClick={handleLogin}
+                                className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg disabled:bg-slate-300"
+                                disabled={loading}
                             >
-                                ENTER VAULT
+                                {loading ? "Verifying..." : "UNLOCK"}
                             </button>
                         </div>
                     </div>
                 );
             }
 
-            // VIEW 2: LOGIN (The screen you will see after clicking)
-            if (view === 'LOGIN') {
+            if (view === 'DASHBOARD') {
                 return (
-                    <div className="flex h-screen items-center justify-center">
-                        <div className="bg-white text-slate-900 p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm text-center">
-                            <h2 className="text-3xl font-black mb-2">Login</h2>
-                            <p className="text-slate-400 text-xs font-bold uppercase mb-8">Authorized Personnel Only</p>
-                            <input type="text" placeholder="Username" className="w-full p-4 mb-4 bg-slate-100 rounded-2xl outline-none" />
-                            <input type="password" placeholder="PIN" className="w-full p-4 mb-8 bg-slate-100 rounded-2xl outline-none" />
-                            <button 
-                                onClick={() => alert("Logic for Dashboard goes here next!")}
-                                className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg"
-                            >
-                                UNLOCK
-                            </button>
-                            <button onClick={() => setView('LANDING')} className="mt-4 text-xs text-slate-400 underline">Back</button>
-                        </div>
+                    <div className="p-20 text-center">
+                        <h1 className="text-5xl font-black text-emerald-500">WELCOME, {user.username.toUpperCase()}</h1>
+                        <p className="mt-4 text-slate-400 font-bold uppercase tracking-widest">Access Level: {user.role}</p>
+                        <button onClick={() => window.location.reload()} className="mt-20 bg-rose-600 px-8 py-3 rounded-xl font-bold">LOGOUT</button>
                     </div>
                 );
             }
         };
 
-        const root = ReactDOM.createRoot(document.getElementById('apex-root'));
-        root.render(<App />);
+        // Wait for Firebase
+        const checkDB = setInterval(() => {
+            if (window.db) {
+                const root = ReactDOM.createRoot(document.getElementById('apex-root'));
+                root.render(<App />);
+                clearInterval(checkDB);
+            }
+        }, 500);
     </script>
 </body>
 </html>
