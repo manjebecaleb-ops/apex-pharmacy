@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APEX | Sovereign Online System</title>
+    <!-- React & Tailwind -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAAazqZ1XnzpQ6A_cCHyQEsgXxq5jVVLXE",
+  authDomain: "apex-pharmacy-a69b5.firebaseapp.com",
+  projectId: "apex-pharmacy-a69b5",
+  storageBucket: "apex-pharmacy-a69b5.firebasestorage.app",
+  messagingSenderId: "28559683699",
+  appId: "1:28559683699:web:1cc3f16a98a32463657a06",
+  measurementId: "G-SVDCM1Y693"
+};
+
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app);
+        window.auth = getAuth(app);
+        window.cloud = { collection, addDoc, onSnapshot, query, orderBy, signInWithEmailAndPassword };
+    </script>
+</head>
+<body class="bg-slate-900 text-white">
+    <div id="apex-root">
+        <div class="h-screen flex items-center justify-center">
+            <h1 class="animate-pulse font-black text-2xl">CONNECTING TO APEX CLOUD...</h1>
+        </div>
+    </div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const App = () => {
+            const [view, setView] = useState('LOGIN');
+            const [data, setData] = useState({ inventory: [], sales: [] });
+            const [cart, setCart] = useState([]);
+
+            // LIVE CLOUD SYNC
+            useEffect(() => {
+                if (!window.db) return;
+                const q = window.cloud.query(window.cloud.collection(window.db, "sales"), window.cloud.orderBy("timestamp", "desc"));
+                const unsub = window.cloud.onSnapshot(q, (snap) => {
+                    const sales = snap.docs.map(doc => doc.data());
+                    setData(prev => ({ ...prev, sales }));
+                });
+                return () => unsub();
+            }, []);
+
+            const handleLogin = () => {
+                const u = document.getElementById('u').value, p = document.getElementById('p').value;
+                // For this enterprise version, use your Manager email/pass from Firebase Auth
+                window.cloud.signInWithEmailAndPassword(window.auth, u, p)
+                    .then(() => setView('DASHBOARD'))
+                    .catch(() => alert("Login Failed: Unauthorized Access"));
+            };
+
+            const addToCart = (p) => {
+                setCart(prev => {
+                    const ex = prev.find(i => i.id === p.id);
+                    if (ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
+                    return [...prev, {...p, qty: 1}];
+                });
+            };
+
+            if (view === 'LOGIN') {
+                return (
+                    <div className="h-screen flex items-center justify-center bg-black">
+                        <div className="bg-slate-900 p-12 rounded-[3rem] border border-slate-800 shadow-2xl w-full max-w-sm text-center">
+                            <h1 className="text-4xl font-black text-emerald-500 mb-2 italic">APEX</h1>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-10">Sovereign Cloud ERP</p>
+                            <input id="u" placeholder="Email" className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700" />
+                            <input id="p" type="password" placeholder="Password" className="w-full p-4 mb-8 bg-slate-800 rounded-2xl outline-none border border-slate-700" />
+                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black shadow-lg">AUTHORIZE</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex h-screen overflow-hidden">
+                    <aside className="w-64 bg-black border-r border-slate-800 p-8 flex flex-col shrink-0">
+                        <h2 className="text-2xl font-black mb-10 text-emerald-500 italic">APEX PRO</h2>
+                        <nav className="flex-1 space-y-2">
+                            <button onClick={()=>setView('DASHBOARD')} className={`w-full text-left p-3 rounded-xl font-bold ${view==='DASHBOARD'?'bg-emerald-600':''}`}>Dashboard</button>
+                            <button onClick={()=>setView('POS')} className={`w-full text-left p-3 rounded-xl font-bold ${view==='POS'?'bg-emerald-600':''}`}>Point of Sale</button>
+                        </nav>
+                        <div className="text-[10px] text-emerald-500 font-bold border border-emerald-500/20 p-2 rounded text-center">CLOUD SYNC LIVE</div>
+                    </aside>
+
+                    <main className="flex-1 p-10 overflow-auto bg-slate-950">
+                        {view === 'DASHBOARD' && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="bg-slate-900 p-8 rounded-3xl border border-slate-800">
+                                    <p className="text-slate-500 text-xs font-bold uppercase">Total Cloud Sales</p>
+                                    <h3 className="text-3xl font-black text-emerald-500 mt-2">{data.sales.length} Invoices</h3>
+                                </div>
+                                <div className="bg-slate-900 p-8 rounded-3xl border border-slate-800">
+                                    <p className="text-slate-500 text-xs font-bold uppercase">Revenue Today</p>
+                                    <h3 className="text-3xl font-black text-blue-500">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} TZS</h3>
+                                </div>
+                            </div>
+                        )}
+                        {/* POS and other views continue here... */}
+                    </main>
+                </div>
+            );
+        };
+
+        const checkInit = setInterval(() => {
+            if (window.db) {
+                const root = ReactDOM.createRoot(document.getElementById('apex-root'));
+                root.render(<App />);
+                clearInterval(checkInit);
+            }
+        }, 500);
+    </script>
+</body>
+</html>
