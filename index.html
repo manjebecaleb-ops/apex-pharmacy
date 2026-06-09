@@ -2,62 +2,83 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>APEX | Full Enterprise Suite</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APEX | Sovereign Cloud ERP</title>
+    <!-- PRODUCTION LIBRARIES -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; }
+        .active-tab { background: #10b981 !important; color: white !important; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
 </head>
-<body class="bg-slate-900 text-white font-sans overflow-hidden">
-    <div id="apex-root"></div>
+<body class="bg-slate-50 text-slate-900">
+    <div id="apex-root">
+        <div class="h-screen flex items-center justify-center bg-slate-900 text-white">
+            <h1 class="text-2xl font-black animate-pulse tracking-tighter">APEX IS BOOTING...</h1>
+        </div>
+    </div>
 
-    <!-- 1. CLOUD ENGINE -->
+    <!-- 1. FIREBASE CLOUD ENGINE -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyAAazqZ1XnzpQ6A_cCHyQEsgXxq5jVVLXE",
-  authDomain: "apex-pharmacy-a69b5.firebaseapp.com",
-  projectId: "apex-pharmacy-a69b5",
-  storageBucket: "apex-pharmacy-a69b5.firebasestorage.app",
-  messagingSenderId: "28559683699",
-  appId: "1:28559683699:web:1cc3f16a98a32463657a06",
-  measurementId: "G-SVDCM1Y693"
-};
+        
 
-        const app = initializeApp(firebaseConfig);
-        window.db = getFirestore(app);
-        window.api = { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy };
+        try {
+            const app = initializeApp(firebaseConfig);
+            window.db = getFirestore(app);
+            window.api = { collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, orderBy };
+        } catch (e) { alert("Firebase Config Error: Check your keys."); }
     </script>
 
-    <!-- 2. APEX INTERFACE -->
+    <!-- 2. APEX INTERFACE LOGIC -->
     <script type="text/babel">
         const { useState, useEffect } = React;
 
         const App = () => {
-            const [view, setView] = useState('DASHBOARD');
-            const [user, setUser] = useState({username: 'admin', role: 'MANAGER'});
-            const [inventory, setInventory] = useState([]);
-            const [sales, setSales] = useState([]);
-            const [patients, setPatients] = useState([]);
+            const [view, setView] = useState('LOGIN');
+            const [user, setUser] = useState(null);
+            const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [] });
             const [cart, setCart] = useState([]);
+            const [search, setSearch] = useState("");
+            const [isSwahili, setIsSwahili] = useState(true);
 
-            // Sync all modules in Real-time
+            // REAL-TIME SYNC
             useEffect(() => {
                 if (!window.db) return;
-                const unsubInv = window.api.onSnapshot(window.api.collection(window.db, "inventory"), (snap) => {
-                    setInventory(snap.docs.map(d => ({id: d.id, ...d.data()})));
-                });
-                const unsubSales = window.api.onSnapshot(window.api.collection(window.db, "sales"), (snap) => {
-                    setSales(snap.docs.map(d => ({id: d.id, ...d.data()})));
-                });
-                const unsubPatients = window.api.onSnapshot(window.api.collection(window.db, "patients"), (snap) => {
-                    setPatients(snap.docs.map(d => ({id: d.id, ...d.data()})));
-                });
-                return () => { unsubInv(); unsubSales(); unsubPatients(); };
+                const unsubInv = window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setData(p => ({...p, inventory: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const unsubSales = window.api.onSnapshot(window.api.collection(window.db, "sales"), (s) => setData(p => ({...p, sales: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const unsubUsers = window.api.onSnapshot(window.api.collection(window.db, "users"), (s) => setData(p => ({...p, users: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                return () => { unsubInv(); unsubSales(); unsubUsers(); };
             }, []);
+
+            // BOOTSTRAP: Auto-create Admin
+            useEffect(() => {
+                const init = async () => {
+                    const q = window.api.query(window.api.collection(window.db, "users"), window.api.where("username", "==", "admin"));
+                    const snap = await window.api.getDocs(q);
+                    if (snap.empty) {
+                        await window.api.addDoc(window.api.collection(window.db, "users"), { username: "admin", pin: "1234", role: "MANAGER" });
+                    }
+                };
+                if(window.db) init();
+            }, []);
+
+            const handleLogin = async () => {
+                const u = document.getElementById('u').value, p = document.getElementById('p').value;
+                const q = window.api.query(window.api.collection(window.db, "users"), window.api.where("username", "==", u), window.api.where("pin", "==", p));
+                const snap = await window.api.getDocs(q);
+                if (!snap.empty) { setUser(snap.docs[0].data()); setView('DASHBOARD'); }
+                else alert("Access Denied: Wrong Credentials");
+            };
 
             const addToCart = (p) => {
                 setCart(prev => {
@@ -68,117 +89,127 @@ const firebaseConfig = {
             };
 
             const finalizeSale = async () => {
-                const total = cart.reduce((s,i) => s + (i.price * i.qty), 0);
-                await window.api.addDoc(window.api.collection(window.db, "sales"), {
-                    total, timestamp: new Date().toISOString(), items: cart, soldBy: user.username
-                });
-                for(const i of cart) {
-                    await window.api.updateDoc(window.api.doc(window.db, "inventory", i.id), { stock: i.stock - i.qty });
-                }
-                setCart([]); alert("Sale Recorded in Cloud!");
+                const total = cart.reduce((s,i)=>s+(i.price*i.qty),0);
+                await window.api.addDoc(window.api.collection(window.db, "sales"), { total, timestamp: new Date().toISOString(), soldBy: user.username, items: cart });
+                for(const i of cart) await window.api.updateDoc(window.api.doc(window.db, "inventory", i.id), { stock: i.stock - i.qty });
+                setCart([]); alert("Sale Recorded!");
             };
 
-            const NavBtn = ({id, label}) => (
-                <button onClick={() => setView(id)} className={`w-full text-left p-4 rounded-2xl font-bold transition-all ${view === id ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
-                    {label}
-                </button>
-            );
+            const exportToExcel = () => {
+                const rows = data.sales.map(s => ({ Date: s.timestamp, Total: s.total, Staff: s.soldBy }));
+                const ws = XLSX.utils.json_to_sheet(rows);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Sales");
+                XLSX.writeFile(wb, "Apex_Report.xlsx");
+            };
+
+            if (view === 'LOGIN') {
+                return (
+                    <div className="h-screen flex items-center justify-center bg-slate-900">
+                        <div className="bg-white p-12 rounded-[3rem] shadow-2xl w-full max-w-sm text-center">
+                            <h1 className="text-4xl font-black text-emerald-600 mb-2 italic">APEX</h1>
+                            <p className="text-slate-400 text-[10px] font-bold uppercase mb-10 tracking-widest">Enterprise Cloud Vault</p>
+                            <input id="u" placeholder="Username" className="w-full p-4 mb-3 bg-slate-100 rounded-2xl border-none outline-none focus:ring-2 ring-emerald-500" />
+                            <input id="p" type="password" placeholder="PIN" className="w-full p-4 mb-8 bg-slate-100 rounded-2xl border-none outline-none focus:ring-2 ring-emerald-500" />
+                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-lg">UNLOCK SYSTEM</button>
+                        </div>
+                    </div>
+                );
+            }
 
             return (
-                <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden">
-                    {/* SIDEBAR */}
-                    <aside className="w-64 bg-slate-900 text-white p-6 flex flex-col shrink-0">
-                        <h2 className="text-2xl font-black text-emerald-500 italic mb-10 tracking-tighter">APEX ENTERPRISE</h2>
+                <div className="flex h-screen overflow-hidden">
+                    <aside className="w-72 bg-slate-900 text-white p-8 flex flex-col shrink-0">
+                        <h2 className="text-2xl font-black text-emerald-500 mb-10 italic">APEX PRO</h2>
                         <nav className="flex-1 space-y-1">
-                            <NavBtn id="DASHBOARD" label="🏠 Dashboard" />
-                            <NavBtn id="POS" label="🛒 Sales POS" />
-                            <NavBtn id="STOO" label="📦 Inventory" />
-                            <NavBtn id="PATIENTS" label="👥 Patients" />
-                            <NavBtn id="REPORTS" label="📊 Reports" />
+                            {['DASHBOARD', 'POS', 'INVENTORY', 'REPORTS'].map(v => (
+                                <button key={v} onClick={()=>setView(v)} className={`w-full text-left p-4 rounded-2xl font-bold transition-all ${view===v?'active-tab':'text-slate-400'}`}>{v}</button>
+                            ))}
                         </nav>
-                        <button onClick={()=>window.location.reload()} className="text-rose-500 text-xs font-bold uppercase mt-10">Logout</button>
+                        <button onClick={()=>window.location.reload()} className="text-rose-500 font-bold text-xs uppercase mt-10">Logout</button>
                     </aside>
 
-                    {/* CONTENT */}
-                    <main className="flex-1 p-10 overflow-auto no-scrollbar">
+                    <main className="flex-1 p-10 overflow-auto no-scrollbar bg-slate-50">
                         {view === 'DASHBOARD' && (
-                            <div>
-                                <h2 className="text-3xl font-black mb-8 text-slate-800">Business Pulse</h2>
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="bg-white p-10 rounded-3xl shadow-xl border-l-8 border-emerald-500">
-                                        <p className="text-slate-400 text-xs font-bold uppercase">Cloud Revenue</p>
-                                        <h3 className="text-4xl font-black text-slate-800">{sales.reduce((a,b)=>a+b.total,0).toLocaleString()} <span className="text-sm">TZS</span></h3>
-                                    </div>
-                                    <div className="bg-white p-10 rounded-3xl shadow-xl border-l-8 border-blue-500">
-                                        <p className="text-slate-400 text-xs font-bold uppercase">Stock Assets</p>
-                                        <h3 className="text-4xl font-black text-slate-800">{inventory.length} Items</h3>
-                                    </div>
+                            <div className="grid grid-cols-2 gap-6">
+                                <div className="bg-white p-10 rounded-[2.5rem] shadow-sm border-l-8 border-emerald-500">
+                                    <p className="text-slate-400 text-xs font-bold uppercase">Cloud Revenue</p>
+                                    <h3 className="text-4xl font-black mt-2">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} <span className="text-sm">TZS</span></h3>
+                                </div>
+                                <div className="bg-white p-10 rounded-[2.5rem] shadow-sm border-l-8 border-blue-500">
+                                    <p className="text-slate-400 text-xs font-bold uppercase">Unique Products</p>
+                                    <h3 className="text-4xl font-black mt-2">{data.inventory.length} Items</h3>
                                 </div>
                             </div>
                         )}
 
                         {view === 'POS' && (
                             <div className="flex gap-8">
-                                <div className="flex-1 grid grid-cols-2 gap-4">
-                                    {inventory.map(p => (
+                                <div className="flex-1 grid grid-cols-2 gap-4 h-fit">
+                                    {data.inventory.map(p => (
                                         <div key={p.id} onClick={()=>addToCart(p)} className="bg-white p-6 rounded-3xl border-2 hover:border-emerald-500 cursor-pointer shadow-sm active:scale-95 transition-all">
                                             <p className="font-black text-lg">{p.brandName}</p>
-                                            <p className="font-black text-emerald-600">{p.price.toLocaleString()} TZS</p>
-                                            <p className="text-[10px] opacity-40 font-bold uppercase">Qty: {p.stock}</p>
+                                            <p className="text-emerald-600 font-bold">{p.price.toLocaleString()} TZS</p>
+                                            <p className="text-[10px] opacity-30">STOCK: {p.stock}</p>
                                         </div>
                                     ))}
                                 </div>
                                 <div className="w-96 bg-white p-8 rounded-[3rem] shadow-2xl h-fit border-t-8 border-emerald-600">
                                     <h3 className="font-black text-xl mb-6">Mkokoteni</h3>
-                                    {cart.map(i => (
-                                        <div key={i.id} className="flex justify-between py-2 border-b text-sm">
-                                            <span>{i.brandName} x{i.qty}</span>
-                                            <span className="font-bold">{(i.price * i.qty).toLocaleString()}</span>
-                                        </div>
-                                    ))}
-                                    <div className="mt-8 flex justify-between font-black text-2xl text-emerald-600">
+                                    <div className="space-y-4 mb-8 overflow-auto max-h-64">
+                                        {cart.map(i => (
+                                            <div key={i.id} className="flex justify-between border-b pb-2">
+                                                <span>{i.brandName} x{i.qty}</span>
+                                                <span className="font-bold">{i.price * i.qty}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="flex justify-between font-black text-2xl mb-8">
                                         <span>Total:</span>
                                         <span>{cart.reduce((s,i)=>s+(i.price*i.qty),0).toLocaleString()}</span>
                                     </div>
-                                    <button onClick={finalizeSale} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg hover:bg-emerald-700 transition-all">FINALIZE SALE</button>
+                                    <button onClick={finalizeSale} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black shadow-lg">COMPLETE SALE</button>
                                 </div>
                             </div>
                         )}
 
-                        {view === 'STOO' && (
-                            <div className="bg-white p-10 rounded-[3rem] shadow-sm border">
-                                <div className="flex justify-between items-center mb-10">
-                                    <h2 className="text-2xl font-black uppercase tracking-widest text-slate-800">Stock Control</h2>
-                                    <button onClick={async () => {
-                                        const n = prompt("Item Name:"); const p = prompt("Price:"); const s = prompt("Stock:");
-                                        if(n) await window.api.addDoc(window.api.collection(window.db, "inventory"), { 
-                                            brandName: n.toUpperCase(), price: Number(p), stock: Number(s), createdAt: new Date().toISOString() 
-                                        });
-                                    }} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg">+ Add Stock</button>
+                        {view === 'INVENTORY' && (
+                            <div className="bg-white p-10 rounded-[3rem] shadow-sm">
+                                <div className="flex justify-between mb-8">
+                                    <h2 className="text-2xl font-black">Warehouse</h2>
+                                    <button onClick={async ()=>{
+                                        const n = prompt("Brand:"); const p = prompt("Price:"); const s = prompt("Stock:");
+                                        if(n) await window.api.addDoc(window.api.collection(window.db, "inventory"), { brandName: n, price: Number(p), stock: Number(s) });
+                                    }} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black">+ New Item</button>
                                 </div>
                                 <table className="w-full text-left">
-                                    <thead><tr className="text-slate-400 text-xs font-bold border-b"><th>Name</th><th>Stock</th><th className="text-right">Price</th></tr></thead>
-                                    <tbody className="divide-y">{inventory.map(p => (
-                                        <tr key={p.id} className="hover:bg-slate-50 transition-colors"><td className="py-4 font-black">{p.brandName}</td><td>{p.stock}</td><td className="text-right font-bold text-emerald-600">{p.price.toLocaleString()}</td></tr>
-                                    ))}</tbody>
+                                    <thead className="text-slate-400 text-xs font-bold uppercase border-b">
+                                        <tr><th className="pb-4">Name</th><th>Stock</th><th className="text-right">Price</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {data.inventory.map(p => (
+                                            <tr key={p.id} className="border-b">
+                                                <td className="py-4 font-black">{p.brandName}</td>
+                                                <td>{p.stock}</td>
+                                                <td className="text-right font-bold text-emerald-600">{p.price}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
                                 </table>
                             </div>
                         )}
 
-                        {view === 'PATIENTS' && (
-                            <div className="bg-white p-10 rounded-[3rem] shadow-sm border">
+                        {view === 'REPORTS' && (
+                            <div className="bg-white p-10 rounded-[3rem] shadow-sm">
                                 <div className="flex justify-between items-center mb-10">
-                                    <h2 className="text-2xl font-black">Patient Registry</h2>
-                                    <button onClick={async () => {
-                                        const n = prompt("Full Name:"); const c = prompt("ID Card #:");
-                                        if(n) await window.api.addDoc(window.api.collection(window.db, "patients"), { name: n, cardId: c });
-                                    }} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg">+ New Registry</button>
+                                    <h2 className="text-2xl font-black">Financial Reports</h2>
+                                    <button onClick={exportToExcel} className="bg-emerald-600 text-white px-6 py-2 rounded-xl font-bold">📥 EXPORT EXCEL</button>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    {patients.map(pt => (
-                                        <div key={pt.id} className="p-6 bg-slate-50 rounded-2xl border flex justify-between">
-                                            <div><p className="font-black text-lg">{pt.name}</p><p className="text-xs text-slate-400">ID: {pt.cardId}</p></div>
-                                            <button className="text-blue-600 text-xs font-bold underline uppercase">View History</button>
+                                <div className="space-y-2">
+                                    {data.sales.map(s => (
+                                        <div key={s.id} className="flex justify-between p-4 bg-slate-50 rounded-xl">
+                                            <span className="text-xs font-bold text-slate-400">{new Date(s.timestamp).toLocaleString()}</span>
+                                            <span className="font-black text-emerald-600">+{s.total.toLocaleString()} TZS</span>
                                         </div>
                                     ))}
                                 </div>
@@ -189,8 +220,13 @@ const firebaseConfig = {
             );
         };
 
-        const root = ReactDOM.createRoot(document.getElementById('apex-root'));
-        root.render(<App />);
+        const rootTrigger = setInterval(() => {
+            if (window.db) {
+                const root = ReactDOM.createRoot(document.getElementById('apex-root'));
+                root.render(<App />);
+                clearInterval(rootTrigger);
+            }
+        }, 500);
     </script>
 </body>
 </html>
