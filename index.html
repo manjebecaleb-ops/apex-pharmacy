@@ -2,58 +2,89 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>APEX | Pharmacy ERP</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-900 text-white">
-    <div id="apex-root">
-        <div class="h-screen flex items-center justify-center">
-            <h1 class="text-2xl font-bold animate-pulse">APEX IS STARTING...</h1>
-        </div>
-    </div>
+<body class="bg-slate-900 text-white font-sans">
+    <div id="apex-root"></div>
 
+    <!-- 1. FIREBASE INITIALIZATION -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // !!! PASTE YOUR FIREBASE CONFIG HERE !!!
-        const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT.firebaseapp.com",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT.appspot.com",
-            messagingSenderId: "YOUR_ID",
-            appId: "YOUR_APP_ID"
-        };
+        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAAazqZ1XnzpQ6A_cCHyQEsgXxq5jVVLXE",
+  authDomain: "apex-pharmacy-a69b5.firebaseapp.com",
+  projectId: "apex-pharmacy-a69b5",
+  storageBucket: "apex-pharmacy-a69b5.firebasestorage.app",
+  messagingSenderId: "28559683699",
+  appId: "1:28559683699:web:1cc3f16a98a32463657a06",
+  measurementId: "G-SVDCM1Y693"
+};
 
-        const app = initializeApp(firebaseConfig);
-        window.db = getFirestore(app);
+        try {
+            const app = initializeApp(firebaseConfig);
+            window.db = getFirestore(app);
+            console.log("Firebase Connected ✅");
+        } catch (e) {
+            console.error("Firebase Failed ❌", e);
+        }
     </script>
 
+    <!-- 2. APEX INTERFACE LOGIC -->
     <script type="text/babel">
+        const { useState } = React;
+
         const App = () => {
-            return (
-                <div class="flex h-screen items-center justify-center">
-                    <div class="text-center bg-slate-800 p-20 rounded-[3rem] shadow-2xl border border-slate-700">
-                        <h1 class="text-6xl font-black text-emerald-500 italic">APEX</h1>
-                        <p class="text-slate-400 mt-4 uppercase font-bold tracking-widest">System is Live on Vercel</p>
-                        <button class="mt-10 bg-emerald-600 px-10 py-4 rounded-2xl font-black text-xl hover:bg-emerald-500 transition-all">
-                            ENTER VAULT
-                        </button>
+            const [view, setView] = useState('LANDING'); // Views: LANDING, LOGIN, DASHBOARD
+
+            // VIEW 1: LANDING (The screen you see now)
+            if (view === 'LANDING') {
+                return (
+                    <div className="flex h-screen items-center justify-center">
+                        <div className="text-center bg-slate-800 p-16 rounded-[3rem] shadow-2xl border border-slate-700">
+                            <h1 className="text-6xl font-black text-emerald-500 italic">APEX</h1>
+                            <p className="text-slate-400 mt-4 uppercase font-bold tracking-widest">System is Live</p>
+                            <button 
+                                onClick={() => setView('LOGIN')}
+                                className="mt-10 bg-emerald-600 px-10 py-4 rounded-2xl font-black text-xl hover:bg-emerald-500 transition-all active:scale-95"
+                            >
+                                ENTER VAULT
+                            </button>
+                        </div>
                     </div>
-                </div>
-            );
+                );
+            }
+
+            // VIEW 2: LOGIN (The screen you will see after clicking)
+            if (view === 'LOGIN') {
+                return (
+                    <div className="flex h-screen items-center justify-center">
+                        <div className="bg-white text-slate-900 p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm text-center">
+                            <h2 className="text-3xl font-black mb-2">Login</h2>
+                            <p className="text-slate-400 text-xs font-bold uppercase mb-8">Authorized Personnel Only</p>
+                            <input type="text" placeholder="Username" className="w-full p-4 mb-4 bg-slate-100 rounded-2xl outline-none" />
+                            <input type="password" placeholder="PIN" className="w-full p-4 mb-8 bg-slate-100 rounded-2xl outline-none" />
+                            <button 
+                                onClick={() => alert("Logic for Dashboard goes here next!")}
+                                className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg"
+                            >
+                                UNLOCK
+                            </button>
+                            <button onClick={() => setView('LANDING')} className="mt-4 text-xs text-slate-400 underline">Back</button>
+                        </div>
+                    </div>
+                );
+            }
         };
 
-        // Delay to allow Firebase to load
-        setTimeout(() => {
-            const root = ReactDOM.createRoot(document.getElementById('apex-root'));
-            root.render(<App />);
-        }, 1500);
+        const root = ReactDOM.createRoot(document.getElementById('apex-root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
