@@ -3,36 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>APEX Sovereign | Enterprise Pharmacy ERP</title>
+    <title>APEX | Total Enterprise Sovereignty</title>
     <!-- PRODUCTION LIBRARIES -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; background-color: #020617; color: white; }
         .active-tab { background: #10b981 !important; color: white !important; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        .glass-card { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
+        .modal-overlay { background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); }
+        .edit-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 2rem; }
     </style>
 </head>
 <body>
-    <div id="apex-root">
-        <div class="h-screen flex flex-col items-center justify-center bg-slate-950">
-            <h1 class="text-5xl font-black text-emerald-500 animate-pulse italic">APEX</h1>
-            <p class="text-slate-500 mt-4 font-bold uppercase tracking-[0.5em]">Sovereign Cloud ERP Booting...</p>
-        </div>
-    </div>
+    <div id="apex-root"></div>
 
     <!-- 1. CLOUD ENGINE (FIREBASE) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // !!! REPLACE WITH YOUR FIREBASE CONFIG !!!
         const firebaseConfig = {
             apiKey: "AIzaSyAAazqZ1XnzpQ6A_cCHyQEsgXxq5jVVLXE",
             authDomain: "apex-pharmacy-a69b5.firebaseapp.com",
@@ -45,34 +39,35 @@
 
         const app = initializeApp(firebaseConfig);
         window.db = getFirestore(app);
-        window.api = { collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy, limit };
+        window.api = { collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy };
     </script>
 
     <!-- 2. APEX APPLICATION LOGIC -->
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect } = React;
 
         const App = () => {
             const [view, setView] = useState('DASHBOARD');
             const [user, setUser] = useState(null);
-            const [data, setData] = useState({ inventory: [], sales: [], users: [], patients: [], expenses: [], categories: ['Medicine', 'Supplies', 'Cosmetic'] });
+            const [data, setData] = useState({ inventory: [], sales: [], users: [], patients: [], expenses: [] });
             const [cart, setCart] = useState([]);
             const [search, setSearch] = useState("");
-            const [reportTime, setReportTime] = useState('daily');
-            const [isDarkMode, setIsDarkMode] = useState(true);
+            
+            // Edit State
+            const [editing, setEditing] = useState(null); // { type: 'PRODUCT'|'PATIENT'|'USER', item: {} }
+            const [checkoutModal, setCheckoutModal] = useState(false);
 
-            // REAL-TIME CLOUD SYNC
+            // REAL-TIME SYNC
             useEffect(() => {
                 if (!window.db) return;
-                const u1 = window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setData(p => ({...p, inventory: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u2 = window.api.onSnapshot(window.api.collection(window.db, "sales"), (s) => setData(p => ({...p, sales: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u3 = window.api.onSnapshot(window.api.collection(window.db, "patients"), (s) => setData(p => ({...p, patients: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u4 = window.api.onSnapshot(window.api.collection(window.db, "expenses"), (s) => setData(p => ({...p, expenses: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u5 = window.api.onSnapshot(window.api.collection(window.db, "users"), (s) => setData(p => ({...p, users: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                return () => { u1(); u2(); u3(); u4(); u5(); };
+                const unsubInv = window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setData(p => ({...p, inventory: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const unsubSales = window.api.onSnapshot(window.api.collection(window.db, "sales"), (s) => setData(p => ({...p, sales: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const unsubPatients = window.api.onSnapshot(window.api.collection(window.db, "patients"), (s) => setData(p => ({...p, patients: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const unsubUsers = window.api.onSnapshot(window.api.collection(window.db, "users"), (s) => setData(p => ({...p, users: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                return () => { unsubInv(); unsubSales(); unsubPatients(); unsubUsers(); };
             }, []);
 
-            // PERMISSIONS & ROLES
+            // PERMISSIONS
             const hasAccess = (level) => {
                 const roles = { 'MANAGER': 4, 'PHARMACIST': 3, 'TECHNICIAN': 2, 'ASSISTANT': 1, 'DISPENSER': 0 };
                 return roles[user?.role] >= roles[level];
@@ -84,27 +79,41 @@
                 const p = document.getElementById('p_box').value.trim();
                 const q = window.api.query(window.api.collection(window.db, "users"), window.api.where("username", "==", u), window.api.where("pin", "==", p));
                 const snap = await window.api.getDocs(q);
-                if (!snap.empty) { setUser(snap.docs[0].data()); setView('DASHBOARD'); }
-                else alert("Access Denied: Invalid Personnel Credentials");
+                if (!snap.empty) { setUser({ id: snap.docs[0].id, ...snap.docs[0].data() }); setView('DASHBOARD'); }
+                else alert("Unauthorized Access");
             };
 
             // POS FUNCTIONS
-            const handleAddToCart = (p) => {
+            const addToCart = (p) => {
                 setCart(prev => {
                     const ex = prev.find(i => i.id === p.id);
                     if (ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
-                    return [...prev, {...p, qty: 1}];
+                    return [...prev, {...p, qty: 1, currentPrice: p.price}];
                 });
             };
 
-            const finalizeSale = async () => {
-                const total = cart.reduce((s,i)=>s+(i.price*i.qty),0);
-                const totalCost = cart.reduce((s,i)=>s+(i.costPrice*i.qty),0);
-                await window.api.addDoc(window.api.collection(window.db, "sales"), { 
-                    total, profit: total-totalCost, timestamp: new Date().toISOString(), soldBy: user.username, items: cart 
-                });
+            const updateCartItem = (id, field, val) => {
+                setCart(prev => prev.map(i => i.id === id ? {...i, [field]: val} : i));
+            };
+
+            const finalizeSale = async (paymentMethod, patientId = null) => {
+                const total = cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0);
+                const saleData = {
+                    total, timestamp: new Date().toISOString(), soldBy: user.username, method: paymentMethod, items: cart
+                };
+                await window.api.addDoc(window.api.collection(window.db, "sales"), saleData);
+                
+                // If payment is DEBT, add to patient ledger
+                if (paymentMethod === 'DEBT' && patientId) {
+                    const pt = data.patients.find(p => p.id === patientId);
+                    await window.api.updateDoc(window.api.doc(window.db, "patients", patientId), { 
+                        creditBalance: (pt.creditBalance || 0) + total 
+                    });
+                }
+
+                // Stock deduction
                 for(const i of cart) await window.api.updateDoc(window.api.doc(window.db, "inventory", i.id), { stock: i.stock - i.qty });
-                setCart([]); alert("Transaction Authorized");
+                setCart([]); setCheckoutModal(false); alert("Sale Authorized");
             };
 
             // --- UI RENDER: LOGIN ---
@@ -112,11 +121,11 @@
                 return (
                     <div className="h-screen flex items-center justify-center bg-black">
                         <div className="bg-slate-900 p-12 rounded-[4rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
-                            <h1 className="text-5xl font-black text-emerald-500 mb-2 italic tracking-tighter underline underline-offset-8 decoration-emerald-800">APEX</h1>
-                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-12 tracking-[0.3em]">Pharmacy Vault Access</p>
+                            <h1 className="text-5xl font-black text-emerald-500 mb-2 italic">APEX</h1>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-12 tracking-[0.3em]">Pharmacy Sovereign ERP</p>
                             <input id="u_box" placeholder="Username" className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold" />
                             <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[1em]" />
-                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95">AUTHORIZE</button>
+                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg active:scale-95 transition-all">SIGN IN</button>
                         </div>
                     </div>
                 );
@@ -126,214 +135,217 @@
                 <div className="flex h-screen overflow-hidden bg-slate-950">
                     {/* SIDEBAR */}
                     <aside className="w-72 bg-black border-r border-slate-800 p-8 flex flex-col shrink-0">
-                        <div className="flex items-center gap-3 mb-10">
-                            <div className="w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black">A</div>
-                            <h2 className="text-xl font-black tracking-tighter uppercase italic">Apex Pro</h2>
-                        </div>
+                        <h2 className="text-2xl font-black text-emerald-500 italic mb-10 tracking-tighter">APEX PRO</h2>
                         <nav className="flex-1 space-y-1 overflow-y-auto no-scrollbar">
-                            <SidebarItem id="DASHBOARD" label="Dashboard" icon={lucide.LayoutDashboard} active={view} onClick={setView} />
-                            <SidebarItem id="POS" label="Point of Sale" icon={lucide.ShoppingCart} active={view} onClick={setView} />
-                            {hasAccess('TECHNICIAN') && <SidebarItem id="STOO" label="Inventory Vault" icon={lucide.Package} active={view} onClick={setView} />}
-                            <SidebarItem id="PATIENTS" label="Patients" icon={lucide.Users} active={view} onClick={setView} />
-                            <SidebarItem id="FINANCE" label="Financials" icon={lucide.BarChart3} active={view} onClick={setView} />
-                            <SidebarItem id="GUIDE" label="Med Guide" icon={lucide.BookOpen} active={view} onClick={setView} />
-                            {hasAccess('MANAGER') && <SidebarItem id="USERS" label="Personnel" icon={lucide.ShieldCheck} active={view} onClick={setView} />}
+                            <NavBtn id="DASHBOARD" label="Dashboard" icon={lucide.LayoutDashboard} active={view} onClick={setView} />
+                            <NavBtn id="POS" label="Point of Sale" icon={lucide.ShoppingCart} active={view} onClick={setView} />
+                            {hasAccess('TECHNICIAN') && <NavBtn id="STOO" label="Inventory" icon={lucide.Package} active={view} onClick={setView} />}
+                            <NavBtn id="PATIENTS" label="Patients" icon={lucide.Users} active={view} onClick={setView} />
+                            {hasAccess('MANAGER') && <NavBtn id="USERS" label="Personnel" icon={lucide.ShieldCheck} active={view} onClick={setView} />}
+                            <NavBtn id="SETTINGS" label="Settings" icon={lucide.Settings} active={view} onClick={setView} />
                         </nav>
-                        <button onClick={()=>window.location.reload()} className="text-rose-500 font-bold text-[10px] uppercase tracking-widest mt-10">Terminate Session</button>
+                        <button onClick={()=>window.location.reload()} className="text-rose-500 font-bold text-[10px] uppercase mt-10">Logout</button>
                     </aside>
 
-                    {/* MAIN CONTENT AREA */}
-                    <main className="flex-1 p-10 overflow-auto no-scrollbar bg-slate-950">
-                        {view === 'DASHBOARD' && <Dashboard data={data} />}
-                        {view === 'POS' && <POS inventory={data.inventory} cart={cart} addToCart={handleAddToCart} setCart={setCart} search={search} setSearch={setSearch} finalize={finalizeSale} />}
-                        {view === 'STOO' && <Inventory data={data} refresh={()=>refresh()} />}
-                        {view === 'PATIENTS' && <Patients patients={data.patients} />}
-                        {view === 'FINANCE' && <Finance data={data} time={reportTime} setTime={setReportTime} />}
-                        {view === 'GUIDE' && <Guide inventory={data.inventory} />}
-                        {view === 'USERS' && <Users users={data.users} />}
+                    {/* MAIN */}
+                    <main className="flex-1 p-10 overflow-auto no-scrollbar relative">
+                        
+                        {view === 'DASHBOARD' && (
+                            <div className="animate-in fade-in duration-700">
+                                <h2 className="text-4xl font-black mb-10 tracking-tighter italic decoration-emerald-500 underline underline-offset-8">Command Center</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <StatCard label="Today Revenue" value={data.sales.filter(s=>s.timestamp.startsWith(new Date().toISOString().split('T')[0])).reduce((a,b)=>a+b.total,0).toLocaleString()} sub="TZS" color="text-emerald-400" border="border-emerald-500" />
+                                    <StatCard label="Stock Wealth" value={data.inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0).toLocaleString()} sub="At Cost" color="text-blue-400" border="border-blue-500" />
+                                    <StatCard label="Patients" value={data.patients.length} sub="Files" color="text-indigo-400" border="border-indigo-500" />
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'POS' && (
+                            <div className="flex gap-8 h-full animate-in slide-in-from-bottom duration-500">
+                                <div className="flex-1 space-y-6 overflow-y-auto no-scrollbar px-1">
+                                    <input placeholder="Search brand, generic or symptoms..." className="w-full p-6 bg-slate-900 border border-slate-800 rounded-[2rem] text-xl font-bold outline-none focus:ring-2 ring-emerald-500 shadow-xl" onChange={(e)=>setSearch(e.target.value.toLowerCase())} />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {data.inventory.filter(p => p.brandName.toLowerCase().includes(search) || (p.symptoms && p.symptoms.toLowerCase().includes(search))).map(p => (
+                                            <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer active:scale-95 transition-all shadow-xl">
+                                                <div className="flex justify-between mb-4"><span className="text-[9px] font-black uppercase text-slate-500">{p.category}</span><span className="text-[10px] font-black text-emerald-500">STK: {p.stock}</span></div>
+                                                <p className="font-black text-xl mb-1">{p.brandName}</p>
+                                                <p className="text-2xl font-black text-emerald-400">{Number(p.price).toLocaleString()} <span className="text-xs">TZS</span></p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="w-96 bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-2xl h-fit border-t-8 border-emerald-600 sticky top-0 flex flex-col">
+                                    <h3 className="font-black text-2xl mb-8 tracking-tighter uppercase underline decoration-emerald-500">Cart</h3>
+                                    <div className="space-y-4 mb-8 overflow-auto max-h-64 no-scrollbar px-1 font-bold">
+                                        {cart.map(i => (
+                                            <div key={i.id} className="flex justify-between items-center border-b border-slate-100 pb-4">
+                                                <div className="flex-1"><p className="text-sm font-bold uppercase">{i.brandName}</p></div>
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <input type="number" value={i.qty} onChange={(e)=>updateCartItem(i.id, 'qty', parseInt(e.target.value))} className="w-16 p-1 bg-slate-50 rounded text-center font-black text-emerald-600 outline-none border border-slate-200" />
+                                                    <input type="number" value={i.currentPrice} onChange={(e)=>updateCartItem(i.id, 'currentPrice', Number(e.target.value))} className="w-24 p-1 bg-slate-50 rounded text-right font-black text-slate-400 text-xs outline-none border border-slate-200" />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="flex justify-between font-black text-4xl mb-10 tracking-tighter text-emerald-600"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.currentPrice*i.qty),0).toLocaleString()}</span></div>
+                                    <button onClick={()=>setCheckoutModal(true)} className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black text-xl shadow-lg hover:bg-black active:scale-95 transition-all">PAYMENT</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'STOO' && (
+                            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 shadow-sm">
+                                <div className="flex justify-between items-center mb-10">
+                                    <h2 className="text-3xl font-black text-emerald-500 uppercase tracking-widest">Inventory Ledger</h2>
+                                    <button onClick={()=>setEditing({ type: 'PRODUCT', item: {} })} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:scale-105 transition-all">+ Add Stock</button>
+                                </div>
+                                <table className="w-full text-left">
+                                    <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th>Brand</th><th>Category</th><th>Stock</th><th>Margin</th><th className="text-right">Price</th><th className="text-right">Edit</th></tr></thead>
+                                    <tbody className="font-bold">{data.inventory.map(p => (
+                                        <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50 transition-all">
+                                            <td className="py-6"><p className="font-black text-white">{p.brandName}</p><p className="text-[9px] text-slate-500 uppercase">{p.genericName}</p></td>
+                                            <td><span className="text-[9px] bg-slate-800 px-2 py-1 rounded text-slate-400 font-black uppercase">{p.category}</span></td>
+                                            <td className={p.stock < 10 ? 'text-rose-500 underline' : 'text-slate-300'}>{p.stock}</td>
+                                            <td className="text-emerald-500 text-xs font-black">{(((p.price-p.costPrice)/p.price)*100).toFixed(0)}%</td>
+                                            <td className="text-right text-emerald-400 text-xl font-black">{Number(p.price).toLocaleString()}</td>
+                                            <td className="text-right"><button onClick={()=>setEditing({type:'PRODUCT', item: p})} className="text-blue-500 text-[10px] font-black underline uppercase">Modify</button></td>
+                                        </tr>
+                                    ))}</tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {view === 'PATIENTS' && (
+                            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800">
+                                <div className="flex justify-between items-center mb-10">
+                                    <h2 className="text-3xl font-black text-blue-500 uppercase tracking-tighter">Patient Registry</h2>
+                                    <button onClick={()=>setEditing({type:'PATIENT', item: {}})} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg">+ Register New File</button>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {data.patients.map(pt => (
+                                        <div key={pt.id} className="p-8 bg-black rounded-[3rem] border border-slate-800 flex justify-between items-center group hover:border-blue-500 transition-all shadow-xl">
+                                            <div>
+                                                <h4 className="font-black text-xl text-white uppercase tracking-tighter">{pt.name}</h4>
+                                                <p className="text-xs text-slate-500 font-bold uppercase mt-1 tracking-widest">ID: {pt.cardId} • {pt.phone}</p>
+                                                <p className="text-[10px] text-slate-700 italic mt-2">{pt.address || "No address provided"}</p>
+                                            </div>
+                                            <button onClick={()=>setEditing({type:'PATIENT', item: pt})} className="text-blue-400 text-xs font-black uppercase underline">Manage</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ==========================================
+                            MODALS (FOR EDITING EVERYTHING)
+                        ========================================== */}
+                        {editing && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+                                <div className="edit-card w-full max-w-xl p-10 shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar">
+                                    <h3 className="text-2xl font-black mb-8 text-emerald-500 uppercase tracking-tighter">Edit {editing.type} Profile</h3>
+                                    <form onSubmit={async (e)=>{
+                                        e.preventDefault();
+                                        const d = new FormData(e.target);
+                                        const finalObj = Object.fromEntries(d.entries());
+                                        
+                                        if (editing.type === 'PRODUCT') {
+                                            const payload = { 
+                                                brandName: finalObj.brand.toUpperCase(), 
+                                                genericName: finalObj.generic, 
+                                                price: Number(finalObj.price), 
+                                                costPrice: Number(finalObj.cost), 
+                                                stock: Number(finalObj.stock), 
+                                                category: finalObj.category,
+                                                symptoms: finalObj.symptoms 
+                                            };
+                                            if (editing.item.id) await window.api.updateDoc(window.api.doc(window.db, "inventory", editing.item.id), payload);
+                                            else await window.api.addDoc(window.api.collection(window.db, "inventory"), payload);
+                                        } else if (editing.type === 'PATIENT') {
+                                            const payload = { name: finalObj.name.toUpperCase(), phone: finalObj.phone, cardId: finalObj.cardId, address: finalObj.address };
+                                            if (editing.item.id) await window.api.updateDoc(window.api.doc(window.db, "patients", editing.item.id), payload);
+                                            else await window.api.addDoc(window.api.collection(window.db, "patients"), { ...payload, creditBalance: 0 });
+                                        }
+
+                                        setEditing(null); alert("Sync Successful");
+                                    }} className="space-y-6">
+                                        {editing.type === 'PRODUCT' && (
+                                            <div className="space-y-4">
+                                                <input name="brand" defaultValue={editing.item.brandName} placeholder="Brand Name" className="w-full p-4 bg-slate-800 rounded-2xl outline-none" required />
+                                                <input name="generic" defaultValue={editing.item.genericName} placeholder="Generic Name" className="w-full p-4 bg-slate-800 rounded-2xl outline-none" />
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <input name="stock" type="number" defaultValue={editing.item.stock} placeholder="Stock" className="p-4 bg-slate-800 rounded-2xl outline-none text-emerald-400 font-black" required />
+                                                    <select name="category" defaultValue={editing.item.category} className="p-4 bg-slate-800 rounded-2xl outline-none">
+                                                        <option>Medicine</option><option>Supplies</option><option>Cosmetic</option>
+                                                    </select>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <input name="price" type="number" defaultValue={editing.item.price} placeholder="Sell Price" className="p-4 bg-slate-800 rounded-2xl outline-none font-black" required />
+                                                    <input name="cost" type="number" defaultValue={editing.item.costPrice} placeholder="Cost Price" className="p-4 bg-slate-800 rounded-2xl outline-none opacity-50" required />
+                                                </div>
+                                                <textarea name="symptoms" defaultValue={editing.item.symptoms} placeholder="Symptoms (e.g. fever, headache)" className="w-full p-4 bg-slate-800 rounded-2xl outline-none h-24 text-sm"></textarea>
+                                            </div>
+                                        )}
+                                        {editing.type === 'PATIENT' && (
+                                            <div className="space-y-4">
+                                                <input name="name" defaultValue={editing.item.name} placeholder="Patient Full Name" className="w-full p-4 bg-slate-800 rounded-2xl outline-none" required />
+                                                <input name="phone" defaultValue={editing.item.phone} placeholder="Phone Number" className="w-full p-4 bg-slate-800 rounded-2xl outline-none" />
+                                                <input name="cardId" defaultValue={editing.item.cardId} placeholder="Insurance ID / Card ID" className="w-full p-4 bg-slate-800 rounded-2xl outline-none" />
+                                                <input name="address" defaultValue={editing.item.address} placeholder="Home Address / Contacts" className="w-full p-4 bg-slate-800 rounded-2xl outline-none" />
+                                            </div>
+                                        )}
+                                        <div className="flex gap-4 pt-6">
+                                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-5 rounded-3xl font-black shadow-lg uppercase text-xs">Commit Changes</button>
+                                            <button type="button" onClick={()=>setEditing(null)} className="p-5 bg-slate-800 rounded-3xl font-bold uppercase text-[10px]">Close</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* PAYMENTS MODAL */}
+                        {checkoutModal && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+                                <div className="edit-card w-full max-w-sm p-10 shadow-2xl text-center">
+                                    <h3 className="text-2xl font-black mb-8 text-emerald-500 uppercase tracking-tighter italic">Finalize Bill</h3>
+                                    <div className="space-y-3 mb-10">
+                                        <button onClick={()=>finalizeSale('CASH')} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black">💰 CASH PAYMENT</button>
+                                        <button onClick={()=>{
+                                            const id = prompt("Enter Patient Card ID for Debt Tracking:");
+                                            const pt = data.patients.find(p=>p.cardId === id);
+                                            if(pt) finalizeSale('DEBT', pt.id); else alert("Patient not found!");
+                                        }} className="w-full py-4 bg-rose-600 text-white rounded-2xl font-black">📓 DEBT (DENI)</button>
+                                        <button onClick={()=>finalizeSale('BONUS')} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black">🎁 BONUS / REWARD</button>
+                                    </div>
+                                    <button onClick={()=>setCheckoutModal(false)} className="text-slate-500 font-bold uppercase text-[10px]">Cancel</button>
+                                </div>
+                            </div>
+                        )}
                     </main>
                 </div>
             );
         };
 
-        // --- COMPONENTS ---
-
-        const SidebarItem = ({ id, label, icon: Icon, active, onClick }) => (
-            <button onClick={() => onClick(id)} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${active === id ? 'active-tab' : 'text-slate-500 hover:bg-slate-900'}`}>
-                <Icon size={18} /> <span>{label}</span>
+        // NAV HELPERS
+        const NavBtn = ({ id, label, icon: Icon, active, onClick }) => (
+            <button onClick={() => onClick(id)} className={`w-full flex items-center gap-4 p-4 rounded-3xl transition-all duration-300 group ${active === id ? 'active-tab translate-x-2' : 'text-slate-500 hover:bg-slate-900'}`}>
+                <Icon size={22} className={active === id ? 'text-white' : 'group-hover:text-emerald-500'} />
+                <span className="font-black text-[10px] uppercase tracking-widest">{label}</span>
             </button>
         );
 
-        const Dashboard = ({ data }) => {
-            const revenue = data.sales.reduce((a,b)=>a+b.total,0);
-            const profit = data.sales.reduce((a,b)=>a+(b.profit||0),0);
-            const stockValue = data.inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0);
-            return (
-                <div className="animate-in fade-in duration-700 space-y-10">
-                    <h2 className="text-4xl font-black mb-8 tracking-tighter">Enterprise Overview</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <StatCard label="Cloud Revenue" value={revenue.toLocaleString()} sub="TZS" color="text-emerald-400" border="border-emerald-500" />
-                        <StatCard label="Inventory Wealth" value={stockValue.toLocaleString()} sub="At Cost" color="text-blue-400" border="border-blue-500" />
-                        <StatCard label="Estimated Profit" value={profit.toLocaleString()} sub="Gross" color="text-indigo-400" border="border-indigo-500" />
-                    </div>
-                </div>
-            );
-        };
-
-        const POS = ({ inventory, cart, addToCart, setCart, search, setSearch, finalize }) => (
-            <div className="flex gap-8 h-full animate-in slide-in-from-bottom duration-500">
-                <div className="flex-1 space-y-6 overflow-y-auto no-scrollbar">
-                    <input placeholder="Search disease, symptoms or generic..." className="w-full p-6 bg-slate-900 border border-slate-800 rounded-[2rem] text-xl font-bold outline-none focus:ring-2 ring-emerald-500 shadow-xl" onChange={(e)=>setSearch(e.target.value.toLowerCase())} />
-                    <div className="grid grid-cols-2 gap-4">
-                        {inventory.filter(p => p.brandName?.toLowerCase().includes(search) || (p.symptoms && p.symptoms.toLowerCase().includes(search))).map(p => (
-                            <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer active:scale-95 transition-all shadow-xl">
-                                <div className="flex justify-between mb-4"><span className="text-[9px] font-black uppercase text-slate-500">{p.category}</span><span className={`text-[10px] font-black px-2 py-1 rounded-lg ${p.stock < 10 ? 'bg-rose-900 text-rose-300 animate-pulse':'bg-emerald-900 text-emerald-300'}`}>STK: {p.stock}</span></div>
-                                <h4 className="font-black text-xl mb-1 tracking-tighter uppercase italic">{p.brandName}</h4>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase mb-4">{p.strength} • {p.genericName}</p>
-                                <p className="text-2xl font-black text-emerald-400">{Number(p.price).toLocaleString()} <span className="text-xs">TZS</span></p>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-                <div className="w-96 bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-2xl h-fit border-t-8 border-emerald-600 sticky top-0 flex flex-col shrink-0">
-                    <h3 className="font-black text-2xl mb-8 tracking-tighter uppercase underline decoration-emerald-500 decoration-4 underline-offset-8">Cart</h3>
-                    <div className="space-y-4 mb-8 overflow-auto max-h-64 no-scrollbar px-1 font-bold">
-                        {cart.map(i => (
-                            <div key={i.id} className="flex justify-between items-center border-b border-slate-100 pb-4">
-                                <div className="flex-1"><p className="text-sm uppercase">{i.brandName}</p><p className="text-[10px] opacity-40">{i.price} / unit</p></div>
-                                <input type="number" value={i.qty} onChange={(e)=>{
-                                    const val = parseInt(e.target.value);
-                                    setCart(cart.map(x => x.id === i.id ? {...x, qty: val || 0} : x));
-                                }} className="w-16 p-2 bg-slate-100 rounded-xl text-center font-black text-emerald-600 outline-none border-2 border-emerald-100" />
-                            </div>
-                        ))}
-                    </div>
-                    <div className="flex justify-between font-black text-4xl mb-10 tracking-tighter text-emerald-600"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.price*i.qty),0).toLocaleString()}</span></div>
-                    <div className="grid grid-cols-2 gap-2"><button onClick={()=>finalize('CASH')} className="bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-700 transition-all active:scale-95">CASH</button><button onClick={()=>finalize('MOBILE')} className="bg-blue-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-blue-700 transition-all active:scale-95">MOBILE</button></div>
-                </div>
-            </div>
-        );
-
-        const Inventory = ({ data, refresh }) => {
-            const addProduct = async () => {
-                const n = prompt("Brand:"); const g = prompt("Generic:"); const s = prompt("Symptoms:"); const st = prompt("Strength:"); const c = prompt("Cost:"); const p = prompt("Price:"); const q = prompt("Qty:"); const cat = prompt("Category (Medicine/Supplies/Cosmetic):"); const e = prompt("Expiry (YYYY-MM-DD):");
-                if(n) await window.api.addDoc(window.api.collection(window.db, "inventory"), { brandName:n.toUpperCase(), genericName:g, symptoms:s, strength:st, costPrice:Number(c), price:Number(p), stock:Number(q), category:cat, expiryDate:e });
-            };
-            return (
-                <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in fade-in duration-500">
-                    <div className="flex justify-between items-center mb-10">
-                        <h2 className="text-3xl font-black text-emerald-500 uppercase tracking-widest italic">Inventory Vault</h2>
-                        <button onClick={addProduct} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:scale-105 transition-all text-[10px] tracking-widest uppercase">+ Add Stock</button>
-                    </div>
-                    <table className="w-full text-left">
-                        <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th>Product Family</th><th>Category</th><th>Stock</th><th>Valuation</th><th className="text-right">Price</th></tr></thead>
-                        <tbody className="font-bold">{data.inventory.map(p => (
-                            <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50 transition-all group">
-                                <td className="py-6"><p className="font-black text-white">{p.brandName}</p><p className="text-[9px] text-slate-500 uppercase font-black tracking-widest">{p.genericName} • {p.strength}</p></td>
-                                <td><span className="text-[8px] bg-slate-800 text-slate-400 px-2 py-1 rounded-full uppercase font-black">{p.category}</span></td>
-                                <td className={p.stock < 10 ? 'text-rose-500 underline':'text-slate-300'}>{p.stock}</td>
-                                <td className="text-emerald-500 text-xs font-black">{(p.costPrice * p.stock).toLocaleString()} <span className="opacity-40">TZS</span></td>
-                                <td className="text-right text-emerald-400 text-xl font-black tracking-tighter">
-                                    <button onClick={async()=>{
-                                        const newPrice = prompt("Update Selling Price:", p.price);
-                                        if(newPrice) await window.api.updateDoc(window.api.doc(window.db, "inventory", p.id), { price: Number(newPrice) });
-                                    }}>{Number(p.price).toLocaleString()}</button>
-                                </td>
-                            </tr>
-                        ))}</tbody>
-                    </table>
-                </div>
-            );
-        };
-
-        const Patients = ({ patients }) => (
-            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in fade-in duration-500 h-full overflow-y-auto no-scrollbar">
-                <div className="flex justify-between items-center mb-10">
-                    <h2 className="text-3xl font-black text-blue-500 uppercase tracking-tighter italic underline decoration-blue-900 underline-offset-8">Patient Registry</h2>
-                    <button onClick={async ()=>{
-                        const n = prompt("Name:"), p = prompt("Phone:"), e = prompt("Email:"), a = prompt("Address:"), c = prompt("ID Card:");
-                        if(n) await window.api.addDoc(window.api.collection(window.db, "patients"), { name:n.toUpperCase(), phone:p, email:e, address:a, cardId:c, creditBalance: 0 });
-                    }} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-[10px] tracking-widest">+ New File</button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {patients.map(pt => (
-                        <div key={pt.id} className="p-8 bg-black rounded-[3rem] border border-slate-800 flex justify-between items-center group hover:border-blue-500 transition-all shadow-xl">
-                            <div><h4 className="font-black text-xl text-white group-hover:text-blue-400 transition-colors uppercase italic">{pt.name}</h4><p className="text-xs text-slate-500 font-bold uppercase mt-1">ID: {pt.cardId} • {pt.phone}</p><p className="text-[10px] text-slate-700 italic mt-1">{pt.email}</p></div>
-                            <button onClick={async()=>{ if(confirm("Purge file?")) await window.api.deleteDoc(window.api.doc(window.db, "patients", pt.id)) }} className="opacity-0 group-hover:opacity-100 text-rose-500"><lucide.Trash size={18}/></button>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-
-        const Finance = ({ data, time, setTime }) => {
-            const revenue = data.sales.reduce((a,b)=>a+b.total,0);
-            const expenses = data.expenses.reduce((a,b)=>a+b.amount,0);
-            return (
-                <div className="animate-in fade-in duration-500 space-y-10">
-                    <div className="flex justify-between items-center"><h2 className="text-3xl font-black tracking-tighter uppercase italic decoration-emerald-500 underline underline-offset-8">Financial Ledger</h2><div className="flex gap-2 bg-slate-900 p-1 rounded-2xl">{['daily', 'weekly', 'monthly', 'annual'].map(t=>(<button key={t} onClick={()=>setTime(t)} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest ${time===t?'bg-emerald-600 text-white':'text-slate-500'}`}>{t}</button>))}</div></div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-                        <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 shadow-2xl"><p className="text-[10px] font-black opacity-30 uppercase mb-4 tracking-widest">Gross Revenue</p><p className="text-4xl font-black text-emerald-400">{revenue.toLocaleString()}</p></div>
-                        <div className="bg-white text-slate-900 p-10 rounded-[3.5rem] shadow-xl"><p className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest italic">Consumption (Bills)</p><p className="text-4xl font-black text-rose-500">{expenses.toLocaleString()}</p></div>
-                        <div className="bg-emerald-600 p-10 rounded-[3.5rem] shadow-2xl"><p className="text-[10px] font-black opacity-70 uppercase mb-4 tracking-widest text-white italic">Net Profit</p><p className="text-4xl font-black text-white">{(revenue - expenses).toLocaleString()}</p></div>
-                    </div>
-                    <button onClick={async ()=>{
-                        const c = prompt("Category (LUKU/Meal/Sewage/Bundle):"), a = prompt("Amount:"), d = prompt("Description:");
-                        if(c) await window.api.addDoc(window.api.collection(window.db, "expenses"), { category:c, amount:Number(a), description:d, date: new Date().toISOString() });
-                    }} className="bg-emerald-600 text-white px-8 py-4 rounded-[2rem] font-black shadow-lg uppercase text-[10px] tracking-widest">Record Consumption</button>
-                </div>
-            );
-        };
-
-        const Guide = ({ inventory }) => (
-            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 h-full overflow-y-auto no-scrollbar animate-in fade-in duration-500">
-                <h2 className="text-3xl font-black mb-10 tracking-tighter uppercase italic decoration-emerald-500 underline underline-offset-8">Clinical Intelligence</h2>
-                <div className="space-y-6">
-                    {inventory.map(p => (
-                        <div key={p.id} className="p-8 bg-black rounded-[2.5rem] border border-slate-800 group hover:border-emerald-500 transition-all">
-                            <h4 className="text-emerald-400 font-black text-3xl uppercase italic tracking-tighter mb-4">{p.brandName}</h4>
-                            <p className="text-xs text-slate-500 font-bold uppercase mb-2 italic tracking-widest">Indications & Counseling</p>
-                            <p className="text-sm italic text-slate-300 leading-relaxed font-bold">"{p.symptoms || "Please consult MoH Standard Treatment Guidelines for specific protocols."}"</p>
-                            <div className="mt-8 p-6 bg-emerald-950/20 border border-emerald-900/30 rounded-3xl"><p className="text-[10px] font-black text-emerald-600 uppercase mb-2 italic tracking-tighter">Dispensing Auxiliary Label (SW)</p><p className="text-xs text-emerald-300 font-bold uppercase tracking-widest">Meza kipimo kimoja mara tatu kwa siku baada ya chakula. Maliza dozi yote kuzuia usugu wa dawa.</p></div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-
-        const Users = ({ users }) => (
-            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in slide-in-from-right duration-500 h-full overflow-y-auto no-scrollbar">
-                <h2 className="text-3xl font-black mb-10 tracking-tighter uppercase italic decoration-emerald-500 underline underline-offset-8">Authorized Personnel</h2>
-                <div className="space-y-4">
-                    {users.map(u => (
-                        <div key={u.id} className="bg-black p-6 rounded-[2rem] border border-slate-800 flex justify-between items-center group hover:border-emerald-500 transition-all shadow-xl">
-                            <div><p className="font-black text-xl text-white tracking-tighter uppercase italic underline decoration-slate-800 underline-offset-4">{u.username}</p><p className="text-[10px] text-slate-600 font-black uppercase tracking-widest mt-2">{u.role}</p></div>
-                            <div className="flex gap-4">
-                                <select className="bg-slate-900 text-[10px] font-black px-4 py-2 rounded-xl outline-none border border-slate-800" onChange={async (e)=>{
-                                    await window.api.updateDoc(window.api.doc(window.db, "users", u.id), { role: e.target.value });
-                                }} value={u.role}>
-                                    <option>MANAGER</option><option>PHARMACIST</option><option>TECHNICIAN</option><option>ASSISTANT</option><option>DISPENSER</option>
-                                </select>
-                                <button className={`px-6 py-2 rounded-xl font-bold text-[10px] tracking-widest transition-all ${u.status === 'ACTIVE' ? 'bg-emerald-900 text-emerald-400':'bg-rose-900 text-rose-400'}`}>{u.status}</button>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-
         const StatCard = ({ label, value, sub, color, border }) => (
-            <div className={`bg-slate-900 p-10 rounded-[3rem] border ${border} shadow-2xl hover:shadow-emerald-500/10 transition-all group relative overflow-hidden`}>
-                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4 italic tracking-widest">{label}</p>
-                <h3 className={`text-5xl font-black tracking-tighter ${color} relative z-10`}>{value} <span className="text-sm font-normal opacity-30 text-white uppercase ml-2">{sub}</span></h3>
+            <div className={`bg-slate-900 p-10 rounded-[3.5rem] border ${border} shadow-2xl hover:shadow-emerald-500/10 transition-all`}>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4 italic">{label}</p>
+                <h3 className={`text-5xl font-black tracking-tighter ${color}`}>{value} <span className="text-sm font-normal opacity-30 text-white uppercase">{sub}</span></h3>
             </div>
         );
 
-        const bootCheck = setInterval(() => {
+        const boot = setInterval(() => {
             if (window.db) {
                 const root = ReactDOM.createRoot(document.getElementById('apex-root'));
                 root.render(<App />);
-                clearInterval(bootCheck);
+                clearInterval(boot);
             }
         }, 500);
     </script>
