@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>APEX | Sovereign Enterprise ERP</title>
-    <!-- STABLE PRODUCTION LIBRARIES -->
+    <!-- PRODUCTION LIBRARIES -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -12,18 +12,14 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; background-color: #020617; color: white; overflow: hidden; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; background-color: #020617; color: white; }
         .active-tab { background: #10b981 !important; color: white !important; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        .glass-modal { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
     </style>
 </head>
 <body>
-    <div id="apex-root">
-        <div style="height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #020617; color: #10b981;">
-            <h1 style="font-size: 3rem; font-weight: 900; font-style: italic; letter-spacing: -2px;">APEX</h1>
-            <p style="color: #64748b; margin-top: 10px; font-weight: bold; letter-spacing: 4px;">INITIALIZING SECURE VAULT...</p>
-        </div>
-    </div>
+    <div id="apex-root"></div>
 
     <!-- 1. CLOUD ENGINE (FIREBASE) -->
     <script type="module">
@@ -52,174 +48,159 @@
         const App = () => {
             const [view, setView] = useState('DASHBOARD');
             const [user, setUser] = useState(null);
-            const [inventory, setInventory] = useState([]);
-            const [sales, setSales] = useState([]);
-            const [patients, setPatients] = useState([]);
-            const [users, setUsers] = useState([]);
-            const [expenses, setExpenses] = useState([]);
+            const [data, setData] = useState({ inventory: [], sales: [], users: [] });
             const [cart, setCart] = useState([]);
-            const [search, setSearch] = useState("");
+            const [editItem, setEditItem] = useState(null); // Track item being modified
 
-            // --- DATA LOADERS (bulletproof) ---
             useEffect(() => {
                 if (!window.db) return;
-                const unsubInv = window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setInventory(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                const unsubSales = window.api.onSnapshot(window.api.collection(window.db, "sales"), (s) => setSales(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                const unsubPatients = window.api.onSnapshot(window.api.collection(window.db, "patients"), (s) => setPatients(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                const unsubUsers = window.api.onSnapshot(window.api.collection(window.db, "users"), (s) => setUsers(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                const unsubExp = window.api.onSnapshot(window.api.collection(window.db, "expenses"), (s) => setExpenses(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                return () => { unsubInv(); unsubSales(); unsubPatients(); unsubUsers(); unsubExp(); };
+                const unsubInv = window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setData(p => ({...p, inventory: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const unsubSales = window.api.onSnapshot(window.api.collection(window.db, "sales"), (s) => setData(p => ({...p, sales: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const unsubUsers = window.api.onSnapshot(window.api.collection(window.db, "users"), (s) => setData(p => ({...p, users: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                return () => { unsubInv(); unsubSales(); unsubUsers(); };
             }, []);
 
-            // --- LOGIN LOGIC ---
+            // LOGIN
             const handleLogin = async () => {
                 const u = document.getElementById('u_box').value.toLowerCase().trim();
                 const p = document.getElementById('p_box').value.trim();
                 const q = window.api.query(window.api.collection(window.db, "users"), window.api.where("username", "==", u), window.api.where("pin", "==", p));
                 const snap = await window.api.getDocs(q);
-                if (!snap.empty) { 
-                    setUser(snap.docs[0].data()); 
-                    setView('DASHBOARD'); 
-                } else alert("Access Denied: Wrong PIN");
+                if (!snap.empty) { setUser(snap.docs[0].data()); setView('DASHBOARD'); }
+                else alert("Denied");
             };
 
-            // --- POS & STOCK ---
-            const addToCart = (p) => {
-                setCart(prev => {
-                    const ex = prev.find(i => i.id === p.id);
-                    if (ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
-                    return [...prev, {...p, qty: 1}];
-                });
+            // INVENTORY ACTIONS
+            const deleteItem = async (id) => {
+                if(confirm("Permanently remove this item from the vault?")) {
+                    await window.api.deleteDoc(window.api.doc(window.db, "inventory", id));
+                    setEditItem(null);
+                }
             };
 
-            const updateCartQty = (id, val) => {
-                setCart(prev => prev.map(i => i.id === id ? {...i, qty: parseInt(val) || 0} : i));
+            const updateItem = async (e) => {
+                e.preventDefault();
+                const d = new FormData(e.target);
+                const updated = {
+                    brandName: d.get('brand').toUpperCase(),
+                    genericName: d.get('generic'),
+                    price: Number(d.get('price')),
+                    costPrice: Number(d.get('cost')),
+                    stock: Number(d.get('stock')),
+                    strength: d.get('strength'),
+                    category: d.get('category')
+                };
+                await window.api.updateDoc(window.api.doc(window.db, "inventory", editItem.id), updated);
+                setEditItem(null);
+                alert("Vault Updated");
             };
 
-            const finalizeSale = async () => {
-                const total = cart.reduce((s,i)=>s+(i.price*i.qty),0);
-                await window.api.addDoc(window.api.collection(window.db, "sales"), { total, timestamp: new Date().toISOString(), soldBy: user.username, items: cart });
-                for(const i of cart) await window.api.updateDoc(window.api.doc(window.db, "inventory", i.id), { stock: i.stock - i.qty });
-                setCart([]); alert("Transaction Authorized");
-            };
-
-            // --- VIEWS ---
             if (!user) {
                 return (
                     <div className="h-screen flex items-center justify-center bg-black">
-                        <div className="bg-slate-900 p-12 rounded-[3.5rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
-                            <h1 className="text-5xl font-black text-emerald-500 mb-2 italic tracking-tighter underline underline-offset-8">APEX</h1>
-                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-10 tracking-[0.3em]">Pharmacy Vault</p>
+                        <div className="bg-slate-900 p-12 rounded-[4rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
+                            <h1 className="text-5xl font-black text-emerald-500 mb-2 italic tracking-tighter">APEX</h1>
                             <input id="u_box" placeholder="Username" className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold" />
-                            <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[1em]" />
-                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg hover:bg-emerald-500 transition-all">ACCESS SYSTEM</button>
+                            <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-8 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold" />
+                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg">LOGIN</button>
                         </div>
                     </div>
                 );
             }
 
             return (
-                <div className="flex h-screen overflow-hidden bg-slate-950">
-                    <aside className="w-72 bg-black border-r border-slate-800 p-8 flex flex-col shrink-0">
-                        <h2 className="text-2xl font-black text-emerald-500 italic mb-10">APEX PRO</h2>
-                        <nav className="flex-1 space-y-1">
-                            {['DASHBOARD', 'POS', 'INVENTORY', 'PATIENTS', 'REPORTS', 'FINANCE', 'USERS'].map(v => (
-                                <button key={v} onClick={()=>setView(v)} className={`w-full text-left p-4 rounded-2xl font-black text-[10px] tracking-widest transition-all ${view===v?'active-tab':'text-slate-500 hover:bg-slate-900'}`}>{v}</button>
+                <div className="flex h-screen bg-slate-950 text-white overflow-hidden">
+                    {/* SIDEBAR */}
+                    <aside className="w-64 bg-black border-r border-slate-800 p-6 flex flex-col shrink-0">
+                        <h2 className="text-xl font-black text-emerald-500 mb-10 italic">APEX PRO</h2>
+                        <nav className="flex-1 space-y-2">
+                            {['DASHBOARD', 'POS', 'STOO'].map(v => (
+                                <button key={v} onClick={()=>setView(v)} className={`w-full text-left p-4 rounded-xl font-bold text-xs uppercase tracking-widest ${view===v?'active-tab':'text-slate-500'}`}>{v}</button>
                             ))}
                         </nav>
-                        <button onClick={()=>window.location.reload()} className="text-rose-500 font-bold text-[10px] uppercase mt-10">Logout</button>
+                        <button onClick={()=>window.location.reload()} className="text-rose-500 font-bold text-[10px] uppercase">Logout</button>
                     </aside>
 
-                    <main className="flex-1 p-10 overflow-auto no-scrollbar bg-slate-950">
+                    {/* MAIN */}
+                    <main className="flex-1 p-10 overflow-auto no-scrollbar relative">
                         {view === 'DASHBOARD' && (
-                            <div className="animate-in fade-in duration-700">
-                                <h2 className="text-3xl font-black mb-8">Dashboard</h2>
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="bg-slate-900 p-10 rounded-[2.5rem] border border-slate-800 border-l-8 border-emerald-500">
-                                        <p className="text-slate-500 text-xs font-bold uppercase">Today Revenue</p>
-                                        <h3 className="text-4xl font-black text-emerald-400">{(sales || []).reduce((a,b)=>a+(b.total||0),0).toLocaleString()} TZS</h3>
-                                    </div>
-                                    <div className="bg-slate-900 p-10 rounded-[2.5rem] border border-slate-800 border-l-8 border-blue-500">
-                                        <p className="text-slate-500 text-xs font-bold uppercase">Inventory Assets</p>
-                                        <h3 className="text-4xl font-black text-blue-400">{(inventory || []).length} Items</h3>
-                                    </div>
+                            <div className="grid grid-cols-2 gap-6">
+                                <div className="bg-slate-900 p-8 rounded-3xl border border-slate-800 border-l-8 border-emerald-500">
+                                    <p className="text-slate-500 text-xs font-bold uppercase">Total Revenue</p>
+                                    <h3 className="text-3xl font-black">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} TZS</h3>
+                                </div>
+                                <div className="bg-slate-900 p-8 rounded-3xl border border-slate-800 border-l-8 border-blue-500">
+                                    <p className="text-slate-500 text-xs font-bold uppercase">Inventory Items</p>
+                                    <h3 className="text-3xl font-black">{data.inventory.length} Items</h3>
                                 </div>
                             </div>
                         )}
 
-                        {view === 'POS' && (
-                            <div className="flex gap-8 h-full">
-                                <div className="flex-1 space-y-6 overflow-y-auto no-scrollbar px-1">
-                                    <input placeholder="Search brand, generic or symptoms..." className="w-full p-6 bg-slate-900 border border-slate-800 rounded-[2rem] text-xl font-bold outline-none focus:ring-2 ring-emerald-500 shadow-xl" onChange={(e)=>setSearch(e.target.value.toLowerCase())} />
-                                    <div className="grid grid-cols-2 gap-4">
-                                        {inventory.filter(p => p.brandName?.toLowerCase().includes(search)).map(p => (
-                                            <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer active:scale-95 transition-all">
-                                                <p className="font-black text-xl mb-1">{p.brandName}</p>
-                                                <p className="text-[10px] text-slate-500 font-bold uppercase mb-4">{p.strength} • {p.genericName}</p>
-                                                <p className="text-2xl font-black text-emerald-400">{Number(p.price).toLocaleString()} TZS</p>
-                                                <p className="text-[10px] opacity-30 mt-2 font-black uppercase">STK: {p.stock}</p>
-                                            </div>
-                                        ))}
-                                    </div>
+                        {view === 'STOO' && (
+                            <div className="animate-in fade-in duration-500">
+                                <div className="flex justify-between items-center mb-10">
+                                    <h2 className="text-2xl font-black uppercase">Stock Management</h2>
+                                    <button onClick={async ()=>{
+                                        const n = prompt("Brand:"); const p = prompt("Price:"); const s = prompt("Stock:");
+                                        if(n) await window.api.addDoc(window.api.collection(window.db, "inventory"), { brandName: n.toUpperCase(), price: Number(p), costPrice: 0, stock: Number(s), strength: '500mg', category: 'Medicine' });
+                                    }} className="bg-emerald-600 px-8 py-3 rounded-2xl font-black">+ Add New</button>
                                 </div>
-                                <div className="w-96 bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-2xl h-fit border-t-8 border-emerald-600 sticky top-0 flex flex-col shrink-0">
-                                    <h3 className="font-black text-2xl mb-8 tracking-tighter uppercase underline decoration-emerald-500">Cart</h3>
-                                    <div className="space-y-4 mb-8 overflow-auto max-h-64 px-1">
-                                        {cart.map(i => (
-                                            <div key={i.id} className="flex justify-between items-center border-b border-slate-100 pb-4">
-                                                <div className="flex-1">
-                                                    <p className="text-sm font-bold uppercase">{i.brandName}</p>
-                                                    <p className="text-[10px] opacity-40">{i.price} / unit</p>
-                                                </div>
-                                                <input type="number" value={i.qty} onChange={(e)=>updateCartQty(i.id, e.target.value)} className="w-16 p-2 bg-slate-50 rounded-xl text-center font-black text-emerald-600 outline-none border-2 border-emerald-100" />
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="flex justify-between font-black text-4xl mb-10 tracking-tighter text-emerald-600"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.price*i.qty),0).toLocaleString()}</span></div>
-                                    <button onClick={finalizeSale} className="w-full bg-emerald-600 text-white py-6 rounded-[2rem] font-black text-xl shadow-lg active:scale-95 transition-all">COMPLETE SALE</button>
+                                <div className="bg-slate-900 rounded-[2.5rem] border border-slate-800 overflow-hidden">
+                                    <table className="w-full text-left">
+                                        <thead className="bg-black text-slate-500 text-[10px] font-bold uppercase">
+                                            <tr><th className="p-6">Medicine</th><th>Stock</th><th>Price</th><th className="text-right">Action</th></tr>
+                                        </thead>
+                                        <tbody className="font-bold">
+                                            {data.inventory.map(p => (
+                                                <tr key={p.id} className="border-b border-slate-800/50 hover:bg-white/5 transition-all">
+                                                    <td className="p-6">
+                                                        <p className="font-black text-white uppercase">{p.brandName}</p>
+                                                        <p className="text-[10px] text-slate-500">{p.strength} • {p.category}</p>
+                                                    </td>
+                                                    <td className={p.stock < 10 ? 'text-rose-500' : 'text-emerald-500'}>{p.stock}</td>
+                                                    <td className="text-emerald-400 font-black">{Number(p.price).toLocaleString()}</td>
+                                                    <td className="p-6 text-right">
+                                                        <button onClick={()=>setEditItem(p)} className="text-blue-400 text-xs font-black uppercase underline">Adjust</button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         )}
 
-                        {view === 'INVENTORY' && (
-                            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 shadow-sm">
-                                <div className="flex justify-between items-center mb-10">
-                                    <h2 className="text-3xl font-black text-emerald-500 uppercase">Inventory Vault</h2>
-                                    <button onClick={async ()=>{
-                                        const n = prompt("Brand:"); const g = prompt("Generic:"); const st = prompt("Strength:"); const c = prompt("Cost:"); const p = prompt("Price:"); const q = prompt("Qty:"); const cat = prompt("Category (Medicine/Supplies/Cosmetic):"); const e = prompt("Expiry (YYYY-MM-DD):");
-                                        if(n) await window.api.addDoc(window.api.collection(window.db, "inventory"), { brandName:n.toUpperCase(), genericName:g, strength:st, costPrice:Number(c), price:Number(p), stock:Number(q), category:cat, expiryDate:e });
-                                    }} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-[10px] tracking-widest">+ Add New Item</button>
-                                </div>
-                                <table className="w-full text-left">
-                                    <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th>Item</th><th>Category</th><th>Stock</th><th>Margin</th><th className="text-right">Price</th></tr></thead>
-                                    <tbody className="font-bold">{inventory.map(p => (
-                                        <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50 transition-all">
-                                            <td className="py-6"><p className="font-black text-white">{p.brandName}</p><p className="text-[9px] text-slate-500 uppercase">{p.genericName} • {p.strength}</p></td>
-                                            <td><span className="text-[9px] bg-slate-800 px-2 py-1 rounded text-slate-400 font-black uppercase">{p.category}</span></td>
-                                            <td className={p.stock < 10 ? 'text-rose-500' : 'text-slate-300'}>{p.stock}</td>
-                                            <td className="text-emerald-500">{(((p.price-p.costPrice)/p.price)*100).toFixed(0)}%</td>
-                                            <td className="text-right text-emerald-400 text-2xl tracking-tighter">{Number(p.price).toLocaleString()}</td>
-                                        </tr>
-                                    ))}</tbody>
-                                </table>
-                            </div>
-                        )}
-                        
-                        {view === 'PATIENTS' && (
-                            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in fade-in duration-500">
-                                <div className="flex justify-between items-center mb-10">
-                                    <h2 className="text-3xl font-black text-emerald-500 uppercase tracking-tighter">Patient Registry</h2>
-                                    <button onClick={async ()=>{
-                                        const n = prompt("Name:"), c = prompt("ID Card:");
-                                        if(n) await window.api.addDoc(window.api.collection(window.db, "patients"), { name:n.toUpperCase(), cardId:c });
-                                    }} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-[10px] tracking-widest">+ New File</button>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    {(patients || []).map(pt => (
-                                        <div key={pt.id} className="p-8 bg-black rounded-[3rem] border border-slate-800 flex justify-between items-center">
-                                            <div><h4 className="font-black text-xl text-white uppercase tracking-tighter">{pt.name}</h4><p className="text-xs text-slate-500 font-bold mt-1 tracking-widest">ID: {pt.cardId}</p></div>
+                        {/* EDIT MODAL */}
+                        {editItem && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60">
+                                <div className="glass-modal w-full max-w-lg p-10 rounded-[3rem] shadow-2xl animate-in zoom-in duration-300">
+                                    <h3 className="text-2xl font-black mb-8 text-emerald-500 uppercase tracking-tighter">Modify: {editItem.brandName}</h3>
+                                    <form onSubmit={updateItem} className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div><label className="text-[10px] text-slate-500 font-bold uppercase">Brand Name</label>
+                                            <input name="brand" defaultValue={editItem.brandName} className="w-full p-3 bg-slate-800 rounded-xl outline-none" /></div>
+                                            <div><label className="text-[10px] text-slate-500 font-bold uppercase">Strength</label>
+                                            <input name="strength" defaultValue={editItem.strength} className="w-full p-3 bg-slate-800 rounded-xl outline-none" /></div>
                                         </div>
-                                    ))}
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div><label className="text-[10px] text-slate-500 font-bold uppercase">Stock Quantity</label>
+                                            <input name="stock" type="number" defaultValue={editItem.stock} className="w-full p-3 bg-slate-800 rounded-xl outline-none font-bold text-emerald-400" /></div>
+                                            <div><label className="text-[10px] text-slate-500 font-bold uppercase">Category</label>
+                                            <input name="category" defaultValue={editItem.category} className="w-full p-3 bg-slate-800 rounded-xl outline-none" /></div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div><label className="text-[10px] text-slate-500 font-bold uppercase">Selling Price</label>
+                                            <input name="price" type="number" defaultValue={editItem.price} className="w-full p-3 bg-slate-800 rounded-xl outline-none font-bold" /></div>
+                                            <div><label className="text-[10px] text-slate-500 font-bold uppercase">Cost Price</label>
+                                            <input name="cost" type="number" defaultValue={editItem.costPrice} className="w-full p-3 bg-slate-800 rounded-xl outline-none opacity-50" /></div>
+                                        </div>
+                                        
+                                        <div className="flex gap-4 pt-6">
+                                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-lg">SAVE CHANGES</button>
+                                            <button type="button" onClick={()=>deleteItem(editItem.id)} className="p-4 bg-rose-900/30 text-rose-500 rounded-2xl"><lucide.Trash2/></button>
+                                            <button type="button" onClick={()=>setEditItem(null)} className="p-4 bg-slate-800 text-white rounded-2xl font-bold">CLOSE</button>
+                                        </div>
+                                    </form>
                                 </div>
                             </div>
                         )}
@@ -228,11 +209,11 @@
             );
         };
 
-        const rootTrigger = setInterval(() => {
+        const boot = setInterval(() => {
             if (window.db) {
                 const root = ReactDOM.createRoot(document.getElementById('apex-root'));
                 root.render(<App />);
-                clearInterval(rootTrigger);
+                clearInterval(boot);
             }
         }, 500);
     </script>
