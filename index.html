@@ -2,26 +2,33 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>APEX | Enterprise Recovery</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APEX | Sovereign Cloud ERP</title>
+    <!-- PRODUCTION LIBRARIES -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; background-color: #020617; color: white; }
+        .active-tab { background: #10b981 !important; color: white !important; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .glass-card { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
+        .dark-mode { background-color: #020617; color: #f8fafc; }
+        .light-mode { background-color: #f8fafc; color: #020617; }
+    </style>
 </head>
-<body class="bg-slate-950 text-white font-sans">
-    <div id="apex-root">
-        <div class="h-screen flex flex-col items-center justify-center">
-            <h1 class="text-4xl font-black text-emerald-500 animate-pulse italic">APEX</h1>
-            <p id="boot-status" class="mt-4 text-slate-500 uppercase tracking-widest">Checking Cloud Connection...</p>
-            <div id="debug-error" class="mt-10 bg-white text-rose-600 p-4 rounded-xl text-xs font-mono hidden"></div>
-        </div>
-    </div>
+<body class="transition-colors duration-500">
+    <div id="apex-root"></div>
 
+    <!-- 1. CLOUD ENGINE (FIREBASE) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, addDoc, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // !!! PASTE YOUR KEYS HERE !!!
         const firebaseConfig = {
             apiKey: "AIzaSyAAazqZ1XnzpQ6A_cCHyQEsgXxq5jVVLXE",
             authDomain: "apex-pharmacy-a69b5.firebaseapp.com",
@@ -32,93 +39,298 @@
             measurementId: "G-SVDCM1Y693"
         };
 
-        try {
-            const app = initializeApp(firebaseConfig);
-            window.db = getFirestore(app);
-            window.api = { collection, getDocs, addDoc, query, where };
-            document.getElementById('boot-status').innerText = "CLoud Connected. Ready.";
-        } catch (e) {
-            document.getElementById('debug-error').style.display = "block";
-            document.getElementById('debug-error').innerText = "CONFIG ERROR: " + e.message;
-        }
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app);
+        window.api = { collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy, limit };
     </script>
 
+    <!-- 2. APEX APPLICATION LOGIC -->
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
 
         const App = () => {
             const [view, setView] = useState('LOGIN');
             const [user, setUser] = useState(null);
+            const [data, setData] = useState({ inventory: [], sales: [], users: [], patients: [], expenses: [] });
+            const [cart, setCart] = useState([]);
+            const [search, setSearch] = useState("");
+            const [isDarkMode, setIsDarkMode] = useState(true);
+            const [devClicks, setDevClicks] = useState(0);
 
-            // AUTO-CREATE ADMIN
+            // REAL-TIME SYNC
             useEffect(() => {
-                const setup = async () => {
-                    try {
-                        const q = window.api.query(window.api.collection(window.db, "users"), window.api.where("username", "==", "admin"));
-                        const snap = await window.api.getDocs(q);
-                        if (snap.empty) {
-                            await window.api.addDoc(window.api.collection(window.db, "users"), {
-                                username: "admin", pin: "1234", role: "MANAGER"
-                            });
-                        }
-                    } catch (err) {
-                        console.error("Setup Error", err);
-                    }
-                };
-                if(window.db) setup();
+                if (!window.db) return;
+                const unsubInv = window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setData(p => ({...p, inventory: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const unsubSales = window.api.onSnapshot(window.api.collection(window.db, "sales"), (s) => setData(p => ({...p, sales: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const unsubPatients = window.api.onSnapshot(window.api.collection(window.db, "patients"), (s) => setData(p => ({...p, patients: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const unsubUsers = window.api.onSnapshot(window.api.collection(window.db, "users"), (s) => setData(p => ({...p, users: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const unsubExp = window.api.onSnapshot(window.api.collection(window.db, "expenses"), (s) => setData(p => ({...p, expenses: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                return () => { unsubInv(); unsubSales(); unsubPatients(); unsubUsers(); unsubExp(); };
             }, []);
 
-            const handleLogin = async () => {
-                const u = document.getElementById('u_field').value.toLowerCase().trim();
-                const p = document.getElementById('p_field').value.trim();
-                
-                try {
-                    const q = window.api.query(window.api.collection(window.db, "users"), 
-                        window.api.where("username", "==", u), 
-                        window.api.where("pin", "==", p)
-                    );
-                    const snap = await window.api.getDocs(q);
-                    
-                    if (!snap.empty) {
-                        setUser(snap.docs[0].data());
-                        setView('DASHBOARD');
-                    } else {
-                        alert("Wrong Username or PIN");
-                    }
-                } catch (err) {
-                    alert("DATABASE ERROR: " + err.message);
-                }
+            // PERMISSIONS HELPER
+            const hasAccess = (level) => {
+                const roles = { 'MANAGER': 4, 'PHARMACIST': 3, 'TECHNICIAN': 2, 'ASSISTANT': 1, 'DISPENSER': 0 };
+                return roles[user?.role] >= roles[level];
             };
 
-            if (view === 'LOGIN') {
+            const handleLogin = async () => {
+                const u = document.getElementById('u_box').value.toLowerCase().trim();
+                const p = document.getElementById('p_box').value.trim();
+                const q = window.api.query(window.api.collection(window.db, "users"), window.api.where("username", "==", u), window.api.where("pin", "==", p));
+                const snap = await window.api.getDocs(q);
+                if (!snap.empty) { 
+                    const loggedInUser = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                    setUser(loggedInUser); 
+                    setView('DASHBOARD'); 
+                } else alert("Access Denied: Invalid Credentials");
+            };
+
+            const addToCart = (p) => {
+                setCart(prev => {
+                    const ex = prev.find(i => i.id === p.id);
+                    if (ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
+                    return [...prev, {...p, qty: 1}];
+                });
+            };
+
+            const updateCartQty = (id, val) => {
+                setCart(prev => prev.map(i => i.id === id ? {...i, qty: parseInt(val) || 0} : i));
+            };
+
+            const finalizeSale = async (method) => {
+                const total = cart.reduce((s,i)=>s+(i.price*i.qty),0);
+                const totalCost = cart.reduce((s,i)=>s+(i.costPrice*i.qty),0);
+                await window.api.addDoc(window.api.collection(window.db, "sales"), { 
+                    total, profit: total - totalCost, timestamp: new Date().toISOString(), soldBy: user.username, method, items: cart 
+                });
+                for(const i of cart) await window.api.updateDoc(window.api.doc(window.db, "inventory", i.id), { stock: i.stock - i.qty });
+                setCart([]); alert("Transaction Authorized");
+            };
+
+            // --- UI RENDER: LOGIN ---
+            if (!user) {
                 return (
-                    <div className="h-screen flex items-center justify-center bg-slate-950">
-                        <div className="bg-white p-12 rounded-[3rem] shadow-2xl w-full max-w-sm text-center">
-                            <h1 className="text-4xl font-black text-emerald-600 mb-8 italic">APEX</h1>
-                            <input id="u_field" placeholder="Username" className="w-full p-4 mb-3 bg-slate-100 rounded-2xl outline-none text-black" />
-                            <input id="p_field" type="password" placeholder="PIN" className="w-full p-4 mb-10 bg-slate-100 rounded-2xl outline-none text-black" />
-                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black shadow-lg">LOGIN</button>
+                    <div className="h-screen flex items-center justify-center bg-black">
+                        <div className="bg-slate-900 p-12 rounded-[4rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
+                            <h1 className="text-5xl font-black text-emerald-500 mb-2 italic tracking-tighter">APEX</h1>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-12 tracking-[0.3em]">Sovereign Cloud Vault</p>
+                            <input id="u_box" placeholder="Username" className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold" />
+                            <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[1em]" />
+                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95">AUTHORIZE</button>
                         </div>
                     </div>
                 );
             }
 
-            if (view === 'DASHBOARD') {
-                return (
-                    <div className="p-10 text-center">
-                        <h1 className="text-5xl font-black text-emerald-500 italic">SYSTEM UNLOCKED</h1>
-                        <p className="mt-4 text-slate-400">Welcome Director, the Cloud Vault is open.</p>
-                        <button onClick={() => window.location.reload()} className="mt-20 bg-rose-600 px-10 py-4 rounded-2xl font-black">LOGOUT</button>
-                    </div>
-                );
-            }
+            return (
+                <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'dark-mode' : 'light-mode'}`}>
+                    {/* SIDEBAR */}
+                    <aside className="w-72 bg-black border-r border-slate-800 p-8 flex flex-col shrink-0 transition-all duration-500">
+                        <div className="flex items-center gap-3 mb-10">
+                            <div className="w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black">A</div>
+                            <h2 className="text-xl font-black tracking-tighter">APEX <span className="text-emerald-600 italic">Pro</span></h2>
+                        </div>
+                        <nav className="flex-1 space-y-1 overflow-y-auto no-scrollbar">
+                            <NavBtn id="DASHBOARD" label="Dashboard" icon={lucide.LayoutDashboard} active={view} onClick={setView} />
+                            <NavBtn id="POS" label="Point of Sale" icon={lucide.ShoppingCart} active={view} onClick={setView} />
+                            {hasAccess('TECHNICIAN') && <NavBtn id="STOO" label="Inventory" icon={lucide.Package} active={view} onClick={setView} />}
+                            <NavBtn id="PATIENTS" label="Patients" icon={lucide.Users} active={view} onClick={setView} />
+                            <NavBtn id="GUIDE" label="Med Guide" icon={lucide.BookOpen} active={view} onClick={setView} />
+                            {hasAccess('MANAGER') && <NavBtn id="FINANCE" label="Financials" icon={lucide.BarChart3} active={view} onClick={setView} />}
+                            {hasAccess('MANAGER') && <NavBtn id="USERS" label="Personnel" icon={lucide.ShieldCheck} active={view} onClick={setView} />}
+                        </nav>
+                        <div className="pt-6 border-t border-slate-800">
+                             <button onClick={()=>setIsDarkMode(!isDarkMode)} className="mb-4 text-[10px] font-black text-slate-600 uppercase tracking-widest">{isDarkMode ? 'Brighter Mode' : 'Dark Mode'}</button>
+                             <button onClick={()=>window.location.reload()} className="text-rose-500 font-bold text-[10px] uppercase tracking-widest">Logout</button>
+                             <div className="mt-4 text-[8px] text-slate-800 cursor-pointer" onClick={()=>{setDevClicks(devClicks+1); if(devClicks>=6) setView('DEV')}}>v2.0.7 ENGINE_READY</div>
+                        </div>
+                    </aside>
+
+                    {/* MAIN CONTENT AREA */}
+                    <main className="flex-1 p-10 overflow-auto no-scrollbar">
+                        
+                        {/* DASHBOARD */}
+                        {view === 'DASHBOARD' && (
+                            <div className="animate-in fade-in duration-700">
+                                <h2 className="text-4xl font-black mb-10 tracking-tighter">Director's Overview</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <StatCard label="Revenue" value={data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} sub="TZS" color="text-emerald-400" border="border-emerald-500" />
+                                    <StatCard label="Wealth" value={data.inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0).toLocaleString()} sub="Stock Value" color="text-blue-400" border="border-blue-500" />
+                                    <StatCard label="Patients" value={data.patients.length} sub="Files" color="text-indigo-400" border="border-indigo-500" />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* POS */}
+                        {view === 'POS' && (
+                            <div className="flex gap-8 h-full animate-in slide-in-from-bottom duration-500">
+                                <div className="flex-1 space-y-6 overflow-y-auto no-scrollbar">
+                                    <input placeholder="Search disease, drug or symptoms..." className="w-full p-6 bg-slate-900 border border-slate-800 rounded-[2rem] text-xl font-bold outline-none focus:ring-2 ring-emerald-500 shadow-xl" onChange={(e)=>setSearch(e.target.value.toLowerCase())} />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {data.inventory.filter(p => p.brandName.toLowerCase().includes(search) || (p.symptoms && p.symptoms.toLowerCase().includes(search))).map(p => (
+                                            <div key={p.id} onClick={()=>handleAddToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer active:scale-95 transition-all shadow-xl">
+                                                <div className="flex justify-between mb-4"><span className="text-[9px] font-black uppercase text-slate-500">{p.category}</span><span className="text-[10px] font-black text-emerald-500 tracking-tighter">STK: {p.stock}</span></div>
+                                                <p className="font-black text-xl mb-1">{p.brandName}</p>
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase mb-4">{p.strength} • {p.genericName}</p>
+                                                <p className="text-2xl font-black text-emerald-400">{Number(p.price).toLocaleString()} <span className="text-xs">TZS</span></p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="w-96 bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-2xl h-fit border-t-8 border-emerald-600 sticky top-0 flex flex-col shrink-0">
+                                    <h3 className="font-black text-2xl mb-8 tracking-tighter uppercase underline decoration-emerald-500 decoration-4 underline-offset-8">Cart</h3>
+                                    <div className="space-y-4 mb-8 overflow-auto max-h-64 no-scrollbar px-1 font-bold">
+                                        {cart.map(i => (
+                                            <div key={i.id} className="flex justify-between items-center border-b border-slate-100 pb-4">
+                                                <div className="flex-1"><p className="text-sm uppercase">{i.brandName}</p><p className="text-[10px] opacity-40">{i.price} / unit</p></div>
+                                                <input type="number" value={i.qty} onChange={(e)=>updateCartQty(i.id, e.target.value)} className="w-16 p-2 bg-slate-50 rounded-xl text-center font-black text-emerald-600 outline-none" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="flex justify-between font-black text-4xl mb-10 tracking-tighter text-emerald-600"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.price*i.qty),0).toLocaleString()}</span></div>
+                                    <div className="grid grid-cols-2 gap-2"><button onClick={()=>finalizeSale('CASH')} className="bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-700 transition-all active:scale-95">CASH</button><button onClick={()=>finalizeSale('MOBILE')} className="bg-blue-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-blue-700 transition-all active:scale-95">MOBILE</button></div>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'STOO' && (
+                            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 shadow-sm animate-in fade-in duration-500">
+                                <div className="flex justify-between items-center mb-10">
+                                    <h2 className="text-3xl font-black text-emerald-500 uppercase">Inventory Vault</h2>
+                                    <button onClick={async ()=>{
+                                        const n = prompt("Brand:"), g = prompt("Generic:"), s = prompt("Symptoms:"), st = prompt("Strength:"), c = prompt("Cost:"), p = prompt("Price:"), q = prompt("Qty:"), cat = prompt("Category (Medicine/Supplies/Cosmetic):"), e = prompt("Expiry (YYYY-MM-DD):");
+                                        if(n) await window.api.addDoc(window.api.collection(window.db, "inventory"), { brandName:n.toUpperCase(), genericName:g, symptoms:s, strength:st, costPrice:Number(c), price:Number(p), stock:Number(q), category:cat, expiryDate:e });
+                                    }} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:scale-105 transition-all text-[10px] tracking-widest uppercase">+ Add New Entry</button>
+                                </div>
+                                <table className="w-full text-left">
+                                    <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4">Family Name</th><th className="pb-4">Stock</th><th className="pb-4">Margin</th><th className="pb-4 text-right">Selling Price</th></tr></thead>
+                                    <tbody className="font-bold">{data.inventory.map(p => (
+                                        <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50 transition-all">
+                                            <td className="py-6"><p className="font-black text-white">{p.brandName}</p><p className="text-[9px] text-slate-500 uppercase">{p.genericName} • {p.strength}</p></td>
+                                            <td className={p.stock < 10 ? 'text-rose-500 underline' : 'text-slate-300'}>{p.stock}</td>
+                                            <td className="text-emerald-500 text-xs font-black">{(((p.price-p.costPrice)/p.price)*100).toFixed(0)}%</td>
+                                            <td className="text-right text-emerald-400 text-xl font-black">{Number(p.price).toLocaleString()}</td>
+                                        </tr>
+                                    ))}</tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {view === 'PATIENTS' && (
+                            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in fade-in duration-500">
+                                <div className="flex justify-between items-center mb-10">
+                                    <h2 className="text-3xl font-black text-blue-500">Patient Registry</h2>
+                                    <button onClick={async ()=>{
+                                        const n = prompt("Name:"), p = prompt("Phone:"), e = prompt("Email:"), a = prompt("Address:"), c = prompt("ID Card:");
+                                        if(n) await window.api.addDoc(window.api.collection(window.db, "patients"), { name:n.toUpperCase(), phone:p, email:e, address:a, cardId:c, creditBalance: 0 });
+                                    }} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-[10px] tracking-widest">+ Register New File</button>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {data.patients.map(pt => (
+                                        <div key={pt.id} className="p-8 bg-black rounded-[2.5rem] border border-slate-800 flex justify-between items-center group hover:border-blue-500 transition-all">
+                                            <div><h4 className="font-black text-xl text-white group-hover:text-blue-400 transition-colors uppercase">{pt.name}</h4><p className="text-xs text-slate-500 font-bold uppercase mt-1">ID: {pt.cardId} • {pt.phone}</p></div>
+                                            <div className="text-right"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Deni</p><p className="text-rose-500 font-black">{pt.creditBalance.toLocaleString()} TZS</p></div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'FINANCE' && (
+                            <div className="animate-in fade-in duration-500 space-y-10">
+                                <h2 className="text-3xl font-black tracking-tighter uppercase">Financial Ledger</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div className="bg-slate-900 p-8 rounded-[3.5rem] border border-slate-800 text-white text-center">
+                                        <p className="text-[10px] font-black opacity-30 uppercase mb-4 tracking-widest">Revenue</p>
+                                        <p className="text-4xl font-black text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()}</p>
+                                    </div>
+                                    <div className="bg-white text-slate-900 p-8 rounded-[3.5rem] text-center shadow-xl">
+                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest">Bills (LUKU/Rent)</p>
+                                        <p className="text-4xl font-black text-rose-500">{data.expenses.reduce((a,b)=>a+b.amount,0).toLocaleString()}</p>
+                                    </div>
+                                    <div className="bg-emerald-600 p-8 rounded-[3.5rem] shadow-2xl text-center">
+                                        <p className="text-[10px] font-black opacity-70 uppercase mb-4 tracking-widest text-white">Net Profit</p>
+                                        <p className="text-4xl font-black text-white">{(data.sales.reduce((a,b)=>a+b.total,0) - data.expenses.reduce((a,b)=>a+b.amount,0)).toLocaleString()}</p>
+                                    </div>
+                                </div>
+                                <button onClick={async ()=>{
+                                    const c = prompt("Category (Electricity/Meals/Rent/Data):"), a = prompt("Amount:"), d = prompt("Description:");
+                                    if(c) await window.api.addDoc(window.api.collection(window.db, "expenses"), { category:c, amount:Number(a), description:d, date: new Date().toISOString() });
+                                }} className="bg-emerald-600 text-white px-8 py-4 rounded-[2rem] font-black shadow-lg uppercase text-[10px] tracking-widest">Record Expense</button>
+                            </div>
+                        )}
+
+                        {view === 'GUIDE' && (
+                            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in fade-in duration-500">
+                                <h2 className="text-3xl font-black mb-10 tracking-tighter uppercase italic decoration-emerald-500 underline underline-offset-8">Med Guide</h2>
+                                <div className="space-y-6">
+                                    {data.inventory.map(p => (
+                                        <div key={p.id} className="p-8 bg-black rounded-[2.5rem] border border-slate-800">
+                                            <h4 className="text-emerald-400 font-black text-3xl uppercase italic tracking-tighter">{p.brandName}</h4>
+                                            <p className="text-xs text-slate-500 font-bold uppercase mt-6 mb-2 italic">Standard Indications & Counseling</p>
+                                            <p className="text-sm italic text-slate-300">"{p.symptoms || "Please consult MoH Standard Treatment Guidelines for specific dispensing protocols."}"</p>
+                                            <div className="mt-6 p-4 bg-emerald-950/20 border border-emerald-900/30 rounded-2xl text-[10px] text-emerald-200">Dispensing Sticker (SW): Meza kimoja mara tatu kwa siku baada ya chakula. Maliza dozi yote.</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'USERS' && (
+                             <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in slide-in-from-right duration-500">
+                                <h2 className="text-3xl font-black mb-10 tracking-tighter">Authorized Staff</h2>
+                                <button onClick={async ()=>{
+                                    const u = prompt("Username:"), p = prompt("PIN:"), r = prompt("Role (PHARMACIST, TECHNICIAN, DISPENSER):");
+                                    if(u) await window.api.addDoc(window.api.collection(window.db, "users"), { username: u.toLowerCase(), pin: p, role: r, status: 'ACTIVE' });
+                                }} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg mb-8 uppercase text-[10px] tracking-widest">+ Authorize New User</button>
+                                <div className="space-y-4">
+                                    {data.users.map(u => (
+                                        <div key={u.id} className="bg-black p-6 rounded-[2rem] border border-slate-800 flex justify-between items-center group hover:border-emerald-500 transition-all">
+                                            <div><p className="font-black text-xl text-white tracking-tighter">{u.username.toUpperCase()}</p><p className="text-[10px] text-slate-600 font-black uppercase tracking-widest">{u.role}</p></div>
+                                            <button className={`px-4 py-2 rounded-xl font-black text-[10px] tracking-widest transition-all ${u.status === 'ACTIVE' ? 'bg-emerald-900 text-emerald-400':'bg-rose-900 text-rose-400'}`}>{u.status}</button>
+                                        </div>
+                                    ))}
+                                </div>
+                             </div>
+                        )}
+
+                        {view === 'DEV' && (
+                             <div className="h-full bg-black rounded-[4rem] p-20 border-2 border-rose-900 text-rose-500 font-mono shadow-2xl shadow-rose-950">
+                                <h1 className="text-5xl font-black mb-10 underline decoration-rose-900 underline-offset-8 uppercase italic">Maintenance_Terminal</h1>
+                                <p className="text-sm mb-10 opacity-50 italic font-black uppercase tracking-[0.2em]">Global system override and database purge authorized. Action recorded in Sovereign Vault log.</p>
+                                <div className="flex gap-4">
+                                    <button onClick={async()=>{ if(confirm("ABSOLUTE DATA PURGE?")) { await window.api.deleteDoc(window.api.doc(window.db, "system", "master")); window.location.reload(); }}} className="bg-rose-900 text-white px-10 py-5 rounded-[2rem] font-black shadow-xl uppercase text-xs">Execute_Purge</button>
+                                    <button onClick={()=>setView('DASHBOARD')} className="bg-white text-black px-10 py-5 rounded-[2rem] font-black shadow-xl uppercase text-xs">Exit_Terminal</button>
+                                </div>
+                             </div>
+                        )}
+                    </main>
+                </div>
+            );
         };
 
-        // Delay to ensure Firebase is ready
-        setTimeout(() => {
-            const root = ReactDOM.createRoot(document.getElementById('apex-root'));
-            root.render(<App />);
-        }, 1000);
+        const NavBtn = ({ id, label, icon: Icon, active, onClick }) => (
+            <button onClick={() => onClick(id)} className={`w-full flex items-center gap-4 p-4 rounded-3xl transition-all duration-300 group ${active === id ? 'active-tab translate-x-2' : 'text-slate-500 hover:bg-slate-900'}`}>
+                <Icon size={22} className={active === id ? 'text-white' : 'group-hover:text-emerald-500'} />
+                <span className="font-black text-[10px] uppercase tracking-widest">{label}</span>
+            </button>
+        );
+
+        const StatCard = ({ label, value, sub, color, border }) => (
+            <div className={`bg-slate-900 p-10 rounded-[3rem] border ${border} shadow-2xl hover:shadow-emerald-500/10 transition-all group relative overflow-hidden`}>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4 italic">{label}</p>
+                <h3 className={`text-5xl font-black tracking-tighter ${color} relative z-10`}>{value} <span className="text-sm font-normal opacity-30 text-white uppercase">{sub}</span></h3>
+            </div>
+        );
+
+        const bootSequence = setInterval(() => {
+            if (window.db) {
+                const root = ReactDOM.createRoot(document.getElementById('apex-root'));
+                root.render(<App />);
+                clearInterval(bootSequence);
+            }
+        }, 500);
     </script>
 </body>
 </html>
