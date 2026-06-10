@@ -2,196 +2,163 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>APEX | Sovereign (Mansury Style)</title>
+    <title>APEX | Sovereign Enterprise</title>
+    <!-- Stable Native Engines -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-100 font-sans overflow-hidden">
-    <div id="apex-root"></div>
+<body class="bg-slate-900 text-white font-sans overflow-hidden">
+    <div id="apex-root">
+        <div style="height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+            <h1 style="font-size:3rem; font-weight:900; color:#10b981;">APEX</h1>
+            <p>Initializing Sovereign Vault...</p>
+        </div>
+    </div>
 
-    <!-- 1. CLOUD ENGINE -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyAAazqZ1XnzpQ6A_cCHyQEsgXxq5jVVLXE",
-            authDomain: "apex-pharmacy-a69b5.firebaseapp.com",
-            projectId: "apex-pharmacy-a69b5",
-            storageBucket: "apex-pharmacy-a69b5.firebasestorage.app",
-            messagingSenderId: "28559683699",
-            appId: "1:28559683699:web:1cc3f16a98a32463657a06",
-            measurementId: "G-SVDCM1Y693"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        window.db = getFirestore(app);
-        window.api = { collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy };
-    </script>
-
-    <!-- 2. APEX INTERFACE LOGIC -->
-    <script type="text/babel">
+    <script>
+        const e = React.createElement;
         const { useState, useEffect } = React;
 
-        const App = () => {
-            const [view, setView] = useState('SALES'); // Default to Sales like Mansury
+        // --- 1. THE PRIVATE DATABASE (IndexedDB) ---
+        const db = new Dexie("ApexSovereignDB");
+        db.version(1).stores({
+            inventory: "++id, brandName, genericName, symptoms, stock",
+            sales: "++id, timestamp, total",
+            patients: "++id, name, cardId",
+            users: "++id, &username, pin, role",
+            expenses: "++id, category, amount"
+        });
+
+        function App() {
+            const [view, setView] = useState('LOGIN');
             const [user, setUser] = useState(null);
-            const [data, setData] = useState({ inventory: [], sales: [], users: [] });
+            const [data, setData] = useState({ inventory: [], sales: [], users: [], patients: [], expenses: [] });
             const [cart, setCart] = useState([]);
             const [search, setSearch] = useState("");
 
+            // --- DATA REFRESH ---
+            const refresh = async () => {
+                const i = await db.inventory.toArray();
+                const s = await db.sales.orderBy('id').reverse().limit(10).toArray();
+                const u = await db.users.toArray();
+                const p = await db.patients.toArray();
+                const ex = await db.expenses.toArray();
+                setData({ inventory: i, sales: s, users: u, patients: p, expenses: ex });
+            };
+
             useEffect(() => {
-                if (!window.db) return;
-                window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setData(p => ({...p, inventory: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                window.api.onSnapshot(window.api.collection(window.db, "sales"), (s) => setData(p => ({...p, sales: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                window.api.onSnapshot(window.api.collection(window.db, "users"), (s) => setData(p => ({...p, users: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-            }, []);
+                const init = async () => {
+                    if (await db.users.count() === 0) {
+                        await db.users.add({ username: "admin", pin: "1234", role: "MANAGER" });
+                    }
+                    if (user) refresh();
+                };
+                init();
+            }, [user]);
 
             const handleLogin = async () => {
-                const u = document.getElementById('u').value.toLowerCase().trim();
-                const p = document.getElementById('p').value.trim();
-                const q = window.api.query(window.api.collection(window.db, "users"), window.api.where("username", "==", u), window.api.where("pin", "==", p));
-                const snap = await window.api.getDocs(q);
-                if (!snap.empty) { setUser(snap.docs[0].data()); }
-                else alert("Wrong Credentials");
+                const u = document.getElementById('u_box').value.toLowerCase();
+                const p = document.getElementById('p_box').value;
+                const found = await db.users.where({ username: u, pin: p }).first();
+                if (found) { setUser(found); setView('DASHBOARD'); }
+                else alert("Access Denied");
             };
 
             const addToCart = (p) => {
                 const ex = cart.find(i => i.id === p.id);
-                if (p.stock <= (ex?.qty || 0)) return;
+                if (p.stock <= (ex?.qty || 0)) return alert("OUT OF STOCK");
                 setCart(prev => ex ? prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i) : [...prev, {...p, qty: 1}]);
             };
 
             const finalize = async () => {
-                const total = cart.reduce((s,i)=>s+(i.price*i.qty),0);
-                await window.api.addDoc(window.api.collection(window.db, "sales"), { total, timestamp: new Date().toISOString(), items: cart });
-                for(const i of cart) await window.api.updateDoc(window.api.doc(window.db, "inventory", i.id), { stock: i.stock - i.qty });
-                setCart([]); alert("Transaction Complete");
+                const total = cart.reduce((s,i)=>s+(i.price*i.qty), 0);
+                await db.sales.add({ total, timestamp: new Date().toLocaleString() });
+                for(const i of cart) await db.inventory.update(i.id, { stock: i.stock - i.qty });
+                setCart([]); refresh(); alert("Sale Recorded!");
             };
 
-            if (!user) {
-                return (
-                    <div className="h-screen flex items-center justify-center bg-slate-200">
-                        <div className="bg-white p-10 rounded-xl shadow-xl w-80 text-center border-t-4 border-blue-600">
-                            <h1 className="text-2xl font-bold text-slate-800 mb-6 uppercase tracking-tighter">Apex Login</h1>
-                            <input id="u" placeholder="User" className="w-full p-2 mb-2 border outline-none" />
-                            <input id="p" type="password" placeholder="PIN" className="w-full p-2 mb-6 border outline-none" />
-                            <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-2 font-bold hover:bg-blue-700">SIGN IN</button>
-                        </div>
-                    </div>
+            // --- UI BUILDER ---
+            if (view === 'LOGIN') {
+                return e('div', { className: 'h-screen flex items-center justify-center bg-black' },
+                    e('div', { className: 'bg-slate-900 p-12 rounded-[3rem] shadow-2xl w-80 text-center border border-slate-800' },
+                        e('h1', { className: 'text-4xl font-black text-emerald-500 mb-6 italic' }, 'APEX'),
+                        e('input', { id: 'u_box', placeholder: 'Username', className: 'w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none text-white border border-slate-700' }),
+                        e('input', { id: 'p_box', type: 'password', placeholder: 'PIN', className: 'w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none text-white border border-slate-700' }),
+                        e('button', { onClick: handleLogin, className: 'w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg' }, 'LOGIN')
+                    )
                 );
             }
 
-            return (
-                <div className="flex h-screen overflow-hidden text-slate-800">
-                    {/* SIDEBAR */}
-                    <aside className="w-56 bg-slate-800 text-white flex flex-col shrink-0">
-                        <div className="p-6 bg-slate-900 font-bold text-blue-400 italic">APEX | MANSURY STYLE</div>
-                        <nav className="flex-1">
-                            <button onClick={()=>setView('DASHBOARD')} className={`w-full text-left p-4 hover:bg-slate-700 ${view==='DASHBOARD'?'bg-blue-600':''}`}>Dashboard</button>
-                            <button onClick={()=>setView('SALES')} className={`w-full text-left p-4 hover:bg-slate-700 ${view==='SALES'?'bg-blue-600':''}`}>Sales Grid</button>
-                            <button onClick={()=>setView('STOO')} className={`w-full text-left p-4 hover:bg-slate-700 ${view==='STOO'?'bg-blue-600':''}`}>Master Stock</button>
-                        </nav>
-                        <div className="p-4 text-[10px] opacity-40 text-center">v2.1.0 Sovereign</div>
-                    </aside>
+            return e('div', { className: 'flex h-screen overflow-hidden' },
+                e('aside', { className: 'w-64 bg-black border-r border-slate-800 p-6 flex flex-col shrink-0' },
+                    e('h2', { className: 'text-2xl font-black mb-10 text-emerald-500 italic' }, 'APEX PRO'),
+                    e('nav', { className: 'flex-1 space-y-1' },
+                        ['DASHBOARD', 'POS', 'STOO', 'PATIENTS', 'REPORTS'].map(v => 
+                            e('button', { key: v, onClick: () => setView(v), className: `w-full text-left p-3 rounded-xl font-bold ${view===v?'bg-emerald-600 text-white':'text-slate-500'}` }, v)
+                        )
+                    ),
+                    e('button', { onClick: () => window.location.reload(), className: 'mt-20 text-rose-500 text-xs font-bold' }, 'LOGOUT')
+                ),
 
-                    {/* MAIN */}
-                    <main className="flex-1 flex flex-col overflow-hidden bg-slate-50">
-                        {/* HEADER STATS */}
-                        <header className="bg-white border-b p-4 grid grid-cols-4 gap-4 shrink-0">
-                            <div className="border-r px-4"><p className="text-[10px] font-bold text-slate-400">DAILY CASH</p><p className="text-xl font-bold">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()}</p></div>
-                            <div className="border-r px-4"><p className="text-[10px] font-bold text-slate-400">NET WORTH</p><p className="text-xl font-bold text-emerald-600">{data.inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0).toLocaleString()}</p></div>
-                            <div className="border-r px-4"><p className="text-[10px] font-bold text-slate-400">SHORTAGES</p><p className="text-xl font-bold text-rose-500">{data.inventory.filter(i=>i.stock < 10).length}</p></div>
-                            <div className="px-4"><p className="text-[10px] font-bold text-slate-400">OPERATOR</p><p className="text-xl font-bold text-blue-600 underline">{user.username.toUpperCase()}</p></div>
-                        </header>
+                e('main', { className: 'flex-1 p-10 overflow-auto bg-slate-950' },
+                    view === 'DASHBOARD' && e('div', null,
+                        e('h2', {className:'text-3xl font-black mb-8'}, 'Director Overview'),
+                        e('div', {className:'grid grid-cols-2 gap-6'},
+                            e('div', {className:'bg-slate-900 p-8 rounded-3xl border border-slate-800 border-l-8 border-emerald-500'}, 
+                                e('p', {className:'text-xs font-bold text-slate-500 uppercase'}, 'Total Sales'),
+                                e('h3', {className:'text-3xl font-black text-emerald-400'}, data.sales.reduce((a,b)=>a+b.total,0).toLocaleString() + ' TZS')
+                            ),
+                            e('div', {className:'bg-slate-900 p-8 rounded-3xl border border-slate-800 border-l-8 border-blue-500'}, 
+                                e('p', {className:'text-xs font-bold text-slate-500 uppercase'}, 'Inventory Wealth'),
+                                e('h3', {className:'text-3xl font-black text-blue-400'}, data.inventory.length + ' Items')
+                            )
+                        )
+                    ),
 
-                        <div className="flex-1 overflow-auto p-6">
-                            {view === 'SALES' && (
-                                <div className="flex gap-6 h-full">
-                                    <div className="flex-1 bg-white rounded-lg border shadow-sm flex flex-col overflow-hidden">
-                                        <div className="p-4 bg-slate-50 border-b">
-                                            <input placeholder="Type Name or Barcode..." className="w-full p-2 border rounded outline-blue-500" onChange={(e)=>setSearch(e.target.value.toLowerCase())} />
-                                        </div>
-                                        <div className="flex-1 overflow-auto no-scrollbar">
-                                            <table className="w-full text-left text-sm">
-                                                <thead className="sticky top-0 bg-white border-b">
-                                                    <tr className="text-slate-400 text-xs">
-                                                        <th className="p-3">Product Name</th><th className="p-3">Stock</th><th className="p-3">Price</th><th className="p-3 text-right">Action</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {data.inventory.filter(p=>p.brandName.toLowerCase().includes(search)).map(p => (
-                                                        <tr key={p.id} className="border-b hover:bg-blue-50 transition-all">
-                                                            <td className="p-3 font-bold">{p.brandName} <span className="text-[10px] font-normal opacity-40">{p.strength}</span></td>
-                                                            <td className={`p-3 font-bold ${p.stock < 10 ? 'text-rose-500':''}`}>{p.stock}</td>
-                                                            <td className="p-3 font-bold text-blue-600">{p.price}</td>
-                                                            <td className="p-3 text-right"><button onClick={()=>addToCart(p)} className="bg-slate-100 px-3 py-1 rounded font-bold text-xs hover:bg-blue-600 hover:text-white">+</button></td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                    <div className="w-96 bg-white rounded-lg border shadow-sm flex flex-col overflow-hidden border-t-4 border-blue-600">
-                                        <h3 className="p-4 bg-slate-50 font-bold border-b">Current Invoice</h3>
-                                        <div className="flex-1 p-4 space-y-2 overflow-auto">
-                                            {cart.map(i => (
-                                                <div key={i.id} className="flex justify-between text-xs border-b pb-2">
-                                                    <span className="font-bold uppercase">{i.brandName} x{i.qty}</span>
-                                                    <span>{(i.price * i.qty).toLocaleString()}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="p-4 bg-slate-50 border-t">
-                                            <div className="flex justify-between font-black text-2xl mb-4"><span>Total:</span><span className="text-blue-600">{cart.reduce((s,i)=>s+(i.price*i.qty),0).toLocaleString()}</span></div>
-                                            <button onClick={finalize} className="w-full bg-blue-600 text-white py-3 rounded font-bold shadow-lg hover:bg-blue-700">PRINT & SAVE</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
+                    view === 'POS' && e('div', { className: 'flex gap-6' },
+                        e('div', { className: 'flex-1 space-y-6' },
+                            e('input', { placeholder: 'Search products...', className: 'w-full p-4 rounded-2xl bg-slate-900 border border-slate-800', onChange: (ev) => setSearch(ev.target.value.toLowerCase()) }),
+                            e('div', { className: 'grid grid-cols-2 gap-4' },
+                                data.inventory.filter(p => p.brandName.toLowerCase().includes(search)).map(p => e('div', { key: p.id, onClick: () => addToCart(p), className: 'bg-slate-900 p-6 rounded-3xl border border-slate-800 hover:border-emerald-500 cursor-pointer shadow-sm active:scale-95 transition-all' },
+                                    e('p', {className:'font-black text-lg'}, p.brandName),
+                                    e('p', {className:'text-emerald-400 font-bold'}, Number(p.price).toLocaleString() + ' TZS'),
+                                    e('p', {className:'text-[10px] text-slate-600 mt-2'}, 'STOCK: '+p.stock)
+                                ))
+                            )
+                        ),
+                        e('div', { className: 'w-80 bg-white text-slate-900 p-8 rounded-[3rem] shadow-2xl h-fit border-t-8 border-emerald-600' },
+                            e('h3', {className:'font-black text-xl mb-4'}, 'Bill'),
+                            cart.map(i => e('div', {key:i.id, className:'flex justify-between py-2 border-b text-sm font-bold'}, e('span',null,i.brandName+' x'+i.qty), e('span',null,(i.price*i.qty).toLocaleString()))),
+                            e('div', {className:'mt-6 flex justify-between font-black text-2xl text-emerald-600'}, e('span',null,'Total'), e('span',null, cart.reduce((s,i)=>s+(i.price*i.qty),0).toLocaleString())),
+                            e('button', {onClick: finalize, className: 'w-full bg-emerald-600 text-white p-4 rounded-2xl font-bold mt-8 shadow-lg' }, 'FINALIZE SALE')
+                        )
+                    ),
 
-                            {view === 'STOO' && (
-                                <div className="bg-white rounded-lg border shadow-sm p-6 overflow-hidden">
-                                    <div className="flex justify-between mb-6">
-                                        <h2 className="text-xl font-bold">Master Stock Register</h2>
-                                        <button onClick={async ()=>{
-                                            const n = prompt("Brand:"); const c = prompt("Cost:"); const s = prompt("Sell:"); const q = prompt("Stock:");
-                                            if(n) await window.api.addDoc(window.api.collection(window.db, "inventory"), { brandName: n.toUpperCase(), costPrice: Number(c), price: Number(s), stock: Number(q), genericName: "" });
-                                        }} className="bg-emerald-600 text-white px-4 py-2 rounded font-bold text-sm">+ Add New Medicine</button>
-                                    </div>
-                                    <table className="w-full text-left text-xs">
-                                        <thead className="bg-slate-50 border-b text-slate-400">
-                                            <tr><th className="p-3">Brand Name</th><th className="p-3">Stock</th><th className="p-3">Cost</th><th className="p-3">Selling</th><th className="p-3">Margin</th></tr>
-                                        </thead>
-                                        <tbody>
-                                            {data.inventory.map(p => (
-                                                <tr key={p.id} className="border-b hover:bg-slate-50">
-                                                    <td className="p-3 font-bold">{p.brandName}</td>
-                                                    <td className="p-3">{p.stock}</td>
-                                                    <td className="p-3 opacity-50">{p.costPrice}</td>
-                                                    <td className="p-3 font-bold text-emerald-600">{p.price}</td>
-                                                    <td className="p-3 font-bold text-blue-600">{(((p.price-p.costPrice)/p.price)*100).toFixed(0)}%</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </div>
-                    </main>
-                </div>
+                    view === 'STOO' && e('div', null,
+                        e('div', {className:'flex justify-between mb-8'},
+                            e('h2', {className:'text-3xl font-black'}, 'Inventory'),
+                            e('button', {onClick: async () => {
+                                const n = prompt("Brand:"); const p = prompt("Price:"); const c = prompt("Cost:"); const s = prompt("Stock:");
+                                if(n) await db.inventory.add({brandName:n.toUpperCase(), price:Number(p), costPrice:Number(c), stock:Number(s), symptoms:''}); refresh();
+                            }, className: 'bg-emerald-600 text-white px-6 py-2 rounded-xl font-bold' }, '+ Add Stock')
+                        ),
+                        e('table', {className:'w-full text-left bg-slate-900 rounded-3xl overflow-hidden shadow-sm'},
+                            e('thead', {className:'bg-black text-[10px] font-bold text-slate-500 p-4 uppercase'}, e('tr', null, e('th', {className:'p-4'},'Product'), e('th',null,'Stock'), e('th',null,'Price'))),
+                            e('tbody', null, data.inventory.map(p => e('tr', {key:p.id, className:'border-b border-slate-800'},
+                                e('td', {className:'p-4 font-bold'}, p.brandName),
+                                e('td', null, p.stock),
+                                e('td', {className:'font-bold text-emerald-400'}, p.price.toLocaleString())
+                            )))
+                        )
+                    )
+                )
             );
-        };
+        }
 
-        const rootTrigger = setInterval(() => {
-            if (window.db) {
-                const root = ReactDOM.createRoot(document.getElementById('apex-root'));
-                root.render(<App />);
-                clearInterval(rootTrigger);
-            }
-        }, 500);
+        const root = ReactDOM.createRoot(document.getElementById('apex-root'));
+        root.render(e(App));
     </script>
 </body>
 </html>
