@@ -2,33 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>APEX | Enterprise ERP</title>
-    <!-- PRODUCTION LIBRARIES -->
+    <title>APEX | Sovereign (Mansury Style)</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #020617; margin: 0; color: white; overflow: hidden; }
-        .active-tab { background: #10b981 !important; color: white !important; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-    </style>
 </head>
-<body>
-    <div id="apex-root">
-        <div style="height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #020617;">
-            <h1 style="font-size: 3rem; font-weight: 900; color: #10b981; font-style: italic;">APEX</h1>
-            <p style="color: #64748b; margin-top: 10px; font-weight: bold; letter-spacing: 2px;">CONNECTING TO CLOUD...</p>
-        </div>
-    </div>
+<body class="bg-slate-100 font-sans overflow-hidden">
+    <div id="apex-root"></div>
 
-    <!-- 1. CLOUD ENGINE (FIREBASE) -->
+    <!-- 1. CLOUD ENGINE -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAAazqZ1XnzpQ6A_cCHyQEsgXxq5jVVLXE",
@@ -42,170 +28,168 @@
 
         const app = initializeApp(firebaseConfig);
         window.db = getFirestore(app);
-        window.api = { collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc };
+        window.api = { collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy };
     </script>
 
-    <!-- 2. APEX INTELLIGENCE LOGIC -->
+    <!-- 2. APEX INTERFACE LOGIC -->
     <script type="text/babel">
         const { useState, useEffect } = React;
 
         const App = () => {
-            const [view, setView] = useState('DASHBOARD');
+            const [view, setView] = useState('SALES'); // Default to Sales like Mansury
             const [user, setUser] = useState(null);
-            const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [] });
+            const [data, setData] = useState({ inventory: [], sales: [], users: [] });
             const [cart, setCart] = useState([]);
             const [search, setSearch] = useState("");
-            const [editItem, setEditItem] = useState(null);
 
-            // DATA SYNC
             useEffect(() => {
                 if (!window.db) return;
-                const u1 = window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setData(p => ({...p, inventory: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u2 = window.api.onSnapshot(window.api.collection(window.db, "sales"), (s) => setData(p => ({...p, sales: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u3 = window.api.onSnapshot(window.api.collection(window.db, "patients"), (s) => setData(p => ({...p, patients: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u4 = window.api.onSnapshot(window.api.collection(window.db, "expenses"), (s) => setData(p => ({...p, expenses: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u5 = window.api.onSnapshot(window.api.collection(window.db, "users"), (s) => setData(p => ({...p, users: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                return () => { u1(); u2(); u3(); u4(); u5(); };
+                window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setData(p => ({...p, inventory: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                window.api.onSnapshot(window.api.collection(window.db, "sales"), (s) => setData(p => ({...p, sales: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                window.api.onSnapshot(window.api.collection(window.db, "users"), (s) => setData(p => ({...p, users: s.docs.map(d=>({id:d.id, ...d.data()}))})));
             }, []);
 
-            // PERMISSIONS
-            const isManager = user?.role === 'MANAGER';
-
-            // AUTH
             const handleLogin = async () => {
-                const u = document.getElementById('u_box').value.toLowerCase().trim();
-                const p = document.getElementById('p_box').value.trim();
+                const u = document.getElementById('u').value.toLowerCase().trim();
+                const p = document.getElementById('p').value.trim();
                 const q = window.api.query(window.api.collection(window.db, "users"), window.api.where("username", "==", u), window.api.where("pin", "==", p));
                 const snap = await window.api.getDocs(q);
-                if (!snap.empty) { setUser({ id: snap.docs[0].id, ...snap.docs[0].data() }); setView('DASHBOARD'); }
-                else alert("Invalid PIN");
+                if (!snap.empty) { setUser(snap.docs[0].data()); }
+                else alert("Wrong Credentials");
             };
 
-            // SALES
             const addToCart = (p) => {
-                setCart(prev => {
-                    const ex = prev.find(i => i.id === p.id);
-                    if (ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
-                    return [...prev, {...p, qty: 1}];
-                });
+                const ex = cart.find(i => i.id === p.id);
+                if (p.stock <= (ex?.qty || 0)) return;
+                setCart(prev => ex ? prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i) : [...prev, {...p, qty: 1}]);
             };
 
             const finalize = async () => {
                 const total = cart.reduce((s,i)=>s+(i.price*i.qty),0);
-                await window.api.addDoc(window.api.collection(window.db, "sales"), { total, timestamp: new Date().toISOString(), soldBy: user.username, items: cart });
+                await window.api.addDoc(window.api.collection(window.db, "sales"), { total, timestamp: new Date().toISOString(), items: cart });
                 for(const i of cart) await window.api.updateDoc(window.api.doc(window.db, "inventory", i.id), { stock: i.stock - i.qty });
-                setCart([]); alert("Success");
+                setCart([]); alert("Transaction Complete");
             };
 
             if (!user) {
                 return (
-                    <div className="h-screen flex items-center justify-center bg-black p-6">
-                        <div className="bg-slate-900 p-12 rounded-[3.5rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
-                            <h1 className="text-5xl font-black text-emerald-500 mb-2 italic">APEX</h1>
-                            <input id="u_box" placeholder="Username" className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold" />
-                            <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-8 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold" />
-                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg">LOGIN</button>
+                    <div className="h-screen flex items-center justify-center bg-slate-200">
+                        <div className="bg-white p-10 rounded-xl shadow-xl w-80 text-center border-t-4 border-blue-600">
+                            <h1 className="text-2xl font-bold text-slate-800 mb-6 uppercase tracking-tighter">Apex Login</h1>
+                            <input id="u" placeholder="User" className="w-full p-2 mb-2 border outline-none" />
+                            <input id="p" type="password" placeholder="PIN" className="w-full p-2 mb-6 border outline-none" />
+                            <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-2 font-bold hover:bg-blue-700">SIGN IN</button>
                         </div>
                     </div>
                 );
             }
 
             return (
-                <div className="flex h-screen bg-slate-950 text-white overflow-hidden">
+                <div className="flex h-screen overflow-hidden text-slate-800">
                     {/* SIDEBAR */}
-                    <aside className="w-64 bg-black border-r border-slate-800 p-6 flex flex-col shrink-0">
-                        <h2 className="text-xl font-black text-emerald-500 mb-10 italic">APEX PRO</h2>
-                        <nav className="flex-1 space-y-1">
-                            <SidebarBtn id="DASHBOARD" label="Dashboard" icon="🏠" active={view} set={setView} />
-                            <SidebarBtn id="POS" label="Point of Sale" icon="🛒" active={view} set={setView} />
-                            <SidebarBtn id="STOO" label="Inventory" icon="📦" active={view} set={setView} />
-                            <SidebarBtn id="PATIENTS" label="Patients" icon="👥" active={view} set={setView} />
-                            {isManager && <SidebarBtn id="FINANCE" label="Financials" icon="💰" active={view} set={setView} />}
-                            {isManager && <SidebarBtn id="USERS" label="Personnel" icon="🛡️" active={view} set={setView} />}
+                    <aside className="w-56 bg-slate-800 text-white flex flex-col shrink-0">
+                        <div className="p-6 bg-slate-900 font-bold text-blue-400 italic">APEX | MANSURY STYLE</div>
+                        <nav className="flex-1">
+                            <button onClick={()=>setView('DASHBOARD')} className={`w-full text-left p-4 hover:bg-slate-700 ${view==='DASHBOARD'?'bg-blue-600':''}`}>Dashboard</button>
+                            <button onClick={()=>setView('SALES')} className={`w-full text-left p-4 hover:bg-slate-700 ${view==='SALES'?'bg-blue-600':''}`}>Sales Grid</button>
+                            <button onClick={()=>setView('STOO')} className={`w-full text-left p-4 hover:bg-slate-700 ${view==='STOO'?'bg-blue-600':''}`}>Master Stock</button>
                         </nav>
-                        <button onClick={()=>window.location.reload()} className="text-rose-500 font-bold text-[10px] uppercase mt-10">Logout</button>
+                        <div className="p-4 text-[10px] opacity-40 text-center">v2.1.0 Sovereign</div>
                     </aside>
 
                     {/* MAIN */}
-                    <main className="flex-1 p-10 overflow-auto no-scrollbar">
-                        {view === 'DASHBOARD' && <div className="animate-in fade-in duration-700">
-                            <h2 className="text-3xl font-black mb-10">Director's Dashboard</h2>
-                            <div className="grid grid-cols-2 gap-6">
-                                <div className="bg-slate-900 p-10 rounded-[3rem] border border-slate-800 border-l-8 border-emerald-500 shadow-xl">
-                                    <p className="text-slate-500 text-xs font-bold uppercase">Revenue</p>
-                                    <h3 className="text-4xl font-black text-emerald-400">{(data.sales || []).reduce((a,b)=>a+(b.total||0),0).toLocaleString()}</h3>
-                                </div>
-                                <div className="bg-slate-900 p-10 rounded-[3rem] border border-slate-800 border-l-8 border-blue-500 shadow-xl">
-                                    <p className="text-slate-500 text-xs font-bold uppercase">Inventory</p>
-                                    <h3 className="text-4xl font-black text-blue-400">{(data.inventory || []).length}</h3>
-                                </div>
-                            </div>
-                        </div>}
+                    <main className="flex-1 flex flex-col overflow-hidden bg-slate-50">
+                        {/* HEADER STATS */}
+                        <header className="bg-white border-b p-4 grid grid-cols-4 gap-4 shrink-0">
+                            <div className="border-r px-4"><p className="text-[10px] font-bold text-slate-400">DAILY CASH</p><p className="text-xl font-bold">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()}</p></div>
+                            <div className="border-r px-4"><p className="text-[10px] font-bold text-slate-400">NET WORTH</p><p className="text-xl font-bold text-emerald-600">{data.inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0).toLocaleString()}</p></div>
+                            <div className="border-r px-4"><p className="text-[10px] font-bold text-slate-400">SHORTAGES</p><p className="text-xl font-bold text-rose-500">{data.inventory.filter(i=>i.stock < 10).length}</p></div>
+                            <div className="px-4"><p className="text-[10px] font-bold text-slate-400">OPERATOR</p><p className="text-xl font-bold text-blue-600 underline">{user.username.toUpperCase()}</p></div>
+                        </header>
 
-                        {view === 'POS' && <div className="flex gap-8 h-full animate-in slide-in-from-bottom duration-500">
-                            <div className="flex-1 space-y-6">
-                                <input placeholder="Search..." className="w-full p-6 bg-slate-900 border border-slate-800 rounded-[2rem] text-xl font-bold outline-none focus:ring-2 ring-emerald-500 shadow-xl" onChange={(e)=>setSearch(e.target.value.toLowerCase())} />
-                                <div className="grid grid-cols-2 gap-4">
-                                    {data.inventory.filter(p => p.brandName?.toLowerCase().includes(search)).map(p => (
-                                        <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer active:scale-95 transition-all shadow-xl">
-                                            <p className="font-black text-xl mb-1">{p.brandName}</p>
-                                            <p className="text-2xl font-black text-emerald-400">{Number(p.price).toLocaleString()} TZS</p>
-                                            <p className="text-[10px] opacity-30 font-black uppercase">STK: {p.stock}</p>
+                        <div className="flex-1 overflow-auto p-6">
+                            {view === 'SALES' && (
+                                <div className="flex gap-6 h-full">
+                                    <div className="flex-1 bg-white rounded-lg border shadow-sm flex flex-col overflow-hidden">
+                                        <div className="p-4 bg-slate-50 border-b">
+                                            <input placeholder="Type Name or Barcode..." className="w-full p-2 border rounded outline-blue-500" onChange={(e)=>setSearch(e.target.value.toLowerCase())} />
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="w-96 bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-2xl h-fit border-t-8 border-emerald-600 flex flex-col shrink-0">
-                                <h3 className="font-black text-2xl mb-8 tracking-tighter uppercase">Bill</h3>
-                                <div className="space-y-4 mb-8 overflow-auto max-h-64 px-1">
-                                    {cart.map(i => (
-                                        <div key={i.id} className="flex justify-between items-center border-b border-slate-100 pb-4">
-                                            <div className="flex-1 uppercase font-bold">{i.brandName} x{i.qty}</div>
-                                            <p className="font-black text-emerald-600">{(i.price * i.qty).toLocaleString()}</p>
+                                        <div className="flex-1 overflow-auto no-scrollbar">
+                                            <table className="w-full text-left text-sm">
+                                                <thead className="sticky top-0 bg-white border-b">
+                                                    <tr className="text-slate-400 text-xs">
+                                                        <th className="p-3">Product Name</th><th className="p-3">Stock</th><th className="p-3">Price</th><th className="p-3 text-right">Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {data.inventory.filter(p=>p.brandName.toLowerCase().includes(search)).map(p => (
+                                                        <tr key={p.id} className="border-b hover:bg-blue-50 transition-all">
+                                                            <td className="p-3 font-bold">{p.brandName} <span className="text-[10px] font-normal opacity-40">{p.strength}</span></td>
+                                                            <td className={`p-3 font-bold ${p.stock < 10 ? 'text-rose-500':''}`}>{p.stock}</td>
+                                                            <td className="p-3 font-bold text-blue-600">{p.price}</td>
+                                                            <td className="p-3 text-right"><button onClick={()=>addToCart(p)} className="bg-slate-100 px-3 py-1 rounded font-bold text-xs hover:bg-blue-600 hover:text-white">+</button></td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
                                         </div>
-                                    ))}
+                                    </div>
+                                    <div className="w-96 bg-white rounded-lg border shadow-sm flex flex-col overflow-hidden border-t-4 border-blue-600">
+                                        <h3 className="p-4 bg-slate-50 font-bold border-b">Current Invoice</h3>
+                                        <div className="flex-1 p-4 space-y-2 overflow-auto">
+                                            {cart.map(i => (
+                                                <div key={i.id} className="flex justify-between text-xs border-b pb-2">
+                                                    <span className="font-bold uppercase">{i.brandName} x{i.qty}</span>
+                                                    <span>{(i.price * i.qty).toLocaleString()}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="p-4 bg-slate-50 border-t">
+                                            <div className="flex justify-between font-black text-2xl mb-4"><span>Total:</span><span className="text-blue-600">{cart.reduce((s,i)=>s+(i.price*i.qty),0).toLocaleString()}</span></div>
+                                            <button onClick={finalize} className="w-full bg-blue-600 text-white py-3 rounded font-bold shadow-lg hover:bg-blue-700">PRINT & SAVE</button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="flex justify-between font-black text-4xl mb-10 tracking-tighter text-emerald-600"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.price*i.qty),0).toLocaleString()}</span></div>
-                                <button onClick={finalize} className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black text-xl shadow-lg active:scale-95 transition-all">FINALIZE SALE</button>
-                            </div>
-                        </div>}
+                            )}
 
-                        {view === 'STOO' && <div className="bg-slate-900 p-10 rounded-[3rem] border border-slate-800 animate-in fade-in duration-500 h-full overflow-y-auto no-scrollbar">
-                            <div className="flex justify-between items-center mb-10">
-                                <h2 className="text-2xl font-black text-emerald-500 uppercase">Inventory Vault</h2>
-                                <button onClick={async ()=>{
-                                    const n = prompt("Brand:"); const g = prompt("Generic:"); const c = prompt("Cost:"); const p = prompt("Price:"); const q = prompt("Qty:"); const cat = prompt("Category:"); const e = prompt("Expiry (YYYY-MM-DD):");
-                                    if(n) await window.api.addDoc(window.api.collection(window.db, "inventory"), { brandName:n.toUpperCase(), genericName:g, costPrice:Number(c), price:Number(p), stock:Number(q), category:cat, expiryDate:e });
-                                }} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg">+ Add Item</button>
-                            </div>
-                            <table className="w-full text-left">
-                                <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th>Medicine</th><th>Stock</th><th>Margin</th><th className="text-right">Price</th></tr></thead>
-                                <tbody className="font-bold">{data.inventory.map(p => (
-                                    <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50 transition-all group">
-                                        <td className="py-6"><p className="font-black text-white uppercase">{p.brandName}</p></td>
-                                        <td className={p.stock < 10 ? 'text-rose-500 underline' : 'text-slate-300'}>{p.stock}</td>
-                                        <td className="text-emerald-500 text-xs font-black">{(((p.price-p.costPrice)/p.price)*100).toFixed(0)}%</td>
-                                        <td className="text-right text-emerald-400 text-xl font-black">{Number(p.price).toLocaleString()}</td>
-                                    </tr>
-                                ))}</tbody>
-                            </table>
-                        </div>}
+                            {view === 'STOO' && (
+                                <div className="bg-white rounded-lg border shadow-sm p-6 overflow-hidden">
+                                    <div className="flex justify-between mb-6">
+                                        <h2 className="text-xl font-bold">Master Stock Register</h2>
+                                        <button onClick={async ()=>{
+                                            const n = prompt("Brand:"); const c = prompt("Cost:"); const s = prompt("Sell:"); const q = prompt("Stock:");
+                                            if(n) await window.api.addDoc(window.api.collection(window.db, "inventory"), { brandName: n.toUpperCase(), costPrice: Number(c), price: Number(s), stock: Number(q), genericName: "" });
+                                        }} className="bg-emerald-600 text-white px-4 py-2 rounded font-bold text-sm">+ Add New Medicine</button>
+                                    </div>
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-slate-50 border-b text-slate-400">
+                                            <tr><th className="p-3">Brand Name</th><th className="p-3">Stock</th><th className="p-3">Cost</th><th className="p-3">Selling</th><th className="p-3">Margin</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            {data.inventory.map(p => (
+                                                <tr key={p.id} className="border-b hover:bg-slate-50">
+                                                    <td className="p-3 font-bold">{p.brandName}</td>
+                                                    <td className="p-3">{p.stock}</td>
+                                                    <td className="p-3 opacity-50">{p.costPrice}</td>
+                                                    <td className="p-3 font-bold text-emerald-600">{p.price}</td>
+                                                    <td className="p-3 font-bold text-blue-600">{(((p.price-p.costPrice)/p.price)*100).toFixed(0)}%</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
                     </main>
                 </div>
             );
         };
 
-        const SidebarBtn = ({id, label, icon, active, set}) => (
-            <button onClick={()=>set(id)} className={`w-full text-left p-4 rounded-xl font-bold transition-all ${active===id?'bg-emerald-600 text-white shadow-lg':'text-slate-500 hover:bg-slate-900'}`}>
-                <span className="mr-3">{icon}</span> {label}
-            </button>
-        );
-
-        const checkBoot = setInterval(() => {
+        const rootTrigger = setInterval(() => {
             if (window.db) {
                 const root = ReactDOM.createRoot(document.getElementById('apex-root'));
                 root.render(<App />);
-                clearInterval(checkBoot);
+                clearInterval(rootTrigger);
             }
         }, 500);
     </script>
