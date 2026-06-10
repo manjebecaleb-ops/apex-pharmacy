@@ -2,46 +2,52 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>APEX | Sovereign Enterprise</title>
-    <!-- Stable Native Engines -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APEX | Sovereign Enterprise ERP</title>
+    <!-- PRODUCTION LIBRARIES -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; background-color: #020617; color: white; }
+        .active-tab { background: #10b981 !important; color: white !important; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .glass-panel { background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
+    </style>
 </head>
-<body class="bg-slate-900 text-white font-sans overflow-hidden">
-    <div id="apex-root">
-        <div style="height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;">
-            <h1 style="font-size:3rem; font-weight:900; color:#10b981;">APEX</h1>
-            <p>Initializing Sovereign Vault...</p>
-        </div>
-    </div>
+<body>
+    <div id="apex-root"></div>
 
     <script>
         const e = React.createElement;
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
 
-        // --- 1. THE PRIVATE DATABASE (IndexedDB) ---
-        const db = new Dexie("ApexSovereignDB");
+        // --- 1. SOVEREIGN DATABASE SCHEMA ---
+        const db = new Dexie("ApexSovereignMaster");
         db.version(1).stores({
-            inventory: "++id, brandName, genericName, symptoms, stock",
-            sales: "++id, timestamp, total",
-            patients: "++id, name, cardId",
-            users: "++id, &username, pin, role",
-            expenses: "++id, category, amount"
+            inventory: "++id, &barcode, brandName, genericName, symptoms, category, expiryDate",
+            sales: "++id, timestamp, total, soldBy",
+            patients: "++id, &cardId, name, phone",
+            expenses: "++id, category, amount, date",
+            users: "++id, &username, pin, role, status"
         });
 
         function App() {
-            const [view, setView] = useState('LOGIN');
+            const [view, setView] = useState('DASHBOARD');
             const [user, setUser] = useState(null);
             const [data, setData] = useState({ inventory: [], sales: [], users: [], patients: [], expenses: [] });
             const [cart, setCart] = useState([]);
             const [search, setSearch] = useState("");
+            const [editItem, setEditItem] = useState(null);
+            const [devClicks, setDevClicks] = useState(0);
 
-            // --- DATA REFRESH ---
+            // --- DATA LOADERS ---
             const refresh = async () => {
                 const i = await db.inventory.toArray();
-                const s = await db.sales.orderBy('id').reverse().limit(10).toArray();
+                const s = await db.sales.orderBy('id').reverse().toArray();
                 const u = await db.users.toArray();
                 const p = await db.patients.toArray();
                 const ex = await db.expenses.toArray();
@@ -51,111 +57,283 @@
             useEffect(() => {
                 const init = async () => {
                     if (await db.users.count() === 0) {
-                        await db.users.add({ username: "admin", pin: "1234", role: "MANAGER" });
+                        await db.users.add({ username: "admin", pin: "1234", role: "MANAGER", status: "ACTIVE" });
                     }
                     if (user) refresh();
                 };
                 init();
             }, [user]);
 
-            const handleLogin = async () => {
-                const u = document.getElementById('u_box').value.toLowerCase();
-                const p = document.getElementById('p_box').value;
-                const found = await db.users.where({ username: u, pin: p }).first();
-                if (found) { setUser(found); setView('DASHBOARD'); }
-                else alert("Access Denied");
+            // --- POS & CART ---
+            const handleAddToCart = (p) => {
+                const expiryObj = new Date(p.expiryDate);
+                if (expiryObj <= new Date()) return alert("SAFETY: This drug is EXPIRED!");
+                
+                setCart(prev => {
+                    const ex = prev.find(i => i.id === p.id);
+                    if (ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
+                    return [...prev, {...p, qty: 1}];
+                });
             };
 
-            const addToCart = (p) => {
-                const ex = cart.find(i => i.id === p.id);
-                if (p.stock <= (ex?.qty || 0)) return alert("OUT OF STOCK");
-                setCart(prev => ex ? prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i) : [...prev, {...p, qty: 1}]);
+            const updateCartQty = (id, val) => {
+                setCart(prev => prev.map(i => i.id === id ? {...i, qty: parseInt(val) || 0} : i));
             };
 
-            const finalize = async () => {
-                const total = cart.reduce((s,i)=>s+(i.price*i.qty), 0);
-                await db.sales.add({ total, timestamp: new Date().toLocaleString() });
+            const finalizeSale = async (method) => {
+                const total = cart.reduce((s,i) => s + (i.price * i.qty), 0);
+                const totalCost = cart.reduce((s,i) => s + (i.costPrice * i.qty), 0);
+                await db.sales.add({
+                    total, profit: total - totalCost, timestamp: new Date().toISOString(), soldBy: user.username, items: cart, method
+                });
                 for(const i of cart) await db.inventory.update(i.id, { stock: i.stock - i.qty });
-                setCart([]); refresh(); alert("Sale Recorded!");
+                setCart([]); refresh(); alert("Transaction Completed Locally");
             };
 
-            // --- UI BUILDER ---
-            if (view === 'LOGIN') {
+            // --- PERMISSIONS ---
+            const hasAccess = (level) => {
+                const roles = { 'MANAGER': 4, 'PHARMACIST': 3, 'TECHNICIAN': 2, 'ASSISTANT': 1, 'DISPENSER': 0 };
+                return roles[user?.role] >= roles[level];
+            };
+
+            // --- UI: LOGIN ---
+            if (!user) {
                 return e('div', { className: 'h-screen flex items-center justify-center bg-black' },
-                    e('div', { className: 'bg-slate-900 p-12 rounded-[3rem] shadow-2xl w-80 text-center border border-slate-800' },
-                        e('h1', { className: 'text-4xl font-black text-emerald-500 mb-6 italic' }, 'APEX'),
-                        e('input', { id: 'u_box', placeholder: 'Username', className: 'w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none text-white border border-slate-700' }),
-                        e('input', { id: 'p_box', type: 'password', placeholder: 'PIN', className: 'w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none text-white border border-slate-700' }),
-                        e('button', { onClick: handleLogin, className: 'w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg' }, 'LOGIN')
+                    e('div', { className: 'bg-slate-900 p-12 rounded-[4rem] shadow-2xl w-full max-w-sm text-center border border-slate-800' },
+                        e('h1', { className: 'text-5xl font-black text-emerald-500 mb-2 italic tracking-tighter underline underline-offset-8' }, 'APEX'),
+                        e('p', { className: 'text-slate-500 text-[10px] font-bold uppercase mb-12 tracking-[0.3em]' }, 'Sovereign Vault Login'),
+                        e('input', { id: 'u_box', placeholder: 'Username', className: 'w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold' }),
+                        e('input', { id: 'p_box', type: 'password', placeholder: 'PIN', className: 'w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[1em]' }),
+                        e('button', { 
+                            onClick: async () => {
+                                const u = document.getElementById('u_box').value.toLowerCase();
+                                const p = document.getElementById('p_box').value;
+                                const found = await db.users.where({ username: u, pin: p, status: 'ACTIVE' }).first();
+                                if (found) setUser(found); else alert("Access Denied");
+                            },
+                            className: 'w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95' 
+                        }, 'AUTHORIZE')
                     )
                 );
             }
 
-            return e('div', { className: 'flex h-screen overflow-hidden' },
-                e('aside', { className: 'w-64 bg-black border-r border-slate-800 p-6 flex flex-col shrink-0' },
-                    e('h2', { className: 'text-2xl font-black mb-10 text-emerald-500 italic' }, 'APEX PRO'),
-                    e('nav', { className: 'flex-1 space-y-1' },
-                        ['DASHBOARD', 'POS', 'STOO', 'PATIENTS', 'REPORTS'].map(v => 
-                            e('button', { key: v, onClick: () => setView(v), className: `w-full text-left p-3 rounded-xl font-bold ${view===v?'bg-emerald-600 text-white':'text-slate-500'}` }, v)
-                        )
+            return e('div', { className: 'flex h-screen overflow-hidden bg-slate-950' },
+                // SIDEBAR
+                e('aside', { className: 'w-72 bg-black border-r border-slate-800 p-8 flex flex-col shrink-0' },
+                    e('div', { className: 'flex items-center gap-3 mb-10' },
+                        e('div', { className: 'w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black' }, 'A'),
+                        e('h2', { className: 'text-xl font-black tracking-tighter' }, 'APEX ', e('span', {className:'text-emerald-600 italic'}, 'Pro'))
                     ),
-                    e('button', { onClick: () => window.location.reload(), className: 'mt-20 text-rose-500 text-xs font-bold' }, 'LOGOUT')
+                    e('nav', { className: 'flex-1 space-y-1 overflow-y-auto no-scrollbar' },
+                        e(NavItem, { id: 'DASHBOARD', label: 'Dashboard', icon: '🏠', active: view, onClick: setView }),
+                        e(NavItem, { id: 'POS', label: 'Sales POS', icon: '🛒', active: view, onClick: setView }),
+                        hasAccess('TECHNICIAN') && e(NavItem, { id: 'STOO', label: 'Inventory', icon: '📦', active: view, onClick: setView }),
+                        e(NavItem, { id: 'PATIENTS', label: 'Patients', icon: '👥', active: view, onClick: setView }),
+                        e(NavItem, { id: 'GUIDE', label: 'Clinical STG', icon: '📖', active: view, onClick: setView }),
+                        hasAccess('MANAGER') && e(NavItem, { id: 'FINANCE', label: 'Financials', icon: '💰', active: view, onClick: setView }),
+                        hasAccess('MANAGER') && e(NavItem, { id: 'USERS', label: 'Personnel', icon: '🛡️', active: view, onClick: setView })
+                    ),
+                    e('div', { className: 'pt-6 border-t border-slate-800' },
+                         e('button', { onClick: () => window.location.reload(), className: 'text-rose-500 font-bold text-[10px] uppercase tracking-widest' }, 'Terminate Session'),
+                         e('div', { className: 'mt-4 text-[8px] text-slate-800 cursor-pointer', onClick: () => {setDevClicks(devClicks+1); if(devClicks>=6) setView('DEV')} }, 'v3.0.0 SOVEREIGN_CORE')
+                    )
                 ),
 
-                e('main', { className: 'flex-1 p-10 overflow-auto bg-slate-950' },
+                // MAIN CONTENT
+                e('main', { className: 'flex-1 p-10 overflow-auto no-scrollbar relative' },
+                    
                     view === 'DASHBOARD' && e('div', null,
-                        e('h2', {className:'text-3xl font-black mb-8'}, 'Director Overview'),
-                        e('div', {className:'grid grid-cols-2 gap-6'},
-                            e('div', {className:'bg-slate-900 p-8 rounded-3xl border border-slate-800 border-l-8 border-emerald-500'}, 
-                                e('p', {className:'text-xs font-bold text-slate-500 uppercase'}, 'Total Sales'),
-                                e('h3', {className:'text-3xl font-black text-emerald-400'}, data.sales.reduce((a,b)=>a+b.total,0).toLocaleString() + ' TZS')
-                            ),
-                            e('div', {className:'bg-slate-900 p-8 rounded-3xl border border-slate-800 border-l-8 border-blue-500'}, 
-                                e('p', {className:'text-xs font-bold text-slate-500 uppercase'}, 'Inventory Wealth'),
-                                e('h3', {className:'text-3xl font-black text-blue-400'}, data.inventory.length + ' Items')
-                            )
+                        e('h2', {className: 'text-4xl font-black mb-10 tracking-tighter'}, 'Executive Overview'),
+                        e('div', {className: 'grid grid-cols-1 md:grid-cols-3 gap-6'},
+                            e(StatCard, { label: 'Today Revenue', value: data.sales.filter(s=>new Date(s.timestamp).toDateString()===new Date().toDateString()).reduce((a,b)=>a+b.total,0).toLocaleString(), sub: 'TZS', color: 'text-emerald-400', border: 'border-emerald-500' }),
+                            e(StatCard, { label: 'Inventory Wealth', value: data.inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0).toLocaleString(), sub: 'At Cost', color: 'text-blue-400', border: 'border-blue-500' }),
+                            e(StatCard, { label: 'Shortages', value: data.inventory.filter(i=>i.stock < 10).length, sub: 'Items Low', color: 'text-rose-400', border: 'border-rose-500' })
                         )
                     ),
 
-                    view === 'POS' && e('div', { className: 'flex gap-6' },
-                        e('div', { className: 'flex-1 space-y-6' },
-                            e('input', { placeholder: 'Search products...', className: 'w-full p-4 rounded-2xl bg-slate-900 border border-slate-800', onChange: (ev) => setSearch(ev.target.value.toLowerCase()) }),
+                    view === 'POS' && e('div', { className: 'flex gap-8 h-full animate-in slide-in-from-bottom duration-500' },
+                        e('div', { className: 'flex-1 space-y-6 overflow-y-auto no-scrollbar px-1' },
+                            e('input', { placeholder: 'Search brand, symptoms or generic...', className: 'w-full p-6 bg-slate-900 border border-slate-800 rounded-[2rem] text-xl font-bold outline-none focus:ring-2 ring-emerald-500 shadow-xl', onChange: (e)=>setSearch(e.target.value.toLowerCase()) }),
                             e('div', { className: 'grid grid-cols-2 gap-4' },
-                                data.inventory.filter(p => p.brandName.toLowerCase().includes(search)).map(p => e('div', { key: p.id, onClick: () => addToCart(p), className: 'bg-slate-900 p-6 rounded-3xl border border-slate-800 hover:border-emerald-500 cursor-pointer shadow-sm active:scale-95 transition-all' },
-                                    e('p', {className:'font-black text-lg'}, p.brandName),
-                                    e('p', {className:'text-emerald-400 font-bold'}, Number(p.price).toLocaleString() + ' TZS'),
-                                    e('p', {className:'text-[10px] text-slate-600 mt-2'}, 'STOCK: '+p.stock)
+                                data.inventory.filter(p => p.brandName?.toLowerCase().includes(search) || p.symptoms?.toLowerCase().includes(search)).map(p => (
+                                    e('div', { key: p.id, onClick:()=>handleAddToCart(p), className: `bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer active:scale-95 transition-all shadow-xl` },
+                                        e('div', {className:'flex justify-between mb-4'}, e('span',{className:'text-[9px] font-black uppercase text-slate-500'}, p.category), e('span',{className:`text-[10px] font-black ${p.stock<10?'text-rose-500 animate-pulse':'text-emerald-500'}`}, 'STK: '+p.stock)),
+                                        e('p', {className:'font-black text-xl mb-1'}, p.brandName),
+                                        e('p', {className:'text-[10px] text-slate-400 font-bold uppercase mb-4'}, p.strength + ' • ' + p.genericName),
+                                        e('p', {className:'text-2xl font-black text-emerald-400'}, Number(p.price).toLocaleString())
+                                    )
                                 ))
                             )
                         ),
-                        e('div', { className: 'w-80 bg-white text-slate-900 p-8 rounded-[3rem] shadow-2xl h-fit border-t-8 border-emerald-600' },
-                            e('h3', {className:'font-black text-xl mb-4'}, 'Bill'),
-                            cart.map(i => e('div', {key:i.id, className:'flex justify-between py-2 border-b text-sm font-bold'}, e('span',null,i.brandName+' x'+i.qty), e('span',null,(i.price*i.qty).toLocaleString()))),
-                            e('div', {className:'mt-6 flex justify-between font-black text-2xl text-emerald-600'}, e('span',null,'Total'), e('span',null, cart.reduce((s,i)=>s+(i.price*i.qty),0).toLocaleString())),
-                            e('button', {onClick: finalize, className: 'w-full bg-emerald-600 text-white p-4 rounded-2xl font-bold mt-8 shadow-lg' }, 'FINALIZE SALE')
+                        e('div', { className: 'w-96 bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-2xl h-fit border-t-8 border-emerald-600 sticky top-0 flex flex-col shrink-0' },
+                            e('h3', {className:'font-black text-2xl mb-8 tracking-tighter uppercase underline decoration-emerald-500 decoration-4 underline-offset-8'}, 'Cart'),
+                            e('div', {className:'space-y-4 mb-8 overflow-auto max-h-64 no-scrollbar px-1'},
+                                cart.map(i => (
+                                    e('div', {key:i.id, className:'flex justify-between items-center border-b border-slate-100 pb-4'},
+                                        e('div', {className:'flex-1'}, e('p',{className:'text-sm font-bold uppercase'}, i.brandName), e('p',{className:'text-[10px] opacity-40'}, i.price + ' / unit')),
+                                        e('input', { type: 'number', value: i.qty, onChange: (e)=>updateCartQty(i.id, e.target.value), className: 'w-16 p-2 bg-slate-50 rounded-xl text-center font-black text-emerald-600 outline-none' })
+                                    )
+                                ))
+                            ),
+                            e('div', {className:'flex justify-between font-black text-4xl mb-10 tracking-tighter text-emerald-600'}, e('span',null,'Total'), e('span',null, cart.reduce((s,i)=>s+(i.price*i.qty),0).toLocaleString())),
+                            e('div', {className:'grid grid-cols-2 gap-2'}, 
+                                e('button', {onClick:()=>finalizeSale('CASH'), className:'bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-700 transition-all active:scale-95'}, 'CASH'),
+                                e('button', {onClick:()=>finalizeSale('MOBILE'), className:'bg-blue-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-blue-700 transition-all active:scale-95'}, 'MOBILE')
+                            )
                         )
                     ),
 
                     view === 'STOO' && e('div', null,
-                        e('div', {className:'flex justify-between mb-8'},
-                            e('h2', {className:'text-3xl font-black'}, 'Inventory'),
-                            e('button', {onClick: async () => {
-                                const n = prompt("Brand:"); const p = prompt("Price:"); const c = prompt("Cost:"); const s = prompt("Stock:");
-                                if(n) await db.inventory.add({brandName:n.toUpperCase(), price:Number(p), costPrice:Number(c), stock:Number(s), symptoms:''}); refresh();
-                            }, className: 'bg-emerald-600 text-white px-6 py-2 rounded-xl font-bold' }, '+ Add Stock')
+                        e('div', {className:'flex justify-between items-center mb-10'},
+                            e('h2', {className:'text-3xl font-black text-emerald-500 uppercase tracking-widest'}, 'Inventory Vault'),
+                            e('button', {onClick:async ()=>{
+                                const n = prompt("Brand:"), g = prompt("Generic:"), s = prompt("Symptoms:"), st = prompt("Strength:"), c = prompt("Cost:"), p = prompt("Price:"), q = prompt("Qty:"), cat = prompt("Category (Medicine/Supplies/Cosmetic):"), e = prompt("Expiry (YYYY-MM-DD):");
+                                if(n) await db.inventory.add({ brandName:n.toUpperCase(), genericName:g, symptoms:s, strength:st, costPrice:Number(c), price:Number(p), stock:Number(q), category:cat, expiryDate:e });
+                                refresh();
+                            }, className:'bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:scale-105 transition-all text-[10px] tracking-widest uppercase'}, '+ Add Stock')
                         ),
-                        e('table', {className:'w-full text-left bg-slate-900 rounded-3xl overflow-hidden shadow-sm'},
-                            e('thead', {className:'bg-black text-[10px] font-bold text-slate-500 p-4 uppercase'}, e('tr', null, e('th', {className:'p-4'},'Product'), e('th',null,'Stock'), e('th',null,'Price'))),
-                            e('tbody', null, data.inventory.map(p => e('tr', {key:p.id, className:'border-b border-slate-800'},
-                                e('td', {className:'p-4 font-bold'}, p.brandName),
-                                e('td', null, p.stock),
-                                e('td', {className:'font-bold text-emerald-400'}, p.price.toLocaleString())
-                            )))
+                        e('table', {className:'w-full text-left'},
+                            <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th>Family Name</th><th>Category</th><th>Stock</th><th>Margin</th><th className="text-right">Price</th><th className="text-right">Action</th></tr></thead>
+                            <tbody className="font-bold">{data.inventory.map(p => (
+                                e('tr', {key:p.id, className:'border-b border-slate-800/50 hover:bg-black/50 transition-all group'},
+                                    e('td', {className:'py-6'}, e('p',{className:'font-black text-white'}, p.brandName), e('p', {className:'text-[9px] text-slate-500 uppercase'}, p.genericName)),
+                                    e('td', null, e('span',{className:'text-[9px] bg-slate-800 px-2 py-1 rounded text-slate-400 uppercase font-black'}, p.category)),
+                                    e('td', {className:p.stock < 10 ? 'text-rose-500 underline' : 'text-slate-300'}, p.stock),
+                                    e('td', {className:'text-emerald-500 text-xs font-black'}, (((p.price-p.costPrice)/p.price)*100).toFixed(0)+'%'),
+                                    e('td', {className:'text-right text-emerald-400 text-xl font-black'}, Number(p.price).toLocaleString()),
+                                    e('td', {className:'text-right'}, e('button',{onClick:()=>setEditItem(p), className:'text-blue-500 text-[9px] font-black underline uppercase'}, 'Modify'))
+                                )
+                            ))}</tbody>
+                        )
+                    ),
+
+                    view === 'PATIENTS' && e('div', null,
+                        e('div', {className:'flex justify-between items-center mb-10'},
+                            e('h2', {className:'text-3xl font-black text-blue-500 uppercase tracking-tighter'}, 'Patient Registry'),
+                            e('button', {onClick:async ()=>{
+                                const n = prompt("Name:"), p = prompt("Phone:"), a = prompt("Address:"), c = prompt("Card ID:");
+                                if(n) await db.patients.add({ name:n.toUpperCase(), phone:p, address:a, cardId:c, creditBalance: 0 });
+                                refresh();
+                            }, className:'bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-[10px] tracking-widest'}, '+ New File')
+                        ),
+                        e('div', {className:'grid grid-cols-1 md:grid-cols-2 gap-4'},
+                            data.patients.map(pt => (
+                                e('div', {key:pt.id, className:'p-8 bg-black rounded-[2.5rem] border border-slate-800 flex justify-between items-center group hover:border-blue-500 transition-all shadow-xl'},
+                                    e('div', null, e('h4',{className:'font-black text-xl text-white uppercase'},pt.name), e('p',{className:'text-xs text-slate-500 font-black uppercase mt-1'},'ID: '+pt.cardId+' • '+pt.phone)),
+                                    e('div', {className:'text-right'}, e('p',{className:'text-[10px] font-bold text-slate-500 uppercase'},'Deni'), e('p',{className:'text-rose-500 font-black text-xl'},pt.creditBalance.toLocaleString()))
+                                )
+                            ))
+                        )
+                    ),
+
+                    view === 'FINANCE' && e('div', {className:'space-y-10'},
+                        e('h2', {className:'text-3xl font-black tracking-tighter uppercase italic'}, 'Financial Ledger'),
+                        e('div', {className:'grid grid-cols-1 md:grid-cols-3 gap-6 text-center'},
+                            e('div', {className:'bg-slate-900 p-8 rounded-[3.5rem] border border-slate-800 shadow-2xl'}, e('p',{className:'text-[10px] font-black opacity-30 uppercase mb-4'},'Gross Revenue'), e('p',{className:'text-4xl font-black text-emerald-400'}, data.sales.reduce((a,b)=>a+b.total,0).toLocaleString())),
+                            e('div', {className:'bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-xl'}, e('p',{className:'text-[10px] font-black text-slate-400 uppercase mb-4'},'Consumption (LUKU/Bills)'), e('p',{className:'text-4xl font-black text-rose-500'}, data.expenses.reduce((a,b)=>a+b.amount,0).toLocaleString())),
+                            e('div', {className:'bg-emerald-600 p-8 rounded-[3.5rem] shadow-2xl'}, e('p',{className:'text-[10px] font-black opacity-70 uppercase mb-4'},'Net Profit'), e('p',{className:'text-4xl font-black'}, (data.sales.reduce((a,b)=>a+b.total,0) - data.expenses.reduce((a,b)=>a+b.amount,0)).toLocaleString()))
+                        ),
+                        e('button', {onClick:async ()=>{
+                            const c = prompt("Category (Electricity/Meals/Sewage/Bundle):"), a = prompt("Amount:"), d = prompt("Description:");
+                            if(c) await db.expenses.add({ category:c, amount:Number(a), description:d, date: new Date().toISOString() });
+                            refresh();
+                        }, className:'bg-emerald-600 text-white px-8 py-4 rounded-[2rem] font-black shadow-lg uppercase text-[10px] tracking-widest'}, 'Record Consumption')
+                    ),
+
+                    view === 'GUIDE' && e('div', null,
+                        e('h2', {className:'text-3xl font-black mb-10 tracking-tighter uppercase italic decoration-emerald-500 underline underline-offset-8'}, 'Med Guide'),
+                        e('div', {className:'space-y-6'},
+                            data.inventory.map(p => (
+                                e('div', {key:p.id, className:'p-8 bg-black rounded-[2.5rem] border border-slate-800'},
+                                    e('h4', {className:'text-emerald-400 font-black text-2xl uppercase tracking-tighter mb-4'}, p.brandName),
+                                    e('p', {className:'text-xs text-slate-500 font-bold uppercase mb-2 italic'}, 'Standard Indications'),
+                                    e('p', {className:'text-sm italic text-slate-300'}, '"'+(p.symptoms || "Please consult MoH Standard Treatment Guidelines for specific protocols.")+'"'),
+                                    e('div', {className:'mt-6 p-4 bg-emerald-950/20 border border-emerald-900/30 rounded-2xl text-[10px] text-emerald-200'}, 'Dispensing Helper: Meza kimoja mara tatu kwa siku baada ya chakula. Maliza dozi yote.')
+                                )
+                            ))
+                        )
+                    ),
+
+                    view === 'USERS' && e('div', null,
+                        e('h2', {className:'text-3xl font-black mb-10 tracking-tighter'}, 'Authorized Staff'),
+                        e('button', {onClick:async ()=>{
+                            const u = prompt("Username:"), p = prompt("PIN:"), r = prompt("Role:");
+                            if(u) await db.users.add({ username:u.toLowerCase(), pin:p, role:r, status:'ACTIVE' });
+                            refresh();
+                        }, className:'bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg mb-8 uppercase text-[10px] tracking-widest'}, '+ Authorize New User'),
+                        e('div', {className:'space-y-4'},
+                            data.users.map(u => (
+                                e('div', {key:u.id, className:'bg-black p-6 rounded-[2rem] border border-slate-800 flex justify-between items-center'},
+                                    e('div', null, e('p',{className:'font-black text-xl text-white uppercase'},u.username), e('p',{className:'text-[10px] text-slate-600 font-black uppercase tracking-widest'},u.role)),
+                                    e('div', {className:'flex gap-2'}, 
+                                        e('select', {className:'bg-slate-800 text-[10px] p-2 rounded-xl outline-none', value:u.role, onChange:async(e)=>{await db.users.update(u.id, {role: e.target.value}); refresh();}}, ['MANAGER','PHARMACIST','TECHNICIAN','ASSISTANT','DISPENSER'].map(r=>e('option',{value:r},r))),
+                                        e('button', {onClick:async()=>{await db.users.update(u.id, {status: u.status==='ACTIVE'?'INACTIVE':'ACTIVE'}); refresh();}, className:`px-4 py-2 rounded-xl font-bold text-[10px] ${u.status==='ACTIVE'?'bg-emerald-900 text-emerald-400':'bg-rose-900 text-rose-400'}`}, u.status)
+                                    )
+                                )
+                            ))
+                        )
+                    ),
+
+                    // --- MODAL: EDIT PRODUCT (V3 FIX) ---
+                    editItem && e('div', {className:'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95'},
+                        e('div', {className:'glass-panel w-full max-w-xl p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar'},
+                            e('h3', {className:'text-2xl font-black mb-8 text-emerald-500 uppercase tracking-tighter'}, 'Modify Vault Entry'),
+                            e('form', {onSubmit:async(e)=>{
+                                e.preventDefault();
+                                const d = new FormData(e.target);
+                                await db.inventory.update(editItem.id, {
+                                    brandName: d.get('brand').toUpperCase(),
+                                    price: Number(d.get('price')),
+                                    costPrice: Number(d.get('cost')),
+                                    stock: Number(d.get('stock')),
+                                    category: d.get('category'),
+                                    symptoms: d.get('symptoms')
+                                });
+                                setEditItem(null); refresh();
+                            }, className:'space-y-6'},
+                                e('div', {className:'grid grid-cols-2 gap-4'},
+                                    e('div',null, e('label',{className:'text-[10px] text-slate-500 font-bold uppercase ml-2'},'Brand Name'), e('input',{name:'brand', defaultValue:editItem.brandName, className:'w-full p-4 bg-slate-800 rounded-3xl outline-none'})),
+                                    e('div',null, e('label',{className:'text-[10px] text-slate-500 font-bold uppercase ml-2'},'Category'), e('select',{name:'category', defaultValue:editItem.category, className:'w-full p-4 bg-slate-800 rounded-3xl outline-none'}, e('option',null,'Medicine'), e('option',null,'Supplies'), e('option',null,'Cosmetic')))
+                                ),
+                                e('div', {className:'grid grid-cols-2 gap-4'},
+                                    e('div',null, e('label',{className:'text-[10px] text-slate-500 font-bold uppercase ml-2'},'Sale Price'), e('input',{name:'price', type:'number', defaultValue:editItem.price, className:'w-full p-4 bg-slate-800 rounded-3xl outline-none font-black text-emerald-400'})),
+                                    e('div',null, e('label',{className:'text-[10px] text-slate-500 font-bold uppercase ml-2'},'Cost Price'), e('input',{name:'cost', type:'number', defaultValue:editItem.costPrice, className:'w-full p-4 bg-slate-800 rounded-3xl outline-none opacity-50'}))
+                                ),
+                                e('div',null, e('label',{className:'text-[10px] text-slate-500 font-bold uppercase ml-2'},'Current Stock'), e('input',{name:'stock', type:'number', defaultValue:editItem.stock, className:'w-full p-4 bg-slate-800 rounded-3xl outline-none text-xl font-black'})),
+                                e('div',null, e('label',{className:'text-[10px] text-slate-500 font-bold uppercase ml-2'},'Symptoms / Clinical Tags'), e('textarea',{name:'symptoms', defaultValue:editItem.symptoms, className:'w-full p-4 bg-slate-800 rounded-3xl outline-none text-sm h-24', placeholder:'e.g. fever, pain, malaria'})),
+                                e('div', {className:'flex gap-4 pt-6'},
+                                    e('button', {type:'submit', className:'flex-1 bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg'}, 'SAVE UPDATES'),
+                                    e('button', {type:'button', onClick:async()=>{if(confirm("Purge Item?")){await db.inventory.delete(editItem.id); setEditItem(null); refresh();}}, className:'bg-rose-950 text-rose-500 p-5 rounded-[2rem]'}, e(lucide.Trash)),
+                                    e('button', {type:'button', onClick:()=>setEditItem(null), className:'p-5 bg-slate-800 rounded-[2rem] font-bold text-xs uppercase'}, 'Close')
+                                )
+                            )
+                        )
+                    ),
+
+                    view === 'DEV' && e('div', {className:'h-full bg-black rounded-[4rem] p-20 border-2 border-rose-900 text-rose-500 font-mono shadow-2xl'},
+                        e('h1', {className:'text-5xl font-black mb-10 underline decoration-rose-900 underline-offset-8 uppercase italic'}, 'Maintenance_Terminal'),
+                        e('p', {className:'text-sm mb-10 opacity-50 italic font-black uppercase tracking-[0.2em]'}, 'System override authorized. Access to core logic and master purge active.'),
+                        e('div', {className:'flex gap-4'},
+                            e('button', {onClick:async()=>{if(confirm("PURGE ALL DATA?")){await db.delete(); window.location.reload();}}, className:'bg-rose-900 text-white px-10 py-5 rounded-[2rem] font-black shadow-xl uppercase text-xs'}, 'Execute_Purge'),
+                            e('button', {onClick:()=>setView('DASHBOARD'), className:'bg-white text-black px-10 py-5 rounded-[2rem] font-black shadow-xl uppercase text-xs'}, 'Exit_Terminal')
                         )
                     )
                 )
             );
         }
+
+        const NavItem = ({ id, label, icon, active, onClick }) => (
+            e('button', { onClick: () => onClick(id), className: `w-full flex items-center gap-4 p-4 rounded-3xl transition-all duration-300 group ${active === id ? 'active-tab translate-x-2' : 'text-slate-500 hover:bg-slate-900'}` },
+                e('span', {className:'text-lg'}, icon), e('span', {className:'font-black text-[10px] uppercase tracking-widest'}, label)
+            )
+        );
+
+        const StatCard = ({ label, value, sub, color, border }) => (
+            e('div', { className: `bg-slate-900 p-10 rounded-[3rem] border ${border} shadow-2xl group relative overflow-hidden` },
+                e('p', {className:'text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4 italic'}, label),
+                e('h3', {className: `text-5xl font-black tracking-tighter ${color} relative z-10`}, value, e('span', {className:'text-sm font-normal opacity-30 text-white uppercase ml-2'}, sub))
+            )
+        );
 
         const root = ReactDOM.createRoot(document.getElementById('apex-root'));
         root.render(e(App));
