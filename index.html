@@ -3,32 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>APEX | Stable Enterprise</title>
-    <!-- PRODUCTION LIBRARIES (NO BABEL) -->
+    <title>APEX | Sovereign Enterprise ERP</title>
+    <!-- PRODUCTION LIBRARIES -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; background-color: #020617; color: white; margin: 0; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; background-color: #020617; color: white; }
         .active-tab { background: #10b981 !important; color: white !important; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        .modal-overlay { background: rgba(2, 6, 23, 0.9); backdrop-filter: blur(10px); }
+        .modal-overlay { background: rgba(2, 6, 23, 0.9); backdrop-filter: blur(10px); z-index: 1000; }
     </style>
 </head>
 <body>
     <div id="apex-root">
-        <div style="height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <div style="height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#020617;">
             <h1 style="font-size:4rem;font-weight:900;color:#10b981;font-style:italic;">APEX</h1>
-            <p style="color:#64748b;font-weight:bold;margin-top:10px;">CONNECTING TO CLOUD...</p>
+            <p style="color:#64748b;letter-spacing:4px;font-weight:bold;margin-top:10px;">ENTERPRISE CORE BOOTING...</p>
         </div>
     </div>
 
     <!-- 1. CLOUD ENGINE (FIREBASE) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // !!! PASTE YOUR REAL CONFIG HERE !!!
         const firebaseConfig = {
@@ -43,39 +45,35 @@
         try {
             const app = initializeApp(firebaseConfig);
             window.db = getFirestore(app);
-            window.api = { collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc };
-        } catch (err) { alert("Firebase Config Error"); }
+            window.api = { collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDocs, deleteDoc, orderBy };
+        } catch (e) { console.error("Firebase Auth Error"); }
     </script>
 
-    <!-- 2. APEX APPLICATION LOGIC (NATIVE JS) -->
-    <script>
-        const e = React.createElement;
+    <!-- 2. APEX APPLICATION LOGIC -->
+    <script type="text/babel">
         const { useState, useEffect } = React;
 
-        function App() {
+        const App = () => {
             const [view, setView] = useState('LOGIN');
             const [user, setUser] = useState(null);
-            const [inventory, setInventory] = useState([]);
-            const [sales, setSales] = useState([]);
-            const [patients, setPatients] = useState([]);
-            const [users, setUsers] = useState([]);
-            const [expenses, setExpenses] = useState([]);
+            const [data, setData] = useState({ inventory: [], sales: [], users: [], patients: [], expenses: [] });
             const [cart, setCart] = useState([]);
             const [search, setSearch] = useState("");
             
-            const [editing, setEditing] = useState(null);
+            // Instant Modal States
+            const [editing, setEditing] = useState(null); 
             const [checkoutModal, setCheckoutModal] = useState(false);
-            const [debtModal, setDebtModal] = useState(null);
+            const [historyModal, setHistoryModal] = useState(null); // Holds patient object
 
-            // CLOUD SYNC
+            // REAL-TIME CLOUD SYNC
             useEffect(() => {
                 if (!window.db) return;
-                const unsubInv = window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setInventory(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                const unsubSales = window.api.onSnapshot(window.api.collection(window.db, "sales"), (s) => setSales(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                const unsubPatients = window.api.onSnapshot(window.api.collection(window.db, "patients"), (s) => setPatients(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                const unsubUsers = window.api.onSnapshot(window.api.collection(window.db, "users"), (s) => setUsers(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                const unsubExp = window.api.onSnapshot(window.api.collection(window.db, "expenses"), (s) => setExpenses(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                return () => { unsubInv(); unsubSales(); unsubPatients(); unsubUsers(); unsubExp(); };
+                const u1 = window.api.onSnapshot(window.api.collection(window.db, "inventory"), (s) => setData(p => ({...p, inventory: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const u2 = window.api.onSnapshot(window.api.collection(window.db, "sales"), (s) => setData(p => ({...p, sales: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const u3 = window.api.onSnapshot(window.api.collection(window.db, "patients"), (s) => setData(p => ({...p, patients: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const u4 = window.api.onSnapshot(window.api.collection(window.db, "users"), (s) => setData(p => ({...p, users: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const u5 = window.api.onSnapshot(window.api.collection(window.db, "expenses"), (s) => setData(p => ({...p, expenses: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                return () => { u1(); u2(); u3(); u4(); u5(); };
             }, []);
 
             // BOOTSTRAP ADMIN
@@ -83,16 +81,18 @@
                 const init = async () => {
                     const q = window.api.query(window.api.collection(window.db, "users"), window.api.where("username", "==", "admin"));
                     const snap = await window.api.getDocs(q);
-                    if (snap.empty) await window.api.addDoc(window.api.collection(window.db, "users"), { username: "admin", pin: "1234", role: "MANAGER", status: "ACTIVE" });
+                    if (snap.empty) await window.api.addDoc(window.api.collection(window.db, "users"), { username: "admin", pin: "1234", role: "MANAGER", status: "ACTIVE", perms: { canViewFinance: true, canEditStock: true, canManageUsers: true } });
                 };
                 if(window.db) init();
             }, []);
 
-            const hasAccess = (level) => {
-                const roles = { 'MANAGER': 4, 'PHARMACIST': 3, 'TECHNICIAN': 2, 'ASSISTANT': 1, 'DISPENSER': 0 };
-                return roles[user?.role] >= roles[level];
+            // PERMISSIONS
+            const checkAccess = (perm) => {
+                if (user?.role === 'MANAGER') return true;
+                return user?.perms?.[perm] === true;
             };
 
+            // LOGIN
             const handleLogin = async () => {
                 const u = document.getElementById('u_box').value.toLowerCase().trim();
                 const p = document.getElementById('p_box').value.trim();
@@ -100,25 +100,34 @@
                 const snap = await window.api.getDocs(q);
                 if (!snap.empty) { 
                     const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
-                    if (uData.status !== 'ACTIVE') return alert("Account INACTIVE. See Manager.");
+                    if (uData.status !== 'ACTIVE') return alert("Account INACTIVE.");
                     setUser(uData); setView('DASHBOARD'); 
-                } else alert("Invalid Username or PIN");
+                } else alert("Invalid Credentials");
             };
 
+            // POS FUNCTIONS
             const addToCart = (p) => {
-                const ex = cart.find(i => i.id === p.id);
-                if (p.stock <= (ex?.qty || 0)) return alert("OUT OF STOCK!");
-                setCart(prev => ex ? prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i) : [...prev, {...p, qty: 1, currentPrice: p.price}]);
+                setCart(prev => {
+                    const ex = prev.find(i => i.id === p.id);
+                    if (ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
+                    return [...prev, {...p, qty: 1, currentPrice: p.price}];
+                });
+            };
+
+            const updateCartItem = (id, field, val) => {
+                setCart(prev => prev.map(i => i.id === id ? {...i, [field]: Number(val) || 0} : i));
             };
 
             const finalizeSale = async (method, patientId = null) => {
                 const total = cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0);
                 const totalCost = cart.reduce((s,i)=>s+(i.costPrice*i.qty), 0);
                 
-                await window.api.addDoc(window.api.collection(window.db, "sales"), { total, profit: total - totalCost, timestamp: new Date().toISOString(), soldBy: user.username, method, items: cart });
+                await window.api.addDoc(window.api.collection(window.db, "sales"), {
+                    total, profit: total - totalCost, timestamp: new Date().toISOString(), soldBy: user.username, method, items: cart, patientId
+                });
 
                 if (method === 'DEBT' && patientId) {
-                    const pt = patients.find(p => p.id === patientId);
+                    const pt = data.patients.find(p => p.id === patientId);
                     await window.api.updateDoc(window.api.doc(window.db, "patients", patientId), { creditBalance: (pt.creditBalance || 0) + total });
                 }
 
@@ -127,242 +136,445 @@
                 setCart([]); setCheckoutModal(false); alert("Sale Authorized");
             };
 
-            const clearDebt = async (evt) => {
-                evt.preventDefault();
-                const amount = Number(new FormData(evt.target).get('amount'));
-                const client = patients.find(c => c.id === debtModal);
-                
-                await window.api.updateDoc(window.api.doc(window.db, "patients", debtModal), { creditBalance: (client.creditBalance || 0) - amount });
-                await window.api.addDoc(window.api.collection(window.db, "sales"), { total: amount, profit: amount, timestamp: new Date().toISOString(), soldBy: user.username, method: 'DEBT_CLEARANCE', items: [{brandName: `Debt Clearance: ${client.name}`, qty: 1}] });
-                setDebtModal(null); alert("Debt Cleared!");
+            // CHART GENERATOR (Last 7 Days)
+            const getChartData = () => {
+                const days = Array.from({length: 7}, (_, i) => {
+                    const d = new Date(); d.setDate(d.getDate() - (6 - i));
+                    return d.toISOString().split('T')[0];
+                });
+                const chartData = days.map(d => {
+                    const dayTotal = data.sales.filter(s => s.timestamp.startsWith(d)).reduce((a,b)=>a+b.total, 0);
+                    return { day: d.slice(5), total: dayTotal };
+                });
+                const max = Math.max(...chartData.map(d=>d.total), 1);
+                return { chartData, max };
             };
 
-            // --- UI BUILDER ---
+            // --- UI: LOGIN ---
             if (!user) {
-                return e('div', { className: 'h-screen flex items-center justify-center bg-black' },
-                    e('div', { className: 'bg-slate-900 p-12 rounded-[4rem] shadow-2xl w-full max-w-sm text-center border border-slate-800' },
-                        e('h1', { className: 'text-5xl font-black text-emerald-500 mb-2 italic' }, 'APEX'),
-                        e('p', { className: 'text-slate-500 text-[10px] font-bold uppercase mb-12 tracking-[0.3em]' }, 'Sovereign Cloud'),
-                        e('input', { id: 'u_box', placeholder: 'Username', className: 'w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold' }),
-                        e('input', { id: 'p_box', type: 'password', placeholder: 'PIN', className: 'w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[1em]' }),
-                        e('button', { onClick: handleLogin, className: 'w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg hover:bg-emerald-500 transition-all' }, 'AUTHORIZE')
-                    )
+                return (
+                    <div className="h-screen flex items-center justify-center bg-black">
+                        <div className="bg-slate-900 p-12 rounded-[4rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
+                            <h1 className="text-5xl font-black text-emerald-500 mb-2 italic tracking-tighter">APEX</h1>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-12 tracking-[0.3em]">Sovereign Enterprise</p>
+                            <input id="u_box" placeholder="Username" className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold" />
+                            <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[1em]" />
+                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95">AUTHORIZE</button>
+                        </div>
+                    </div>
                 );
             }
 
-            const NavBtn = ({ id, label }) => e('button', {
-                onClick: () => setView(id),
-                className: `w-full text-left p-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all mb-2 ${view === id ? 'active-tab' : 'text-slate-500 hover:bg-slate-900'}`
-            }, label);
+            const { chartData, max } = getChartData();
 
-            const StatCard = ({ label, value, sub, color }) => e('div', { className: 'bg-slate-900 p-10 rounded-[3rem] shadow-2xl border border-slate-800' },
-                e('p', { className: 'text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4' }, label),
-                e('h3', { className: `text-5xl font-black tracking-tighter ${color}` }, value, e('span', { className: 'text-sm font-normal opacity-30 text-white uppercase ml-2' }, sub))
+            return (
+                <div className="flex h-screen overflow-hidden bg-slate-950">
+                    {/* SIDEBAR */}
+                    <aside className="w-72 bg-black border-r border-slate-800 p-8 flex flex-col shrink-0">
+                        <div className="flex items-center gap-3 mb-10">
+                            <div className="w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-emerald-500/30">A</div>
+                            <h2 className="text-2xl font-black tracking-tighter italic">APEX <span className="text-emerald-600">Pro</span></h2>
+                        </div>
+                        <nav className="flex-1 space-y-1 overflow-y-auto no-scrollbar">
+                            <NavBtn id="DASHBOARD" label="Command Center" icon={lucide.LayoutDashboard} active={view} onClick={setView} />
+                            <NavBtn id="POS" label="Sales Terminal" icon={lucide.ShoppingCart} active={view} onClick={setView} />
+                            {checkAccess('canEditStock') && <NavBtn id="STOO" label="Inventory Vault" icon={lucide.Package} active={view} onClick={setView} />}
+                            <NavBtn id="PATIENTS" label="Patient Registry" icon={lucide.Users} active={view} onClick={setView} />
+                            <NavBtn id="GUIDE" label="Clinical STG" icon={lucide.Activity} active={view} onClick={setView} />
+                            {checkAccess('canViewFinance') && <NavBtn id="FINANCE" label="Financials" icon={lucide.PieChart} active={view} onClick={setView} />}
+                            {checkAccess('canManageUsers') && <NavBtn id="USERS" label="Personnel" icon={lucide.ShieldCheck} active={view} onClick={setView} />}
+                        </nav>
+                        <div className="pt-6 border-t border-slate-800 mt-4">
+                             <div className="flex items-center gap-3 mb-4">
+                                <div className="w-8 h-8 bg-slate-800 text-emerald-500 rounded-full flex items-center justify-center font-black">{user.username[0].toUpperCase()}</div>
+                                <div><p className="text-[10px] font-black uppercase text-emerald-500">{user.role}</p><p className="text-xs font-bold text-slate-300">{user.username}</p></div>
+                             </div>
+                             <button onClick={()=>window.location.reload()} className="w-full text-left text-rose-500 font-bold text-[10px] uppercase tracking-widest mt-2 hover:bg-rose-950/30 p-2 rounded-lg transition-all">Terminate Session</button>
+                        </div>
+                    </aside>
+
+                    {/* MAIN CONTENT AREA */}
+                    <main className="flex-1 p-8 md:p-10 overflow-auto no-scrollbar relative">
+                        
+                        {/* DASHBOARD */}
+                        {view === 'DASHBOARD' && (
+                            <div className="animate-in fade-in duration-700">
+                                <div className="flex justify-between items-center mb-10">
+                                    <h2 className="text-4xl font-black tracking-tighter">Command Center</h2>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                                    <StatCard label="Lifetime Revenue" value={data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} sub="TZS" color="text-emerald-400" border="border-emerald-500" />
+                                    <StatCard label="Inventory Wealth" value={data.inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0).toLocaleString()} sub="At Cost" color="text-blue-400" border="border-blue-500" />
+                                    <StatCard label="Outstanding Debt" value={data.patients.reduce((a,b)=>a+(Number(b.creditBalance)||0),0).toLocaleString()} sub="Unpaid" color="text-rose-400" border="border-rose-500" />
+                                </div>
+
+                                {/* 7-DAY REVENUE GRAPH */}
+                                <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 shadow-2xl">
+                                    <h3 className="text-xl font-black mb-6 flex items-center gap-2 tracking-tighter"><lucide.BarChart2 className="text-emerald-500" /> 7-Day Revenue Trend</h3>
+                                    <div className="flex items-end gap-2 h-48 pt-4">
+                                        {chartData.map((d, idx) => (
+                                            <div key={idx} className="flex-1 flex flex-col items-center gap-2 group">
+                                                <div className="w-full bg-emerald-500/20 rounded-t-xl relative flex items-end justify-center group-hover:bg-emerald-500/40 transition-all" style={{height: '100%'}}>
+                                                    <div className="w-full bg-emerald-500 rounded-t-xl transition-all duration-1000" style={{height: `${(d.total / max) * 100}%`}}></div>
+                                                    <span className="absolute -top-6 text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity text-emerald-400">{d.total.toLocaleString()}</span>
+                                                </div>
+                                                <span className="text-[10px] font-bold text-slate-500">{d.day}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* POS */}
+                        {view === 'POS' && (
+                            <div className="flex gap-8 h-full animate-in slide-in-from-bottom duration-500">
+                                <div className="flex-1 space-y-6 overflow-y-auto no-scrollbar">
+                                    <div className="relative">
+                                        <lucide.Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
+                                        <input placeholder="Search disease, symptom or drug..." className="w-full pl-14 pr-6 py-6 bg-slate-900 border border-slate-800 rounded-[2.5rem] text-xl font-bold outline-none focus:ring-2 ring-emerald-500 shadow-xl transition-all" onChange={(e)=>setSearch(e.target.value.toLowerCase())} />
+                                    </div>
+                                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {data.inventory.filter(p => p.brandName.toLowerCase().includes(search) || p.symptoms?.toLowerCase().includes(search)).map(p => (
+                                            <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer active:scale-95 transition-all shadow-xl flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex justify-between mb-4"><span className="text-[9px] font-black text-emerald-500 uppercase">{p.category}</span></div>
+                                                    <h4 className="font-black text-xl mb-1 tracking-tight">{p.brandName}</h4>
+                                                    <p className="text-[10px] text-slate-500 font-bold uppercase mb-6">{p.strength} • {p.genericName}</p>
+                                                </div>
+                                                <div className="flex justify-between items-end">
+                                                    <p className="text-2xl font-black text-emerald-400">{Number(p.price).toLocaleString()} <span className="text-xs text-slate-500">TZS</span></p>
+                                                    <p className={`text-[10px] font-black px-2 py-1 rounded-lg ${p.stock < 10 ? 'bg-rose-900 text-rose-300 animate-pulse':'bg-slate-800 text-slate-400'}`}>STK: {p.stock}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="w-96 bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-2xl h-fit border-t-8 border-emerald-600 sticky top-0 flex flex-col shrink-0">
+                                    <div className="flex justify-between items-center mb-8"><h3 className="font-black text-2xl tracking-tighter uppercase">Cart</h3><button onClick={()=>setCart([])} className="text-[10px] font-black text-rose-500 uppercase tracking-widest underline">Clear</button></div>
+                                    <div className="space-y-4 mb-8 overflow-auto max-h-[40vh] no-scrollbar px-1">
+                                        {cart.length === 0 && <p className="text-center text-slate-300 font-bold text-xs uppercase tracking-widest py-10">Cart is Empty</p>}
+                                        {cart.map(i => (
+                                            <div key={i.id} className="flex justify-between items-center border-b border-slate-100 pb-4">
+                                                <div className="flex-1">
+                                                    <p className="font-bold text-sm uppercase">{i.brandName}</p>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="text-[10px] font-bold text-slate-400">Price:</span>
+                                                        <input type="number" value={i.currentPrice} onChange={(e)=>updateCartItem(i.id, 'currentPrice', e.target.value)} className="w-20 bg-slate-50 rounded-lg text-xs font-black text-emerald-600 outline-none p-1 border border-slate-200 focus:border-emerald-500" />
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col items-end gap-2">
+                                                    <input type="number" value={i.qty} onChange={(e)=>updateCartItem(i.id, 'qty', e.target.value)} className="w-16 p-2 bg-slate-50 rounded-xl text-center font-black text-slate-800 outline-none border border-slate-200 focus:border-emerald-500" />
+                                                    <button onClick={()=>setCart(cart.filter(x=>x.id!==i.id))} className="text-[10px] text-rose-500 font-bold uppercase">Remove</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="flex justify-between font-black text-4xl mb-10 tracking-tighter text-emerald-600"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.currentPrice*i.qty),0).toLocaleString()}</span></div>
+                                    <button onClick={(e) => { e.preventDefault(); cart.length > 0 ? setCheckoutModal(true) : alert("Cart is empty"); }} className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black text-xl shadow-xl active:scale-95 transition-all hover:bg-emerald-600">PROCESS PAYMENT</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'STOO' && (
+                            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in fade-in duration-500 h-full overflow-y-auto no-scrollbar">
+                                <div className="flex justify-between items-center mb-10">
+                                    <h2 className="text-3xl font-black text-emerald-500 uppercase tracking-widest">Inventory Vault</h2>
+                                    <button onClick={(e) => { e.preventDefault(); setEditing({ type: 'PRODUCT', item: {} }); }} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:scale-105 transition-all text-[10px] tracking-widest uppercase">+ Add Product</button>
+                                </div>
+                                <table className="w-full text-left">
+                                    <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4">Product</th><th>Category</th><th>Stock</th><th>Margin</th><th className="text-right pb-4">Selling Price</th><th className="text-right pb-4">Manage</th></tr></thead>
+                                    <tbody className="font-bold">{data.inventory.map(p => (
+                                        <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50 transition-all group">
+                                            <td className="py-6"><p className="font-black text-white text-lg">{p.brandName}</p><p className="text-[10px] text-slate-500 uppercase">{p.genericName} • {p.strength}</p></td>
+                                            <td><span className="text-[9px] bg-slate-800 px-2 py-1 rounded text-slate-400 font-black uppercase tracking-widest">{p.category} {p.subCategory ? `(${p.subCategory})` : ''}</span></td>
+                                            <td className={p.stock < 10 ? 'text-rose-500 text-xl' : 'text-slate-300 text-xl'}>{p.stock}</td>
+                                            <td className="text-emerald-500">{p.price && p.costPrice ? (((p.price-p.costPrice)/p.price)*100).toFixed(0) : 0}%</td>
+                                            <td className="text-right text-emerald-400 text-2xl tracking-tighter">{Number(p.price).toLocaleString()}</td>
+                                            <td className="text-right"><button onClick={(e)=>{ e.preventDefault(); setEditing({type: 'PRODUCT', item: p}); }} className="bg-slate-800 text-blue-400 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all">Edit</button></td>
+                                        </tr>
+                                    ))}</tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {view === 'PATIENTS' && (
+                            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in fade-in duration-500 h-full overflow-auto no-scrollbar">
+                                <div className="flex justify-between items-center mb-10">
+                                    <h2 className="text-3xl font-black text-blue-500 uppercase tracking-tighter">Client Registry</h2>
+                                    <button onClick={(e) => { e.preventDefault(); setEditing({ type: 'CLIENT', item: {} }); }} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-[10px] tracking-widest">+ New Profile</button>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {data.patients.map(pt => (
+                                        <div key={pt.id} className="p-8 bg-black rounded-[3rem] border border-slate-800 flex justify-between items-center group hover:border-blue-500 transition-all shadow-xl">
+                                            <div>
+                                                <h4 className="font-black text-xl text-white group-hover:text-blue-400 transition-colors uppercase tracking-tighter">{pt.name}</h4>
+                                                <p className="text-[10px] text-slate-500 font-bold uppercase mt-2 tracking-widest">{pt.sex} • {pt.age} YRS • {pt.weight} KG</p>
+                                                <p className="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-widest">📞 {pt.phone} • {pt.address}</p>
+                                                <button onClick={(e)=>{ e.preventDefault(); setHistoryModal(pt); }} className="text-[10px] text-blue-500 mt-4 underline uppercase font-bold tracking-widest">View Medical History</button>
+                                            </div>
+                                            <div className="flex flex-col items-end gap-3">
+                                                <div className="text-right"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Unpaid Debt</p><p className="text-rose-500 font-black text-2xl">{Number(pt.creditBalance || 0).toLocaleString()} <span className="text-xs">TZS</span></p></div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={(e)=>{ e.preventDefault(); setEditing({type: 'CLIENT', item: pt}); }} className="text-[10px] font-black text-emerald-500 bg-slate-900 px-4 py-2 rounded-lg uppercase hover:bg-emerald-900 transition-colors">Edit</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'FINANCE' && (
+                            <div className="animate-in fade-in duration-500 space-y-10">
+                                <h2 className="text-4xl font-black tracking-tighter uppercase italic decoration-emerald-500 underline underline-offset-8">Financial Ledger</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 text-center shadow-2xl"><p className="text-[10px] font-black opacity-30 uppercase mb-4 tracking-widest">Gross Revenue</p><p className="text-4xl font-black text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()}</p></div>
+                                    <div className="bg-white text-slate-900 p-10 rounded-[3.5rem] text-center shadow-xl"><p className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest">Consumption (Bills)</p><p className="text-4xl font-black text-rose-500">{data.expenses.reduce((a,b)=>a+b.amount,0).toLocaleString()}</p></div>
+                                    <div className="bg-emerald-600 p-10 rounded-[3.5rem] shadow-2xl text-center"><p className="text-[10px] font-black opacity-70 uppercase mb-4 tracking-widest text-white">Net Profit</p><p className="text-4xl font-black text-white">{(data.sales.reduce((a,b)=>a+b.total,0) - data.expenses.reduce((a,b)=>a+b.amount,0)).toLocaleString()}</p></div>
+                                </div>
+                                <div className="bg-slate-900 p-10 rounded-[3rem] border border-slate-800">
+                                     <div className="flex justify-between items-center mb-8"><h3 className="font-black text-xl uppercase tracking-tighter">Consumption Log</h3><button onClick={(e) => { e.preventDefault(); setEditing({ type: 'EXPENSE', item: {} }); }} className="text-xs font-bold text-emerald-500 bg-emerald-950/30 px-6 py-3 rounded-2xl tracking-widest uppercase hover:bg-emerald-900 transition-all">+ Record Bill</button></div>
+                                     <div className="space-y-3">{data.expenses.map(ex => (
+                                         <div key={ex.id} className="flex justify-between items-center p-4 bg-black rounded-2xl border border-slate-900">
+                                             <div><p className="font-bold text-xs uppercase tracking-widest">{ex.category}</p><p className="text-[10px] text-slate-600 italic">{ex.description}</p></div>
+                                             <div className="flex items-center gap-4"><p className="font-black text-rose-500 text-lg">-{ex.amount.toLocaleString()} TZS</p><button onClick={async(e)=>{e.preventDefault(); if(confirm("Delete expense?")) await window.api.deleteDoc(window.api.doc(window.db, "expenses", ex.id))}} className="text-slate-600 hover:text-rose-500"><lucide.Trash2 size={16}/></button></div>
+                                         </div>
+                                     ))}</div>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'USERS' && (
+                             <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in slide-in-from-right duration-500 h-full overflow-y-auto no-scrollbar">
+                                <h2 className="text-3xl font-black mb-10 tracking-tighter uppercase">Personnel Authorization</h2>
+                                <button onClick={(e) => { e.preventDefault(); setEditing({ type: 'USER', item: {} }); }} className="bg-emerald-600 text-white px-8 py-4 rounded-3xl font-black shadow-lg mb-10 uppercase text-[10px] tracking-widest">+ Add Staff Member</button>
+                                <div className="space-y-4">
+                                    {data.users.map(u => (
+                                        <div key={u.id} className="bg-black p-6 rounded-[2.5rem] border border-slate-800 flex justify-between items-center group hover:border-emerald-500 transition-all shadow-xl">
+                                            <div>
+                                                <p className="font-black text-xl text-white tracking-tighter uppercase">{u.username}</p>
+                                                <div className="flex gap-2 mt-2">
+                                                    <span className="text-[9px] bg-slate-800 text-emerald-500 px-2 py-1 rounded font-bold uppercase">{u.role}</span>
+                                                    {u.perms?.canEditStock && <span className="text-[9px] bg-slate-800 text-slate-400 px-2 py-1 rounded">Edit Stock</span>}
+                                                    {u.perms?.canViewFinance && <span className="text-[9px] bg-slate-800 text-slate-400 px-2 py-1 rounded">View Finance</span>}
+                                                </div>
+                                            </div>
+                                            <button onClick={(e)=>{ e.preventDefault(); setEditing({type: 'USER', item: u}); }} className="px-6 py-3 bg-slate-900 text-blue-400 font-black text-[10px] uppercase rounded-xl hover:bg-blue-600 hover:text-white transition-colors">Manage Access</button>
+                                        </div>
+                                    ))}
+                                </div>
+                             </div>
+                        )}
+
+                        {/* ==========================================
+                            MODALS (INSTANT LOAD)
+                        ========================================== */}
+                        
+                        {/* 1. EDIT MODAL (Products, Patients, Users, Expenses) */}
+                        {editing && (
+                            <div className="fixed inset-0 flex items-center justify-center p-4 modal-overlay animate-in fade-in duration-200">
+                                <div className="edit-card w-full max-w-2xl p-10 shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar">
+                                    <h3 className="text-3xl font-black mb-8 text-emerald-500 uppercase tracking-tighter italic">Modify Profile</h3>
+                                    
+                                    <form onSubmit={async (e) => {
+                                        e.preventDefault();
+                                        const d = new FormData(e.target);
+                                        const payload = Object.fromEntries(d.entries());
+
+                                        if (editing.type === 'PRODUCT') {
+                                            const pData = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock) };
+                                            if (editing.item.id) await window.api.updateDoc(window.api.doc(window.db, "inventory", editing.item.id), pData);
+                                            else await window.api.addDoc(window.api.collection(window.db, "inventory"), pData);
+                                        } 
+                                        else if (editing.type === 'PATIENT') {
+                                            if (editing.item.id) await window.api.updateDoc(window.api.doc(window.db, "patients", editing.item.id), payload);
+                                            else await window.api.addDoc(window.api.collection(window.db, "patients"), { ...payload, creditBalance: 0 });
+                                        }
+                                        else if (editing.type === 'USER') {
+                                            const uData = { ...payload, perms: { canEditStock: d.get('canEditStock')==='on', canViewFinance: d.get('canViewFinance')==='on', canManageUsers: d.get('canManageUsers')==='on' } };
+                                            if (editing.item.id) await window.api.updateDoc(window.api.doc(window.db, "users", editing.item.id), uData);
+                                            else await window.api.addDoc(window.api.collection(window.db, "users"), { ...uData, status: 'ACTIVE' });
+                                        }
+                                        else if (editing.type === 'EXPENSE') {
+                                            const category = payload.customCategory ? payload.customCategory : payload.category;
+                                            await window.api.addDoc(window.api.collection(window.db, "expenses"), { category, description: payload.description, amount: Number(payload.amount), date: new Date().toISOString() });
+                                        }
+                                        setEditing(null); alert("Data Synchronized.");
+                                    }} className="space-y-6">
+
+                                        {editing.type === 'PRODUCT' && (
+                                            <div className="space-y-4">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Brand Name</label><input name="brandName" defaultValue={editing.item.brandName} required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Category</label><select name="category" defaultValue={editing.item.category || 'Medicine'} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800"><option>Medicine</option><option>Medical Supplies</option><option>Cosmetics</option></select></div>
+                                                </div>
+                                                <div className="grid grid-cols-3 gap-4">
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Subcategory</label><input name="subCategory" defaultValue={editing.item.subCategory} placeholder="e.g. Antibiotic" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Strength / Size</label><input name="strength" defaultValue={editing.item.strength} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Stock Qty</label><input name="stock" type="number" defaultValue={editing.item.stock} required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-black text-emerald-500" /></div>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Sell Price</label><input name="price" type="number" defaultValue={editing.item.price} required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-black text-xl text-emerald-500" /></div>
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Cost Price</label><input name="costPrice" type="number" defaultValue={editing.item.costPrice} required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 opacity-60" /></div>
+                                                </div>
+                                                <div><label className="text-[10px] font-bold text-slate-500 uppercase">Symptoms (For STG Search)</label><textarea name="symptoms" defaultValue={editing.item.symptoms} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 h-24 text-sm" placeholder="e.g. fever, headache, pain..."></textarea></div>
+                                            </div>
+                                        )}
+
+                                        {editing.type === 'PATIENT' && (
+                                            <div className="space-y-4">
+                                                <input name="name" defaultValue={editing.item.name} placeholder="Full Name" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold text-emerald-400 uppercase" />
+                                                <div className="grid grid-cols-3 gap-4">
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Age</label><input name="age" type="number" defaultValue={editing.item.age} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Sex</label><select name="sex" defaultValue={editing.item.sex || 'Male'} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800"><option>Male</option><option>Female</option></select></div>
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Weight (Kg)</label><input name="weight" type="number" defaultValue={editing.item.weight} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Phone</label><input name="phone" defaultValue={editing.item.phone} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase">Insurance ID</label><input name="cardId" defaultValue={editing.item.cardId} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
+                                                </div>
+                                                <div><label className="text-[10px] font-bold text-slate-500 uppercase">Physical Address</label><input name="address" defaultValue={editing.item.address} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
+                                            </div>
+                                        )}
+
+                                        {editing.type === 'USER' && (
+                                            <div className="space-y-4">
+                                                <input name="username" defaultValue={editing.item.username} placeholder="Username" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold" />
+                                                <input name="pin" defaultValue={editing.item.pin} placeholder="4-Digit PIN" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 tracking-[1em] text-center font-black" />
+                                                <select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold">
+                                                    <option>MANAGER</option><option>PHARMACIST</option><option>TECHNICIAN</option><option>ASSISTANT</option><option>DISPENSER</option>
+                                                </select>
+                                                <div className="p-4 bg-black rounded-2xl border border-slate-800">
+                                                    <p className="text-[10px] font-bold text-slate-500 uppercase mb-4">Specific Authorizations</p>
+                                                    <label className="flex items-center gap-3 mb-2 text-sm font-bold"><input type="checkbox" name="canEditStock" defaultChecked={editing.item.perms?.canEditStock} className="w-5 h-5 accent-emerald-500" /> Can Edit Inventory</label>
+                                                    <label className="flex items-center gap-3 mb-2 text-sm font-bold"><input type="checkbox" name="canViewFinance" defaultChecked={editing.item.perms?.canViewFinance} className="w-5 h-5 accent-emerald-500" /> Can View Financials</label>
+                                                    <label className="flex items-center gap-3 text-sm font-bold"><input type="checkbox" name="canManageUsers" defaultChecked={editing.item.perms?.canManageUsers} className="w-5 h-5 accent-emerald-500" /> Can Manage Personnel</label>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {editing.type === 'EXPENSE' && (
+                                            <div className="space-y-4" id="expense-form-div">
+                                                <select name="category" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold text-rose-500" onChange={(e)=>{document.getElementById('custom-cat').style.display = e.target.value === 'CUSTOM' ? 'block' : 'none';}}>
+                                                    <option>LUKU (Electricity)</option><option>Meal Allowance</option><option>Sewage Service</option><option>Internet Bundle</option><option>Rent</option><option value="CUSTOM">Other (Specify)</option>
+                                                </select>
+                                                <input id="custom-cat" name="customCategory" placeholder="Type category name..." style={{display: 'none'}} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" />
+                                                <input name="amount" type="number" placeholder="Amount (TZS)" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-black text-2xl" />
+                                                <input name="description" placeholder="Description / Receipt Ref" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" />
+                                            </div>
+                                        )}
+
+                                        <div className="flex gap-4 pt-8">
+                                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500 transition-all active:scale-95">COMMIT TO VAULT</button>
+                                            {editing.item.id && editing.type !== 'EXPENSE' && (
+                                                <button type="button" onClick={async(e)=>{ e.preventDefault();
+                                                    if(confirm("Permanently Purge Record?")) {
+                                                        const col = editing.type === 'PRODUCT' ? 'inventory' : editing.type === 'CLIENT' ? 'patients' : 'users';
+                                                        await window.api.deleteDoc(window.api.doc(window.db, col, editing.item.id));
+                                                        setEditing(null);
+                                                    }
+                                                }} className="bg-rose-950 border border-rose-900 text-rose-500 p-5 rounded-[2rem] hover:bg-rose-900 hover:text-white transition-all"><lucide.Trash size={24}/></button>
+                                            )}
+                                            <button type="button" onClick={(e)=>{e.preventDefault(); setEditing(null);}} className="p-5 bg-black border border-slate-800 rounded-[2rem] font-bold text-xs uppercase tracking-widest text-slate-400 hover:text-white transition-all">Cancel</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 2. CHECKOUT MODAL (Instant Load) */}
+                        {checkoutModal && (
+                            <div className="fixed inset-0 flex items-center justify-center p-4 modal-overlay animate-in zoom-in duration-200">
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-10 rounded-[3.5rem] shadow-2xl text-center">
+                                    <h3 className="text-3xl font-black mb-2 text-emerald-500 italic tracking-tighter">Finalize Bill</h3>
+                                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-10">Select Payment Method</p>
+                                    
+                                    <div className="space-y-4 mb-10">
+                                        <button onClick={(e)=>{e.preventDefault(); finalizeSale('CASH')}} className="w-full py-5 bg-emerald-600 text-white rounded-3xl font-black shadow-xl hover:bg-emerald-500 transition-all active:scale-95 flex justify-center items-center gap-3"><lucide.Banknote /> CASH PAYMENT</button>
+                                        <button onClick={(e)=>{e.preventDefault(); finalizeSale('MOBILE')}} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black shadow-xl hover:bg-blue-500 transition-all active:scale-95 flex justify-center items-center gap-3"><lucide.Smartphone /> M-PESA / TIGO</button>
+                                        <button onClick={(e)=>{
+                                            e.preventDefault();
+                                            const pid = prompt("Enter Patient Name or Insurance ID:");
+                                            const pt = data.patients.find(p => p.cardId === pid || p.name.toLowerCase() === pid?.toLowerCase());
+                                            if(pt) finalizeSale('DEBT', pt.id); else alert("Client not found! Register them first.");
+                                        }} className="w-full py-5 bg-rose-600 text-white rounded-3xl font-black shadow-xl hover:bg-rose-500 transition-all active:scale-95 flex justify-center items-center gap-3"><lucide.BookOpen /> DEBT (DENI)</button>
+                                        <button onClick={(e)=>{e.preventDefault(); finalizeSale('BONUS')}} className="w-full py-5 bg-indigo-600 text-white rounded-3xl font-black shadow-xl hover:bg-indigo-500 transition-all active:scale-95 flex justify-center items-center gap-3"><lucide.Gift /> REWARD / BONUS</button>
+                                    </div>
+                                    <button onClick={(e)=>{e.preventDefault(); setCheckoutModal(false)}} className="text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white transition-all">Cancel Transaction</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 3. PATIENT HISTORY MODAL */}
+                        {historyModal && (
+                            <div className="fixed inset-0 flex items-center justify-center p-4 modal-overlay animate-in fade-in">
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-3xl p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar">
+                                    <div className="flex justify-between items-start mb-8">
+                                        <div>
+                                            <h3 className="text-3xl font-black text-emerald-500 uppercase tracking-tighter italic">Medical History</h3>
+                                            <p className="text-sm font-bold mt-2 uppercase">{historyModal.name} • {historyModal.age} YRS</p>
+                                        </div>
+                                        <button onClick={(e)=>{e.preventDefault(); setHistoryModal(null)}} className="bg-black p-4 rounded-full text-slate-500 hover:text-white"><lucide.X/></button>
+                                    </div>
+
+                                    <div className="space-y-4 mb-8">
+                                        {data.sales.filter(s => s.method === 'DEBT' || s.items.some(i=>i.patientId === historyModal.id)).map((s, idx) => (
+                                            <div key={idx} className="bg-black p-6 rounded-3xl border border-slate-800">
+                                                <div className="flex justify-between mb-4 border-b border-slate-800 pb-2">
+                                                    <span className="text-xs font-bold text-slate-500">{new Date(s.timestamp).toLocaleString()}</span>
+                                                    <span className={`text-[10px] font-black px-2 py-1 rounded ${s.method==='DEBT'?'bg-rose-900 text-rose-300':'bg-emerald-900 text-emerald-300'}`}>{s.method}</span>
+                                                </div>
+                                                {s.items.map((i, k) => (
+                                                    <div key={k} className="flex justify-between text-sm mb-1"><span className="font-bold">{i.brandName} x{i.qty}</span><span>{i.price * i.qty}</span></div>
+                                                ))}
+                                                <p className="text-right font-black text-emerald-500 mt-4 border-t border-slate-800 pt-2">Total: {s.total.toLocaleString()} TZS</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    
+                                    {historyModal.creditBalance > 0 && (
+                                        <div className="bg-rose-950/30 border border-rose-900 p-6 rounded-3xl text-center">
+                                            <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">Unpaid Balance</p>
+                                            <p className="text-3xl font-black text-rose-400 mt-2">{Number(historyModal.creditBalance).toLocaleString()} TZS</p>
+                                            <button onClick={async (e)=>{
+                                                e.preventDefault();
+                                                const amt = prompt("Amount paid today (TZS):", historyModal.creditBalance);
+                                                if(amt) {
+                                                    await window.api.updateDoc(window.api.doc(window.db, "patients", historyModal.id), { creditBalance: historyModal.creditBalance - Number(amt) });
+                                                    await window.api.addDoc(window.api.collection(window.db, "sales"), { total: Number(amt), timestamp: new Date().toISOString(), soldBy: user.username, method: 'DEBT_CLEARED', items: [{brandName: `Debt Clearance`, qty: 1, price: Number(amt)}] });
+                                                    setHistoryModal(null); alert("Debt Cleared & Logged as Revenue!");
+                                                }
+                                            }} className="mt-4 bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg">Process Payment</button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                    </main>
+                </div>
             );
+        };
 
-            return e('div', { className: 'flex h-screen overflow-hidden bg-slate-950 text-white' },
-                // SIDEBAR
-                e('aside', { className: 'w-72 bg-black border-r border-slate-800 p-8 flex flex-col shrink-0' },
-                    e('div', { className: 'flex items-center gap-3 mb-10' },
-                        e('div', { className: 'w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black text-xl' }, 'A'),
-                        e('h2', { className: 'text-2xl font-black tracking-tighter italic' }, 'APEX ', e('span', {className:'text-emerald-600'}, 'Pro'))
-                    ),
-                    e('nav', { className: 'flex-1 overflow-y-auto no-scrollbar' },
-                        NavBtn({ id: 'DASHBOARD', label: 'Command Center' }),
-                        NavBtn({ id: 'POS', label: 'Sales Terminal' }),
-                        hasAccess('TECHNICIAN') && NavBtn({ id: 'STOO', label: 'Inventory Vault' }),
-                        NavBtn({ id: 'PATIENTS', label: 'Patient Registry' }),
-                        hasAccess('MANAGER') && NavBtn({ id: 'FINANCE', label: 'Financials' }),
-                        hasAccess('MANAGER') && NavBtn({ id: 'USERS', label: 'Personnel' })
-                    ),
-                    e('button', { onClick: () => window.location.reload(), className: 'text-rose-500 font-bold text-[10px] uppercase tracking-widest mt-10' }, 'Logout Session')
-                ),
+        const NavBtn = ({ id, label, icon: Icon, active, onClick }) => (
+            <button onClick={(e) => { e.preventDefault(); onClick(id); }} className={`w-full flex items-center gap-4 p-4 rounded-3xl transition-all duration-300 group ${active === id ? 'active-tab translate-x-2' : 'text-slate-500 hover:bg-slate-900'}`}>
+                <Icon size={22} className={active === id ? 'text-white' : 'group-hover:text-emerald-500'} />
+                <span className="font-black text-[10px] uppercase tracking-widest">{label}</span>
+            </button>
+        );
 
-                // MAIN CONTENT
-                e('main', { className: 'flex-1 p-10 overflow-auto no-scrollbar relative' },
-                    view === 'DASHBOARD' && e('div', null,
-                        e('h2', { className: 'text-4xl font-black mb-10 tracking-tighter' }, "Director's Overview"),
-                        e('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-6' },
-                            StatCard({ label: 'Lifetime Revenue', value: sales.reduce((a,b)=>a+b.total,0).toLocaleString(), sub: 'TZS', color: 'text-emerald-400' }),
-                            StatCard({ label: 'Inventory Wealth', value: inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0).toLocaleString(), sub: 'At Cost', color: 'text-blue-400' }),
-                            StatCard({ label: 'Outstanding Debt', value: patients.reduce((a,b)=>a+(Number(b.creditBalance)||0),0).toLocaleString(), sub: 'Unpaid', color: 'text-rose-400' })
-                        )
-                    ),
-
-                    view === 'POS' && e('div', { className: 'flex gap-8 h-full' },
-                        e('div', { className: 'flex-1 space-y-6 overflow-y-auto no-scrollbar' },
-                            e('input', { placeholder: 'Search disease, symptom or drug...', className: 'w-full p-6 bg-slate-900 border border-slate-800 rounded-[2rem] text-xl font-bold outline-none focus:ring-2 ring-emerald-500 shadow-xl', onChange: (ev)=>setSearch(ev.target.value.toLowerCase()) }),
-                            e('div', { className: 'grid grid-cols-2 lg:grid-cols-3 gap-4' },
-                                inventory.filter(p => (p.brandName||'').toLowerCase().includes(search) || (p.symptoms||'').toLowerCase().includes(search)).map(p => 
-                                    e('div', { key: p.id, onClick: () => addToCart(p), className: 'bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer shadow-xl flex flex-col justify-between h-48' },
-                                        e('div', null, e('span', {className:'text-[9px] font-black text-emerald-500 uppercase'}, p.category)),
-                                        e('h4', {className:'font-black text-xl tracking-tight'}, p.brandName),
-                                        e('div', {className:'flex justify-between items-end mt-4'},
-                                            e('p', {className:'text-2xl font-black text-emerald-400'}, Number(p.price).toLocaleString()),
-                                            e('p', {className:`text-[10px] font-black px-2 py-1 rounded-lg ${p.stock < 10 ? 'bg-rose-900 text-rose-300':'bg-slate-800 text-slate-400'}`}, 'STK: '+p.stock)
-                                        )
-                                    )
-                                )
-                            )
-                        ),
-                        e('div', { className: 'w-96 bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-2xl h-fit border-t-8 border-emerald-600 flex flex-col shrink-0' },
-                            e('h3', {className:'font-black text-2xl mb-8 tracking-tighter uppercase'}, 'Cart'),
-                            e('div', {className:'space-y-4 mb-8 overflow-auto max-h-[40vh] no-scrollbar px-1 font-bold text-sm'},
-                                cart.length === 0 && e('p', {className:'text-center text-slate-300 py-10 uppercase'}, 'Cart Empty'),
-                                cart.map(i => e('div', {key:i.id, className:'flex justify-between items-center border-b border-slate-100 pb-4'},
-                                    e('div', {className:'flex-1'}, e('p',null,i.brandName), e('input', { type:'number', value:i.currentPrice, onChange:(ev)=>setCart(cart.map(x=>x.id===i.id?{...x, currentPrice:Number(ev.target.value)}:x)), className:'w-20 mt-1 bg-slate-50 rounded-lg text-xs font-black text-emerald-600 outline-none p-1 border border-slate-200' })),
-                                    e('div', {className:'flex flex-col items-end gap-2'}, e('input', { type:'number', value:i.qty, onChange:(ev)=>setCart(cart.map(x=>x.id===i.id?{...x, qty:parseInt(ev.target.value)||0}:x)), className:'w-16 p-2 bg-slate-50 rounded-xl text-center font-black outline-none border border-slate-200' }), e('button', {onClick:()=>setCart(cart.filter(x=>x.id!==i.id)), className:'text-[10px] text-rose-500 uppercase'}, 'Remove'))
-                                ))
-                            ),
-                            e('div', {className:'flex justify-between font-black text-4xl mb-10 tracking-tighter text-emerald-600'}, e('span',null,'Total'), e('span',null, cart.reduce((s,i)=>s+(i.currentPrice*i.qty),0).toLocaleString())),
-                            e('button', {onClick: () => cart.length > 0 ? setCheckoutModal(true) : alert("Empty!"), className:'w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black text-xl shadow-xl hover:bg-black'}, 'PROCESS PAYMENT')
-                        )
-                    ),
-
-                    view === 'STOO' && e('div', null,
-                        e('div', {className:'flex justify-between items-center mb-10'},
-                            e('h2', {className:'text-3xl font-black text-emerald-500 uppercase tracking-widest'}, 'Inventory Vault'),
-                            e('button', {onClick: () => setEditing({ type: 'PRODUCT', item: {} }), className:'bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg text-[10px] uppercase tracking-widest'}, '+ Add Stock')
-                        ),
-                        e('table', {className:'w-full text-left'},
-                            e('thead', {className:'text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4'}, e('tr',null, e('th',{className:'pb-4'},'Product'), e('th',null,'Stock'), e('th',null,'Margin'), e('th',{className:'text-right'},'Price'), e('th',{className:'text-right'},'Manage'))),
-                            e('tbody', {className:'font-bold'}, inventory.map(p => e('tr', {key:p.id, className:'border-b border-slate-800/50 hover:bg-black/50'},
-                                e('td', {className:'py-6'}, e('p',{className:'font-black text-white text-lg'}, p.brandName), e('p',{className:'text-[10px] text-slate-500 uppercase'}, p.genericName)),
-                                e('td', {className:p.stock < 10 ? 'text-rose-500 text-xl' : 'text-slate-300 text-xl'}, p.stock),
-                                e('td', {className:'text-emerald-500'}, (((p.price-p.costPrice)/p.price)*100).toFixed(0)+'%'),
-                                e('td', {className:'text-right text-emerald-400 text-2xl tracking-tighter'}, Number(p.price).toLocaleString()),
-                                e('td', {className:'text-right'}, e('button', {onClick:()=>setEditing({type: 'PRODUCT', item: p}), className:'bg-slate-800 text-blue-400 px-4 py-2 rounded-xl text-[10px] uppercase'}, 'Edit'))
-                            )))
-                        )
-                    ),
-
-                    view === 'PATIENTS' && e('div', null,
-                        e('div', {className:'flex justify-between items-center mb-10'},
-                            e('h2', {className:'text-3xl font-black text-blue-500 uppercase tracking-tighter'}, 'Client Registry'),
-                            e('button', {onClick: () => setEditing({ type: 'CLIENT', item: {} }), className:'bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-[10px] tracking-widest'}, '+ New Profile')
-                        ),
-                        e('div', {className:'grid grid-cols-1 md:grid-cols-2 gap-6'}, patients.map(pt => e('div', {key:pt.id, className:'p-8 bg-black rounded-[3rem] border border-slate-800 flex justify-between items-center shadow-xl'},
-                            e('div', null, e('h4',{className:'font-black text-xl text-white uppercase'}, pt.name), e('p',{className:'text-[10px] text-slate-500 font-bold uppercase mt-2 tracking-widest'}, pt.sex + ' • ' + pt.age + ' YRS • ' + pt.weight + ' KG'), e('p',{className:'text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-widest'}, '📞 ' + pt.phone + ' • ' + pt.address)),
-                            e('div', {className:'flex flex-col items-end gap-3'}, 
-                                e('div', {className:'text-right'}, e('p',{className:'text-[10px] font-bold text-slate-500 uppercase tracking-widest'}, 'Unpaid Debt'), e('p',{className:'text-rose-500 font-black text-2xl'}, Number(pt.creditBalance || 0).toLocaleString() + ' TZS')),
-                                e('div', {className:'flex gap-2'}, 
-                                    (pt.creditBalance > 0) && e('button', {onClick:()=>setDebtModal(pt.id), className:'text-[10px] font-black text-emerald-500 bg-slate-900 px-3 py-1 rounded-lg uppercase hover:bg-emerald-900'}, 'Clear Debt'),
-                                    e('button', {onClick:()=>setEditing({type: 'CLIENT', item: pt}), className:'text-[10px] font-black text-blue-500 bg-slate-900 px-3 py-1 rounded-lg uppercase hover:bg-blue-900'}, 'Edit')
-                                )
-                            )
-                        )))
-                    ),
-
-                    view === 'FINANCE' && e('div', {className:'space-y-10'},
-                        e('h2', {className:'text-4xl font-black tracking-tighter uppercase italic decoration-emerald-500 underline underline-offset-8'}, 'Financial Ledger'),
-                        e('div', {className:'grid grid-cols-1 md:grid-cols-3 gap-6'},
-                            StatCard({ label: 'Gross Revenue', value: sales.reduce((a,b)=>a+b.total,0).toLocaleString(), sub: '', color: 'text-emerald-400', border: 'border-slate-800' }),
-                            StatCard({ label: 'Consumption (Bills)', value: expenses.reduce((a,b)=>a+b.amount,0).toLocaleString(), sub: '', color: 'text-rose-500', border: 'border-slate-800' }),
-                            StatCard({ label: 'Net Profit', value: (sales.reduce((a,b)=>a+b.total,0) - expenses.reduce((a,b)=>a+b.amount,0)).toLocaleString(), sub: '', color: 'text-white', border: 'border-slate-800' })
-                        ),
-                        e('div', {className:'bg-slate-900 p-10 rounded-[3rem] border border-slate-800'},
-                            e('div', {className:'flex justify-between items-center mb-8'}, e('h3',{className:'font-black text-xl uppercase tracking-tighter'}, 'Consumption Log'), e('button', {onClick: () => setEditing({ type: 'EXPENSE', item: {} }), className:'text-xs font-bold text-emerald-500 bg-emerald-900/30 px-6 py-3 rounded-2xl tracking-widest uppercase hover:bg-emerald-900'}, '+ Record Bill')),
-                            e('div', {className:'space-y-3'}, expenses.map(ex => e('div', {key:ex.id, className:'flex justify-between items-center p-4 bg-black rounded-2xl border border-slate-900'}, e('div',null, e('p',{className:'font-bold text-xs uppercase tracking-widest'}, ex.category), e('p',{className:'text-[10px] text-slate-600 italic'}, ex.description)), e('div',{className:'flex items-center gap-4'}, e('p',{className:'font-black text-rose-500 text-lg'}, '-'+ex.amount.toLocaleString()), e('button',{onClick:async()=>{if(confirm("Delete expense?")) await window.api.deleteDoc(window.api.doc(window.db, "expenses", ex.id))}, className:'text-slate-600 hover:text-rose-500'}, 'x')))))
-                        )
-                    ),
-
-                    view === 'USERS' && e('div', null,
-                        e('h2', {className:'text-3xl font-black mb-10 tracking-tighter uppercase'}, 'Personnel Control'),
-                        e('button', {onClick: () => setEditing({ type: 'USER', item: {} }), className:'bg-emerald-600 text-white px-8 py-4 rounded-3xl font-black shadow-lg mb-10 uppercase text-[10px] tracking-widest'}, '+ Authorize Staff'),
-                        e('div', {className:'space-y-4'}, users.map(u => e('div', {key:u.id, className:'bg-black p-6 rounded-[2.5rem] border border-slate-800 flex justify-between items-center'}, e('div',null, e('p',{className:'font-black text-xl text-white tracking-tighter uppercase'}, u.username), e('p',{className:'text-[10px] text-slate-600 font-black uppercase tracking-widest mt-1'}, u.role)), e('button', {onClick:()=>setEditing({type: 'USER', item: u}), className:'px-6 py-3 bg-slate-900 text-blue-400 font-black text-[10px] uppercase rounded-xl hover:bg-blue-600 hover:text-white'}, 'Manage'))))
-                    ),
-
-                    // --- MODALS ---
-                    editing && e('div', {className:'fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay'},
-                        e('div', {className:'bg-slate-900 border border-slate-800 w-full max-w-2xl p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar'},
-                            e('h3', {className:'text-3xl font-black mb-8 text-emerald-500 uppercase tracking-tighter italic'}, 'Modify Record'),
-                            e('form', {onSubmit: async (evt) => {
-                                evt.preventDefault();
-                                const d = new FormData(evt.target);
-                                const payload = Object.fromEntries(d.entries());
-                                if (editing.type === 'PRODUCT') {
-                                    const pData = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock) };
-                                    if (editing.item.id) await window.api.updateDoc(window.api.doc(window.db, "inventory", editing.item.id), pData);
-                                    else await window.api.addDoc(window.api.collection(window.db, "inventory"), pData);
-                                } else if (editing.type === 'CLIENT') {
-                                    if (editing.item.id) await window.api.updateDoc(window.api.doc(window.db, "patients", editing.item.id), payload);
-                                    else await window.api.addDoc(window.api.collection(window.db, "patients"), { ...payload, creditBalance: 0 });
-                                } else if (editing.type === 'USER') {
-                                    if (editing.item.id) await window.api.updateDoc(window.api.doc(window.db, "users", editing.item.id), payload);
-                                    else await window.api.addDoc(window.api.collection(window.db, "users"), { ...payload, status: 'ACTIVE' });
-                                } else if (editing.type === 'EXPENSE') {
-                                    await window.api.addDoc(window.api.collection(window.db, "expenses"), { ...payload, amount: Number(payload.amount), date: new Date().toISOString() });
-                                }
-                                setEditing(null); alert("Data Synchronized.");
-                            }, className:'space-y-6'},
-                                editing.type === 'PRODUCT' && e('div', {className:'space-y-4'},
-                                    e('div', {className:'grid grid-cols-2 gap-4'}, e('div',null, e('label',{className:'text-[10px] font-bold text-slate-500 uppercase'},'Brand Name'), e('input',{name:'brandName', defaultValue:editing.item.brandName, required:true, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800'})), e('div',null, e('label',{className:'text-[10px] font-bold text-slate-500 uppercase'},'Category'), e('select',{name:'category', defaultValue:editing.item.category || 'Medicine', className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800'}, e('option',null,'Medicine'), e('option',null,'Medical Supplies'), e('option',null,'Cosmetics')))),
-                                    e('div', {className:'grid grid-cols-3 gap-4'}, e('div',null, e('label',{className:'text-[10px] font-bold text-slate-500 uppercase'},'Strength'), e('input',{name:'strength', defaultValue:editing.item.strength, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800'})), e('div',null, e('label',{className:'text-[10px] font-bold text-slate-500 uppercase'},'Generic'), e('input',{name:'genericName', defaultValue:editing.item.genericName, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800'})), e('div',null, e('label',{className:'text-[10px] font-bold text-slate-500 uppercase'},'Stock Qty'), e('input',{name:'stock', type:'number', defaultValue:editing.item.stock, required:true, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-black text-emerald-500'}))),
-                                    e('div', {className:'grid grid-cols-2 gap-4'}, e('div',null, e('label',{className:'text-[10px] font-bold text-slate-500 uppercase'},'Sell Price'), e('input',{name:'price', type:'number', defaultValue:editing.item.price, required:true, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-black text-xl text-emerald-500'})), e('div',null, e('label',{className:'text-[10px] font-bold text-slate-500 uppercase'},'Cost Price'), e('input',{name:'costPrice', type:'number', defaultValue:editing.item.costPrice, required:true, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 opacity-60'}))),
-                                    e('div', null, e('label',{className:'text-[10px] font-bold text-slate-500 uppercase'},'Symptoms (For POS Search)'), e('textarea',{name:'symptoms', defaultValue:editing.item.symptoms, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 h-24 text-sm', placeholder:'e.g. fever, headache, pain...'}))
-                                ),
-                                editing.type === 'CLIENT' && e('div', {className:'space-y-4'},
-                                    e('input', {name:'name', defaultValue:editing.item.name, placeholder:'Full Name', required:true, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold'}),
-                                    e('div', {className:'grid grid-cols-3 gap-4'}, e('input',{name:'age', type:'number', defaultValue:editing.item.age, placeholder:'Age', className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800'}), e('select',{name:'sex', defaultValue:editing.item.sex || 'Male', className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800'}, e('option',null,'Male'), e('option',null,'Female')), e('input',{name:'weight', type:'number', defaultValue:editing.item.weight, placeholder:'Weight (kg)', className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800'})),
-                                    e('div', {className:'grid grid-cols-2 gap-4'}, e('input',{name:'phone', defaultValue:editing.item.phone, placeholder:'Phone Number', className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800'}), e('input',{name:'cardId', defaultValue:editing.item.cardId, placeholder:'Insurance ID / Card Number', className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800'})),
-                                    e('input', {name:'address', defaultValue:editing.item.address, placeholder:'Physical Address', className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800'})
-                                ),
-                                editing.type === 'USER' && e('div', {className:'space-y-4'},
-                                    e('input', {name:'username', defaultValue:editing.item.username, placeholder:'Username', required:true, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold'}),
-                                    e('input', {name:'pin', defaultValue:editing.item.pin, placeholder:'4-Digit PIN', required:true, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 tracking-[1em] text-center font-black'}),
-                                    e('select', {name:'role', defaultValue:editing.item.role || 'DISPENSER', className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold'}, e('option',null,'MANAGER'), e('option',null,'PHARMACIST'), e('option',null,'TECHNICIAN'), e('option',null,'ASSISTANT'), e('option',null,'DISPENSER')),
-                                    editing.item.id && e('select', {name:'status', defaultValue:editing.item.status, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold text-emerald-500'}, e('option',null,'ACTIVE'), e('option',null,'INACTIVE'))
-                                ),
-                                editing.type === 'EXPENSE' && e('div', {className:'space-y-4'},
-                                    e('select', {name:'category', className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold text-rose-500'}, e('option',null,'LUKU (Electricity)'), e('option',null,'Meal Allowance'), e('option',null,'Sewage Service'), e('option',null,'Internet Bundle'), e('option',null,'Rent'), e('option',null,'Other')),
-                                    e('input', {name:'amount', type:'number', placeholder:'Amount (TZS)', required:true, className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-black text-2xl'}),
-                                    e('input', {name:'description', placeholder:'Description / Receipt Ref', className:'w-full p-4 bg-black rounded-2xl outline-none border border-slate-800'})
-                                ),
-                                e('div', {className:'flex gap-4 pt-8'},
-                                    e('button', {type:'submit', className:'flex-1 bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500 transition-all active:scale-95'}, 'COMMIT TO VAULT'),
-                                    editing.item.id && e('button', {type:'button', onClick:async()=>{if(confirm("Permanently Purge Record?")){const col = editing.type === 'PRODUCT' ? 'inventory' : editing.type === 'CLIENT' ? 'patients' : 'users'; await window.api.deleteDoc(window.api.doc(window.db, col, editing.item.id)); setEditing(null);}}, className:'bg-rose-950 border border-rose-900 text-rose-500 p-5 rounded-[2rem] hover:bg-rose-900 hover:text-white transition-all'}, 'Delete'),
-                                    e('button', {type:'button', onClick:()=>setEditing(null), className:'p-5 bg-black border border-slate-800 rounded-[2rem] font-bold text-xs uppercase tracking-widest text-slate-400 hover:text-white transition-all'}, 'Cancel')
-                                )
-                            )
-                        ),
-
-                        checkoutModal && e('div', {className:'fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay'},
-                            e('div', {className:'bg-slate-900 border border-slate-800 w-full max-w-md p-10 rounded-[3.5rem] shadow-2xl animate-in zoom-in duration-300 text-center'},
-                                e('h3', {className:'text-3xl font-black mb-2 text-emerald-500 italic tracking-tighter'}, 'Finalize Bill'),
-                                e('p', {className:'text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-10'}, 'Select Payment Method'),
-                                e('div', {className:'space-y-4 mb-10'},
-                                    e('button', {onClick:()=>finalizeSale('CASH'), className:'w-full py-5 bg-emerald-600 text-white rounded-3xl font-black shadow-xl hover:bg-emerald-500 transition-all active:scale-95 flex justify-center items-center gap-3'}, '💰 CASH PAYMENT'),
-                                    e('button', {onClick:()=>finalizeSale('MOBILE'), className:'w-full py-5 bg-blue-600 text-white rounded-3xl font-black shadow-xl hover:bg-blue-500 transition-all active:scale-95 flex justify-center items-center gap-3'}, '📱 M-PESA / TIGO'),
-                                    e('button', {onClick:()=>{
-                                        const pid = prompt("Enter Patient Card ID or Name for Debt Tracking:");
-                                        const pt = patients.find(p => p.cardId === pid || p.name.toLowerCase() === pid?.toLowerCase());
-                                        if(pt) finalizeSale('DEBT', pt.id); else alert("Patient not found in Registry!");
-                                    }, className:'w-full py-5 bg-rose-600 text-white rounded-3xl font-black shadow-xl hover:bg-rose-500 transition-all active:scale-95 flex justify-center items-center gap-3'}, '📓 RECORD DEBT (DENI)'),
-                                    e('button', {onClick:()=>finalizeSale('BONUS'), className:'w-full py-5 bg-indigo-600 text-white rounded-3xl font-black shadow-xl hover:bg-indigo-500 transition-all active:scale-95 flex justify-center items-center gap-3'}, '🎁 REWARD / BONUS')
-                                ),
-                                e('button', {onClick:()=>setCheckoutModal(false), className:'text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white transition-all'}, 'Cancel Transaction')
-                            )
-                        ),
-
-                        debtModal && e('div', {className:'fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay'},
-                            e('div', {className:'bg-slate-900 border border-slate-800 w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl animate-in zoom-in duration-300 text-center'},
-                                e('h3', {className:'text-2xl font-black mb-6 text-emerald-500 uppercase tracking-tighter'}, 'Clear Debt'),
-                                e('form', {onSubmit: clearDebt},
-                                    e('input', {name:'amount', type:'number', placeholder:'Amount Paid (TZS)', required:true, className:'w-full p-4 mb-6 bg-black rounded-2xl outline-none border border-slate-800 font-black text-xl text-center text-emerald-400'}),
-                                    e('button', {type:'submit', className:'w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-emerald-500 transition-all'}, 'Confirm Payment')
-                                ),
-                                e('button', {onClick:()=>setDebtModal(null), className:'mt-6 text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white transition-all'}, 'Cancel')
-                            )
-                        )
-                    )
-                )
-            );
-        }
+        const StatCard = ({ label, value, sub, color, border }) => (
+            <div className={`bg-slate-900 p-10 rounded-[3.5rem] border ${border} shadow-2xl hover:shadow-emerald-500/10 transition-all group relative overflow-hidden`}>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4 italic">{label}</p>
+                <h3 className={`text-5xl font-black tracking-tighter ${color} relative z-10`}>{value} <span className="text-sm font-normal opacity-30 text-white uppercase">{sub}</span></h3>
+            </div>
+        );
 
         const bootCheck = setInterval(() => {
             if (window.db) {
                 const root = ReactDOM.createRoot(document.getElementById('apex-root'));
-                root.render(e(App));
+                root.render(<App />);
                 clearInterval(bootCheck);
             }
         }, 500);
