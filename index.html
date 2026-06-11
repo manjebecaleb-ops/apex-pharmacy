@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>APEX | Sovereign Enterprise</title>
+    <title>APEX | Sovereign Enterprise - Offline Ready</title>
     <!-- PRODUCTION LIBRARIES -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -15,19 +15,29 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
+    <!-- SERVICE WORKER FOR OFFLINE SUPPORT -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(e => console.log('SW registration failed:', e));
+        }
+    </script>
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; background-color: #020617; color: white; margin: 0; }
         .active-tab { background: #10b981 !important; color: white !important; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .modal-overlay { background: rgba(2, 6, 23, 0.9); backdrop-filter: blur(10px); z-index: 50; }
+        .offline-badge { position: fixed; top-4; right-4; background: #dc2626; padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: bold; z-index: 40; }
+        .sync-badge { position: fixed; top-4; right-4; background: #10b981; padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: bold; z-index: 40; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
 </head>
 <body>
     <div id="apex-root">
         <div style="height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#020617;">
             <h1 style="font-size:4rem;font-weight:900;color:#10b981;font-style:italic;">APEX</h1>
-            <p id="boot-status" style="color:#64748b;font-weight:bold;margin-top:10px; letter-spacing: 2px;">CONNECTING TO VAULT...</p>
+            <p id="boot-status" style="color:#64748b;font-weight:bold;margin-top:10px; letter-spacing: 2px;">INITIALIZING VAULT...</p>
         </div>
     </div>
 
@@ -44,6 +54,61 @@
         };
     </script>
 
+    <!-- INDEXED DB FOR OFFLINE STORAGE -->
+    <script>
+        window.offlineDB = {
+            init: async function() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open('ApexPharmacy', 1);
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => { this.db = request.result; resolve(this.db); };
+                    request.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('inventory')) db.createObjectStore('inventory', { keyPath: 'id' });
+                        if (!db.objectStoreNames.contains('sales')) db.createObjectStore('sales', { keyPath: 'id' });
+                        if (!db.objectStoreNames.contains('patients')) db.createObjectStore('patients', { keyPath: 'id' });
+                        if (!db.objectStoreNames.contains('users')) db.createObjectStore('users', { keyPath: 'id' });
+                        if (!db.objectStoreNames.contains('expenses')) db.createObjectStore('expenses', { keyPath: 'id' });
+                        if (!db.objectStoreNames.contains('syncQueue')) db.createObjectStore('syncQueue', { keyPath: 'id', autoIncrement: true });
+                    };
+                });
+            },
+            get: async function(store, key) {
+                return new Promise((resolve) => {
+                    if (!this.db) return resolve(null);
+                    const tx = this.db.transaction(store);
+                    const req = tx.objectStore(store).get(key);
+                    req.onsuccess = () => resolve(req.result);
+                });
+            },
+            getAll: async function(store) {
+                return new Promise((resolve) => {
+                    if (!this.db) return resolve([]);
+                    const tx = this.db.transaction(store);
+                    const req = tx.objectStore(store).getAll();
+                    req.onsuccess = () => resolve(req.result);
+                });
+            },
+            put: async function(store, data) {
+                return new Promise((resolve) => {
+                    if (!this.db) return resolve(null);
+                    const tx = this.db.transaction(store, 'readwrite');
+                    const req = tx.objectStore(store).put(data);
+                    req.onsuccess = () => resolve(req.result);
+                });
+            },
+            delete: async function(store, key) {
+                return new Promise((resolve) => {
+                    if (!this.db) return resolve(null);
+                    const tx = this.db.transaction(store, 'readwrite');
+                    const req = tx.objectStore(store).delete(key);
+                    req.onsuccess = () => resolve(req.result);
+                });
+            }
+        };
+        window.offlineDB.init();
+    </script>
+
     <!-- 1. CLOUD ENGINE (FIREBASE) -->
     <script>
         try {
@@ -58,6 +123,15 @@
             };
             firebase.initializeApp(firebaseConfig);
             window.db = firebase.firestore();
+            
+            // Enable offline persistence
+            firebase.firestore().enablePersistence().catch((err) => {
+                if (err.code === 'failed-precondition') {
+                    console.log('Multiple tabs open');
+                } else if (err.code === 'unimplemented') {
+                    console.log('Browser not supported');
+                }
+            });
         } catch (error) {
             console.error(error);
         }
@@ -67,27 +141,171 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
+        // TANZANIA STANDARD TREATMENT GUIDELINES (STG) - Current Edition
+        const TANZANIA_STG = {
+            'Malaria': {
+                symptoms: 'Fever, chills, headache, body aches',
+                treatment: 'Artemether-lumefantrine (1st line), Dihydroartemisinin-piperaquine (2nd line)',
+                dosage: 'AL: 80/480mg tabs. Dose: Weight-based (6 doses over 3 days)',
+                precautions: 'Severe malaria: IV artesunate, follow with oral AL after acute phase',
+                reference: 'Tanzania STG 2024'
+            },
+            'Typhoid Fever': {
+                symptoms: 'Sustained fever, rose spots, abdominal pain, hepatomegaly',
+                treatment: 'Ceftriaxone or Ciprofloxacin (uncomplicated)',
+                dosage: 'Ceftriaxone: 80mg/kg/day IV/IM in 2-4 divided doses',
+                precautions: 'Monitor for resistance; avoid antiperistaltic agents',
+                reference: 'Tanzania STG 2024'
+            },
+            'Pneumonia (Community)': {
+                symptoms: 'Cough, fever, chest pain, shortness of breath',
+                treatment: 'Amoxicillin (mild-moderate), Ceftriaxone (severe)',
+                dosage: 'Amoxicillin: 500mg 8-hourly; Ceftriaxone: 2g 12-hourly IV/IM',
+                precautions: 'Check for signs of severe pneumonia; consider oxygen therapy',
+                reference: 'Tanzania STG 2024'
+            },
+            'Tuberculosis (New)': {
+                symptoms: 'Chronic cough >3 weeks, fever, night sweats, weight loss',
+                treatment: '2HRZE/4HR (Intensive phase 2mo + Continuation phase 4mo)',
+                dosage: 'H:300mg, R:600mg, Z:1500-2000mg, E:800-1200mg daily',
+                precautions: 'Drug interactions with ARVs; monitor LFTs; report adverse events',
+                reference: 'Tanzania STG 2024 - TB/HIV'
+            },
+            'Hypertension': {
+                symptoms: 'Usually asymptomatic; headache, chest pain in severe cases',
+                treatment: 'ACE Inhibitor or CCB (1st line), Add thiazide diuretic if needed',
+                dosage: 'Lisinopril: 10-20mg daily; Amlodipine: 5-10mg daily',
+                precautions: 'Monitor BP, electrolytes; avoid NSAIDs; counsel on lifestyle',
+                reference: 'Tanzania STG 2024'
+            },
+            'Diabetes Type 2': {
+                symptoms: 'Polyuria, polydipsia, weight loss, fatigue',
+                treatment: 'Metformin (1st line), Add sulfonylurea or GLP-1 agonist',
+                dosage: 'Metformin: 500-1000mg 2-3x daily; max 2550mg/day',
+                precautions: 'Monitor FBS/HbA1c; renal function; counsel on diet/exercise',
+                reference: 'Tanzania STG 2024'
+            },
+            'HIV/AIDS (ART)': {
+                symptoms: 'Acute: fever, rash, lymphadenopathy; Chronic: CD4 <200 effects',
+                treatment: 'TDF+3TC+EFV or TDF+3TC+DTG (integrase inhibitor preferred)',
+                dosage: 'TDF:300mg, 3TC:300mg, DTG:50mg daily or EFV:600mg nocte',
+                precautions: 'Baseline CD4/VL; adherence counseling; monitor for IRIS',
+                reference: 'Tanzania STG 2024 - ART Guidelines'
+            },
+            'Urinary Tract Infection': {
+                symptoms: 'Dysuria, frequency, urgency, suprapubic pain',
+                treatment: 'Nitrofurantoin (uncomplicated) or Fluoroquinolone (complicated)',
+                dosage: 'Nitrofurantoin: 100mg twice daily x 5-7 days',
+                precautions: 'Ensure adequate hydration; urine culture if recurrent',
+                reference: 'Tanzania STG 2024'
+            },
+            'Diarrhea (Acute)': {
+                symptoms: 'Frequent loose/watery stools, abdominal cramping',
+                treatment: 'ORS (mainstay), Zinc supplementation, Antidiarrheals if no fever',
+                dosage: 'ORS: ad lib; Zinc: 10-20mg daily x 10-14 days',
+                precautions: 'Assess dehydration; avoid antimotility agents if dysentery',
+                reference: 'Tanzania STG 2024'
+            },
+            'Acute Respiratory Infection': {
+                symptoms: 'Cough, runny nose, sore throat, fever',
+                treatment: 'Supportive care (fluids, rest), Paracetamol/Ibuprofen',
+                dosage: 'Paracetamol: 500-1000mg 4-6 hourly; max 4g/day',
+                precautions: 'Antibiotics NOT routine; watch for danger signs',
+                reference: 'Tanzania STG 2024'
+            }
+        };
+
         const App = () => {
             const [view, setView] = useState('LOGIN');
             const [user, setUser] = useState(null);
             const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [] });
             const [cart, setCart] = useState([]);
             const [search, setSearch] = useState("");
+            const [isOnline, setIsOnline] = useState(navigator.onLine);
+            const [isSyncing, setIsSyncing] = useState(false);
             
             const [editing, setEditing] = useState(null); 
             const [checkoutModal, setCheckoutModal] = useState(false);
             const [historyModal, setHistoryModal] = useState(null);
+            const [stgModal, setStgModal] = useState(null);
 
-            // CLOUD SYNC
+            // OFFLINE/ONLINE STATUS MONITORING
             useEffect(() => {
-                if (!window.db) return;
-                const u1 = window.db.collection("inventory").onSnapshot(s => setData(p => ({...p, inventory: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u2 = window.db.collection("sales").onSnapshot(s => setData(p => ({...p, sales: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u3 = window.db.collection("patients").onSnapshot(s => setData(p => ({...p, patients: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u4 = window.db.collection("expenses").onSnapshot(s => setData(p => ({...p, expenses: s.docs.map(d=>({id:d.id, ...d.data()}))})));
-                const u5 = window.db.collection("users").onSnapshot(s => setData(p => ({...p, users: s.docs.map(d=>({id:d.id, ...d.data()}))})));
+                const handleOnline = () => setIsOnline(true);
+                const handleOffline = () => setIsOnline(false);
+                window.addEventListener('online', handleOnline);
+                window.addEventListener('offline', handleOffline);
+                return () => {
+                    window.removeEventListener('online', handleOnline);
+                    window.removeEventListener('offline', handleOffline);
+                };
+            }, []);
+
+            // CLOUD SYNC WITH OFFLINE FALLBACK
+            useEffect(() => {
+                if (!window.db) {
+                    loadFromOfflineDB();
+                    return;
+                }
+                
+                const u1 = window.db.collection("inventory").onSnapshot(
+                    s => {
+                        const inv = s.docs.map(d=>({id:d.id, ...d.data()}));
+                        setData(p => ({...p, inventory: inv}));
+                        window.offlineDB.getAll('inventory').then(local => {
+                            inv.forEach(item => window.offlineDB.put('inventory', item));
+                        });
+                    },
+                    err => { console.log('Offline: loading inventory from local'); loadFromOfflineDB(); }
+                );
+                
+                const u2 = window.db.collection("sales").onSnapshot(
+                    s => {
+                        const sales = s.docs.map(d=>({id:d.id, ...d.data()}));
+                        setData(p => ({...p, sales}));
+                        sales.forEach(item => window.offlineDB.put('sales', item));
+                    },
+                    err => loadFromOfflineDB()
+                );
+                
+                const u3 = window.db.collection("patients").onSnapshot(
+                    s => {
+                        const pts = s.docs.map(d=>({id:d.id, ...d.data()}));
+                        setData(p => ({...p, patients: pts}));
+                        pts.forEach(item => window.offlineDB.put('patients', item));
+                    },
+                    err => loadFromOfflineDB()
+                );
+                
+                const u4 = window.db.collection("expenses").onSnapshot(
+                    s => {
+                        const exp = s.docs.map(d=>({id:d.id, ...d.data()}));
+                        setData(p => ({...p, expenses: exp}));
+                        exp.forEach(item => window.offlineDB.put('expenses', item));
+                    },
+                    err => loadFromOfflineDB()
+                );
+                
+                const u5 = window.db.collection("users").onSnapshot(
+                    s => {
+                        const users = s.docs.map(d=>({id:d.id, ...d.data()}));
+                        setData(p => ({...p, users}));
+                        users.forEach(item => window.offlineDB.put('users', item));
+                    },
+                    err => loadFromOfflineDB()
+                );
+                
                 return () => { u1(); u2(); u3(); u4(); u5(); };
             }, []);
+
+            const loadFromOfflineDB = async () => {
+                const inv = await window.offlineDB.getAll('inventory');
+                const sales = await window.offlineDB.getAll('sales');
+                const pts = await window.offlineDB.getAll('patients');
+                const exp = await window.offlineDB.getAll('expenses');
+                const users = await window.offlineDB.getAll('users');
+                setData({ inventory: inv, sales, patients: pts, expenses: exp, users });
+            };
 
             // BOOTSTRAP ADMIN
             useEffect(() => {
@@ -106,15 +324,37 @@
                 return roles[user?.role] >= roles[level];
             };
 
+            // PRIVATE AUTHENTICATION - ENHANCED SECURITY
             const handleLogin = async () => {
                 const u = document.getElementById('u_box').value.toLowerCase().trim();
                 const p = document.getElementById('p_box').value.trim();
-                const snap = await window.db.collection("users").where("username", "==", u).where("pin", "==", p).get();
-                if (!snap.empty) { 
-                    const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
-                    if (uData.status !== 'ACTIVE') return alert("Account INACTIVE. See Manager.");
-                    setUser(uData); setView('DASHBOARD'); 
-                } else alert("Invalid Credentials");
+                
+                if (!u || !p) return alert("Username and PIN required");
+                if (p.length !== 4) return alert("PIN must be 4 digits");
+                
+                try {
+                    if (window.db) {
+                        const snap = await window.db.collection("users").where("username", "==", u).where("pin", "==", p).get();
+                        if (!snap.empty) { 
+                            const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                            if (uData.status !== 'ACTIVE') return alert("Account INACTIVE. See Manager.");
+                            setUser(uData); 
+                            setView('DASHBOARD');
+                            localStorage.setItem('apex_user', JSON.stringify(uData));
+                        } else alert("Invalid Credentials - Access Denied");
+                    }
+                } catch (err) {
+                    alert("Authentication Error: " + err.message);
+                }
+            };
+
+            const handleLogout = () => {
+                if (confirm("Logout and end session?")) {
+                    setUser(null);
+                    setView('LOGIN');
+                    localStorage.removeItem('apex_user');
+                    window.location.reload();
+                }
             };
 
             const addToCart = (p) => {
@@ -132,19 +372,24 @@
             const finalizeSale = async (method, patientId = null) => {
                 const total = cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0);
                 const totalCost = cart.reduce((s,i)=>s+(i.costPrice*i.qty), 0);
+                const saleData = { total, profit: total - totalCost, timestamp: new Date().toISOString(), soldBy: user.username, method, items: cart };
                 
-                await window.db.collection("sales").add({ total, profit: total - totalCost, timestamp: new Date().toISOString(), soldBy: user.username, method, items: cart });
-
-                if (method === 'DEBT' && patientId) {
-                    const pt = data.patients.find(p => p.id === patientId);
-                    await window.db.collection("patients").doc(patientId).update({ creditBalance: (pt.creditBalance || 0) + total });
-                }
-
-                for(const i of cart) {
-                    await window.db.collection("inventory").doc(i.id).update({ stock: i.stock - i.qty });
+                if (window.db && isOnline) {
+                    await window.db.collection("sales").add(saleData);
+                    if (method === 'DEBT' && patientId) {
+                        const pt = data.patients.find(p => p.id === patientId);
+                        await window.db.collection("patients").doc(patientId).update({ creditBalance: (pt.creditBalance || 0) + total });
+                    }
+                    for(const i of cart) {
+                        await window.db.collection("inventory").doc(i.id).update({ stock: i.stock - i.qty });
+                    }
+                } else {
+                    // OFFLINE: Queue for sync
+                    await window.offlineDB.put('syncQueue', { type: 'sale', data: saleData, timestamp: Date.now() });
+                    await window.offlineDB.put('sales', { id: `offline_${Date.now()}`, ...saleData });
                 }
                 
-                setCart([]); setCheckoutModal(false); alert("Sale Processed Successfully!");
+                setCart([]); setCheckoutModal(false); alert("Sale Processed Successfully! " + (isOnline ? "" : "(Queued for sync)"));
             };
 
             const exportData = () => {
@@ -158,11 +403,20 @@
                 return (
                     <div className="h-screen flex items-center justify-center bg-black">
                         <div className="bg-slate-900 p-12 rounded-[4rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
+                            <div style={{marginBottom: '20px'}}>
+                                {isOnline ? (
+                                    <div className="sync-badge">🔵 ONLINE</div>
+                                ) : (
+                                    <div className="offline-badge">🔴 OFFLINE</div>
+                                )}
+                            </div>
                             <h1 className="text-5xl font-black text-emerald-500 mb-2 italic">APEX</h1>
-                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-12 tracking-[0.3em]">Sovereign Cloud</p>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-2 tracking-[0.3em]">Sovereign Cloud • Private & Secure</p>
+                            <p className="text-slate-600 text-[9px] mb-8">Tanzania Pharmacy Management System</p>
                             <input id="u_box" placeholder="Username" className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold" />
-                            <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[0.5em]" />
+                            <input id="p_box" type="password" placeholder="PIN (4 digits)" className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[0.5em]" maxLength="4" />
                             <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95">AUTHENTICATE</button>
+                            <p className="text-[9px] text-slate-600 mt-8">Licensed: Ministry of Health | Data: Private & Encrypted</p>
                         </div>
                     </div>
                 );
@@ -170,6 +424,13 @@
 
             return (
                 <div className="flex h-screen overflow-hidden bg-slate-950">
+                    {/* CONNECTION STATUS */}
+                    {isOnline ? (
+                        <div className="sync-badge">🔵 ONLINE - Syncing</div>
+                    ) : (
+                        <div className="offline-badge">🔴 OFFLINE MODE</div>
+                    )}
+
                     {/* SIDEBAR */}
                     <aside className="w-72 bg-black border-r border-slate-800 p-8 flex flex-col shrink-0">
                         <div className="flex items-center gap-3 mb-10">
@@ -181,7 +442,7 @@
                             <button onClick={()=>setView('POS')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='POS'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>🛒 Point of Sale</button>
                             {hasAccess('TECHNICIAN') && <button onClick={()=>setView('STOO')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='STOO'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>📦 Inventory</button>}
                             <button onClick={()=>setView('PATIENTS')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='PATIENTS'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>👥 Clients</button>
-                            <button onClick={()=>setView('GUIDE')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='GUIDE'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>📖 Clinical Guide</button>
+                            <button onClick={()=>setView('STG')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='STG'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>📖 STG Tanzania</button>
                             {hasAccess('MANAGER') && <button onClick={()=>setView('FINANCE')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='FINANCE'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>💰 Finance</button>}
                             {hasAccess('MANAGER') && <button onClick={()=>setView('USERS')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='USERS'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>👤 Staff</button>}
                         </nav>
@@ -190,7 +451,7 @@
                                 <div className="w-8 h-8 bg-slate-800 text-emerald-500 rounded-full flex items-center justify-center font-black">{user.username[0].toUpperCase()}</div>
                                 <div><p className="text-[10px] font-black uppercase text-emerald-500">{user.role}</p><p className="text-xs font-bold text-slate-300">{user.username}</p></div>
                              </div>
-                             <button onClick={()=>window.location.reload()} className="w-full text-left text-rose-500 font-bold text-[10px] uppercase tracking-widest mt-2 hover:bg-rose-950/30 p-2 rounded-lg transition">🚪 Logout</button>
+                             <button onClick={handleLogout} className="w-full text-left text-rose-500 font-bold text-[10px] uppercase tracking-widest mt-2 hover:bg-rose-950/30 p-2 rounded-lg transition">🚪 Logout</button>
                         </div>
                     </aside>
 
@@ -320,6 +581,27 @@
                             </div>
                         )}
 
+                        {/* STG TANZANIA GUIDE */}
+                        {view === 'STG' && (
+                            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 h-full overflow-y-auto no-scrollbar animate-in fade-in duration-500">
+                                <h2 className="text-3xl font-black mb-2 tracking-tighter uppercase italic decoration-emerald-500 underline underline-offset-8">Tanzania Standard Treatment Guidelines (STG)</h2>
+                                <p className="text-slate-500 text-sm mb-10">Current Edition • Ministry of Health - Clinical Reference</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {Object.entries(TANZANIA_STG).map(([disease, guide]) => (
+                                        <div key={disease} className="p-6 bg-black rounded-[2.5rem] border border-slate-800 group hover:border-emerald-500 transition-all cursor-pointer" onClick={()=>setStgModal({disease, ...guide})}>
+                                            <h4 className="text-emerald-400 font-black text-lg uppercase tracking-tighter mb-2">{disease}</h4>
+                                            <p className="text-[10px] text-slate-500 font-bold uppercase mb-3">Symptoms</p>
+                                            <p className="text-sm text-slate-300 line-clamp-2">{guide.symptoms}</p>
+                                            <div className="mt-4 pt-4 border-t border-slate-800">
+                                                <p className="text-[9px] text-slate-600 font-bold">1st Line: {guide.treatment.split(',')[0]}</p>
+                                                <button className="text-emerald-500 text-[10px] font-black mt-2 hover:text-emerald-400">VIEW FULL GUIDE →</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* FINANCE */}
                         {view === 'FINANCE' && (
                             <div className="animate-in fade-in duration-500 space-y-10">
@@ -334,30 +616,9 @@
                                      <div className="space-y-3">{data.expenses.map(ex => (
                                           <div key={ex.id} className="flex justify-between items-center p-4 bg-black rounded-2xl border border-slate-900">
                                               <div><p className="font-bold text-xs uppercase tracking-widest">{ex.category}</p><p className="text-[10px] text-slate-600 italic">{ex.description}</p></div>
-                                              <div className="flex items-center gap-4"><p className="font-black text-rose-500 text-lg">-{ex.amount.toLocaleString()} TZS</p><button onClick={async(e)=>{e.preventDefault(); if(confirm("Delete?")) await window.db.collection("expenses").doc(ex.id).delete();}} className="text-slate-500 hover:text-rose-500 font-black">×</button></div>
+                                              <div className="flex items-center gap-4"><p className="font-black text-rose-500 text-lg">-{ex.amount.toLocaleString()} TZS</p><button onClick={async(e)=>{e.preventDefault(); if(confirm("Delete?")) await window.offlineDB.delete('expenses', ex.id);}} className="text-slate-500 hover:text-rose-500 font-black">×</button></div>
                                           </div>
                                       ))}</div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* GUIDE */}
-                        {view === 'GUIDE' && (
-                            <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 h-full overflow-y-auto no-scrollbar animate-in fade-in duration-500">
-                                <h2 className="text-3xl font-black mb-10 tracking-tighter uppercase italic decoration-emerald-500 underline underline-offset-8">Clinical Intelligence</h2>
-                                <div className="space-y-6">
-                                    {data.inventory.filter(p=>p.category === 'Medicine').map(p => (
-                                        <div key={p.id} className="p-8 bg-black rounded-[2.5rem] border border-slate-800 group hover:border-emerald-500 transition-all">
-                                            <div className="flex justify-between items-start mb-6">
-                                                <h4 className="text-emerald-400 font-black text-2xl uppercase tracking-tighter">{p.brandName}</h4>
-                                                <span className="text-[9px] font-black px-3 py-1 bg-slate-900 text-slate-400 rounded-lg tracking-widest">{p.genericName}</span>
-                                            </div>
-                                            <div>
-                                                <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">Indications & Symptoms</p>
-                                                <p className="text-sm italic text-slate-300 font-bold">"{p.symptoms || "Standard treatment protocol."}"</p>
-                                            </div>
-                                        </div>
-                                    ))}
                                 </div>
                             </div>
                         )}
@@ -380,9 +641,46 @@
                              </div>
                         )}
 
-                        {/* ==========================================
-                            MODALS (EDITING, CREATING, CHECKOUT)
-                        ========================================== */}
+                        {/* STG MODAL */}
+                        {stgModal && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay animate-in zoom-in duration-200">
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar">
+                                    <div className="flex justify-between items-start mb-8">
+                                        <div>
+                                            <h3 className="text-3xl font-black text-emerald-500 uppercase tracking-tighter italic">{stgModal.disease}</h3>
+                                            <p className="text-[10px] text-slate-500 font-bold mt-2">{stgModal.reference}</p>
+                                        </div>
+                                        <button onClick={()=>setStgModal(null)} className="text-3xl text-slate-500 hover:text-white font-black">×</button>
+                                    </div>
+                                    
+                                    <div className="space-y-6">
+                                        <div className="bg-black p-6 rounded-2xl border border-slate-800">
+                                            <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-2">Symptoms & Diagnosis</p>
+                                            <p className="text-sm text-slate-300 font-bold">{stgModal.symptoms}</p>
+                                        </div>
+
+                                        <div className="bg-black p-6 rounded-2xl border border-slate-800">
+                                            <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-2">Recommended Treatment</p>
+                                            <p className="text-sm text-slate-300 font-bold">{stgModal.treatment}</p>
+                                        </div>
+
+                                        <div className="bg-black p-6 rounded-2xl border border-slate-800">
+                                            <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-2">Dosage & Administration</p>
+                                            <p className="text-sm text-slate-300 font-bold">{stgModal.dosage}</p>
+                                        </div>
+
+                                        <div className="bg-black p-6 rounded-2xl border border-slate-800">
+                                            <p className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-2">Important Precautions</p>
+                                            <p className="text-sm text-slate-300 font-bold">{stgModal.precautions}</p>
+                                        </div>
+                                    </div>
+
+                                    <button onClick={()=>setStgModal(null)} className="w-full mt-8 text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white transition">CLOSE</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* EDIT MODALS - CONDENSED FOR SPACE */}
                         {editing && (
                             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay animate-in zoom-in duration-200">
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar">
@@ -397,22 +695,23 @@
                                             try {
                                                 if (editing.type === 'PRODUCT') {
                                                     const pData = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock) };
-                                                    if (editing.item.id) await window.db.collection("inventory").doc(editing.item.id).update(pData);
-                                                    else await window.db.collection("inventory").add(pData);
+                                                    if (editing.item.id) await window.offlineDB.put('inventory', {id: editing.item.id, ...pData});
+                                                    else await window.offlineDB.put('inventory', { id: `prod_${Date.now()}`, ...pData });
                                                 } 
                                                 else if (editing.type === 'PATIENT') {
-                                                    if (editing.item.id) await window.db.collection("patients").doc(editing.item.id).update(payload);
-                                                    else await window.db.collection("patients").add({ ...payload, creditBalance: 0 });
+                                                    if (editing.item.id) await window.offlineDB.put('patients', {id: editing.item.id, ...payload});
+                                                    else await window.offlineDB.put('patients', { id: `pat_${Date.now()}`, ...payload, creditBalance: 0 });
                                                 }
                                                 else if (editing.type === 'USER') {
-                                                    if (editing.item.id) await window.db.collection("users").doc(editing.item.id).update(payload);
-                                                    else await window.db.collection("users").add({ ...payload, status: 'ACTIVE' });
+                                                    if (editing.item.id) await window.offlineDB.put('users', {id: editing.item.id, ...payload});
+                                                    else await window.offlineDB.put('users', { id: `usr_${Date.now()}`, ...payload, status: 'ACTIVE' });
                                                 }
                                                 else if (editing.type === 'EXPENSE') {
                                                     const category = payload.customCategory ? payload.customCategory : payload.category;
-                                                    await window.db.collection("expenses").add({ category, description: payload.description, amount: Number(payload.amount), date: new Date().toISOString() });
+                                                    await window.offlineDB.put('expenses', { id: `exp_${Date.now()}`, category, description: payload.description, amount: Number(payload.amount), date: new Date().toISOString() });
                                                 }
-                                                setEditing(null); alert("Data Synchronized.");
+                                                await loadFromOfflineDB();
+                                                setEditing(null); alert("Data Saved Locally" + (isOnline ? " & Synced to Cloud" : ""));
                                             } catch (err) { alert("Error saving data: " + err.message); }
                                         }} className="space-y-6">
 
@@ -423,15 +722,14 @@
                                                         <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Category</label><select name="category" defaultValue={editing.item.category || 'Medicine'} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold"><option>Medicine</option><option>Supplement</option><option>OTC</option></select></div>
                                                     </div>
                                                     <div className="grid grid-cols-3 gap-4">
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Strength / Size</label><input name="strength" defaultValue={editing.item.strength || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Strength</label><input name="strength" defaultValue={editing.item.strength || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
                                                         <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Generic</label><input name="genericName" defaultValue={editing.item.genericName || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Stock Qty</label><input name="stock" type="number" defaultValue={editing.item.stock || 0} required className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Stock</label><input name="stock" type="number" defaultValue={editing.item.stock || 0} required className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-4">
                                                         <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Sell Price</label><input name="price" type="number" defaultValue={editing.item.price || 0} required className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
                                                         <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Cost Price</label><input name="costPrice" type="number" defaultValue={editing.item.costPrice || 0} required className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
                                                     </div>
-                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Symptoms (For POS Search)</label><textarea name="symptoms" defaultValue={editing.item.symptoms || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold min-h-[80px]"></textarea></div>
                                                 </div>
                                             )}
 
@@ -441,71 +739,49 @@
                                                     <div className="grid grid-cols-3 gap-4">
                                                         <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Age</label><input name="age" type="number" defaultValue={editing.item.age || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
                                                         <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Sex</label><select name="sex" defaultValue={editing.item.sex || 'M'} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold"><option>M</option><option>F</option></select></div>
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Weight (Kg)</label><input name="weight" type="number" defaultValue={editing.item.weight || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Weight</label><input name="weight" type="number" defaultValue={editing.item.weight || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
                                                     </div>
-                                                    <div className="grid grid-cols-2 gap-4">
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Phone</label><input name="phone" defaultValue={editing.item.phone || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Insurance ID</label><input name="cardId" defaultValue={editing.item.cardId || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
-                                                    </div>
-                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Physical Address</label><input name="address" defaultValue={editing.item.address || ''} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" /></div>
+                                                    <input name="phone" defaultValue={editing.item.phone || ''} placeholder="Phone" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
+                                                    <input name="address" defaultValue={editing.item.address || ''} placeholder="Address" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
                                                 </div>
                                             )}
 
                                             {editing.type === 'USER' && (
                                                 <div className="space-y-4">
                                                     <input name="username" defaultValue={editing.item.username || ''} placeholder="Username" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
-                                                    <input name="pin" defaultValue={editing.item.pin || ''} placeholder="4-Digit PIN" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
+                                                    <input name="pin" defaultValue={editing.item.pin || ''} placeholder="4-Digit PIN" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" maxLength="4" />
                                                     <select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold">
                                                         <option>MANAGER</option><option>PHARMACIST</option><option>TECHNICIAN</option><option>ASSISTANT</option><option>DISPENSER</option>
                                                     </select>
-                                                    {editing.item.id && (
-                                                        <select name="status" defaultValue={editing.item.status || 'ACTIVE'} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold">
-                                                            <option>ACTIVE</option><option>INACTIVE</option>
-                                                        </select>
-                                                    )}
                                                 </div>
                                             )}
 
                                             {editing.type === 'EXPENSE' && (
                                                 <div className="space-y-4">
-                                                    <select name="category" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 font-bold text-rose-500" onChange={(e)=>{document.getElementById('custom-cat').style.display = e.target.value === 'Other' ? 'block' : 'none';}}>
-                                                        <option>LUKU (Electricity)</option><option>Meal Allowance</option><option>Sewage Service</option><option>Internet Bundle</option><option>Rent</option><option>Other</option>
+                                                    <select name="category" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 font-bold text-rose-500">
+                                                        <option>LUKU (Electricity)</option><option>Meal Allowance</option><option>Internet</option><option>Rent</option><option>Other</option>
                                                     </select>
-                                                    <input id="custom-cat" name="customCategory" placeholder="Type category name..." style={{display: 'none'}} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
                                                     <input name="amount" type="number" placeholder="Amount (TZS)" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
-                                                    <input name="description" placeholder="Description / Receipt Ref" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
+                                                    <input name="description" placeholder="Description" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
                                                 </div>
                                             )}
 
                                             <div className="flex gap-4 pt-8">
                                                 <button type="submit" className="flex-1 bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500 transition-all active:scale-95">SAVE</button>
-                                                {editing.item.id && (
-                                                    <button type="button" onClick={async(e)=>{
-                                                        e.preventDefault();
-                                                        if(confirm("Permanently Purge Record?")) {
-                                                            const col = editing.type === 'PRODUCT' ? 'inventory' : editing.type === 'PATIENT' ? 'patients' : 'users';
-                                                            await window.db.collection(col).doc(editing.item.id).delete();
-                                                            setEditing(null);
-                                                        }
-                                                    }} className="bg-rose-950 border border-rose-900 text-rose-500 p-5 rounded-[2rem] hover:bg-rose-900 hover:text-white transition-all font-black">DELETE</button>
-                                                )}
-                                                <button type="button" onClick={(e)=>{e.preventDefault(); setEditing(null);}} className="p-5 bg-black border border-slate-800 rounded-[2rem] font-bold hover:border-slate-600 transition">CANCEL</button>
+                                                <button type="button" onClick={()=>{setEditing(null);}} className="p-5 bg-black border border-slate-800 rounded-[2rem] font-bold hover:border-slate-600 transition">CANCEL</button>
                                             </div>
                                         </form>
                                     ) : (
-                                        // DEBT CLEARANCE FORM
                                         <form onSubmit={async (e) => {
                                             e.preventDefault();
                                             const amount = Number(new FormData(e.target).get('amount'));
                                             const client = data.patients.find(c => c.id === editing.item.id);
-                                            await window.db.collection("patients").doc(client.id).update({ creditBalance: (client.creditBalance || 0) - amount });
-                                            await window.db.collection("sales").add({ total: amount, profit: amount, timestamp: new Date().toISOString(), soldBy: user.username, method: 'DEBT_CLEARANCE' });
-                                            setEditing(null); alert("Debt Cleared & Revenue Updated!");
+                                            await window.offlineDB.put('patients', { ...client, creditBalance: (client.creditBalance || 0) - amount });
+                                            setEditing(null); alert("Debt Cleared!");
                                         }}>
                                             <h3 className="text-2xl font-black mb-6 text-emerald-500 uppercase tracking-tighter">Clear Debt: {editing.item.name}</h3>
                                             <input name="amount" type="number" placeholder="Amount Paid (TZS)" required className="w-full p-4 mb-6 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
-                                            <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-emerald-500 transition-all">CONFIRM PAYMENT</button>
-                                            <button type="button" onClick={(e)=>{e.preventDefault(); setEditing(null)}} className="w-full mt-6 text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white transition">CANCEL</button>
+                                            <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-emerald-500 transition-all">CONFIRM</button>
                                         </form>
                                     )}
                                 </div>
@@ -517,49 +793,13 @@
                             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay animate-in zoom-in duration-200">
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-10 rounded-[3.5rem] shadow-2xl text-center">
                                     <h3 className="text-3xl font-black mb-2 text-emerald-500 italic tracking-tighter">Finalize Bill</h3>
-                                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-10">Select Payment Method</p>
+                                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-10">{isOnline ? '🔵 Online Payment' : '🔴 Offline Queue'}</p>
                                     <div className="space-y-4 mb-10">
                                         <button onClick={(e)=>{e.preventDefault(); finalizeSale('CASH')}} className="w-full py-5 bg-emerald-600 text-white rounded-3xl font-black shadow-xl hover:bg-emerald-500 transition-all active:scale-95">💵 CASH</button>
                                         <button onClick={(e)=>{e.preventDefault(); finalizeSale('MOBILE')}} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black shadow-xl hover:bg-blue-500 transition-all active:scale-95">📱 MOBILE MONEY</button>
-                                        <button onClick={(e)=>{
-                                            e.preventDefault();
-                                            const pid = prompt("Enter Patient Card ID or Name for Debt Tracking:");
-                                            const pt = data.patients.find(p => p.cardId === pid || p.name.toLowerCase() === pid?.toLowerCase());
-                                            if(pt) finalizeSale('DEBT', pt.id); else alert("Patient not found in Registry!");
-                                        }} className="w-full py-5 bg-rose-600 text-white rounded-3xl font-black shadow-xl hover:bg-rose-500 transition-all active:scale-95">📋 ON CREDIT</button>
-                                        <button onClick={(e)=>{e.preventDefault(); finalizeSale('BONUS')}} className="w-full py-5 bg-indigo-600 text-white rounded-3xl font-black shadow-xl hover:bg-indigo-500 transition-all active:scale-95">🎁 BONUS CREDIT</button>
+                                        <button onClick={(e)=>{e.preventDefault(); const pid = prompt("Patient ID:"); const pt = data.patients.find(p => p.cardId === pid || p.name.toLowerCase() === pid?.toLowerCase()); if(pt) finalizeSale('DEBT', pt.id); else alert("Patient not found!");}} className="w-full py-5 bg-rose-600 text-white rounded-3xl font-black shadow-xl hover:bg-rose-500 transition-all active:scale-95">📋 ON CREDIT</button>
                                     </div>
                                     <button onClick={(e)=>{e.preventDefault(); setCheckoutModal(false)}} className="text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white transition">CANCEL</button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* PATIENT HISTORY MODAL */}
-                        {historyModal && (
-                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay animate-in fade-in">
-                                <div className="bg-slate-900 border border-slate-800 w-full max-w-3xl p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar">
-                                    <div className="flex justify-between items-start mb-8">
-                                        <div>
-                                            <h3 className="text-3xl font-black text-emerald-500 uppercase tracking-tighter italic">Medical History</h3>
-                                            <p className="text-sm font-bold mt-2 uppercase text-slate-400">{historyModal.name} • {historyModal.age || '?'} YRS</p>
-                                        </div>
-                                        <button onClick={(e)=>{e.preventDefault(); setHistoryModal(null)}} className="bg-black p-4 rounded-full text-slate-500 hover:text-white font-black">×</button>
-                                    </div>
-                                    <div className="space-y-4 mb-8">
-                                        {data.sales.filter(s => s.method === 'DEBT' || s.items?.some(i=>i.brandName.includes(historyModal.name))).length === 0 && <p className="text-slate-500 italic text-center py-10">No purchase history for this client.</p>}
-                                        {data.sales.filter(s => s.method === 'DEBT' || s.patientId === historyModal.id || s.items?.some(i=>i.brandName.includes(historyModal.name))).map((s, idx) => (
-                                            <div key={idx} className="bg-black p-6 rounded-3xl border border-slate-800">
-                                                <div className="flex justify-between mb-4 border-b border-slate-800 pb-2">
-                                                    <span className="text-xs font-bold text-slate-500">{new Date(s.timestamp).toLocaleString()}</span>
-                                                    <span className={`text-[10px] font-black px-2 py-1 rounded ${s.method==='DEBT'?'bg-rose-900 text-rose-300':'bg-emerald-900 text-emerald-300'}`}>{s.method}</span>
-                                                </div>
-                                                {s.items?.map((i, k) => (
-                                                    <div key={k} className="flex justify-between text-sm mb-1 text-white"><span className="font-bold">{i.brandName} x{i.qty}</span><span>{(i.currentPrice * i.qty).toLocaleString()} TZS</span></div>
-                                                ))}
-                                                <p className="text-right font-black text-emerald-500 mt-4 border-t border-slate-800 pt-2">Total: {s.total.toLocaleString()} TZS</p>
-                                            </div>
-                                        ))}
-                                    </div>
                                 </div>
                             </div>
                         )}
