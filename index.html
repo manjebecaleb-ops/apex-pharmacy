@@ -47,7 +47,6 @@
     <!-- 1. CLOUD ENGINE (FIREBASE) -->
     <script>
         try {
-            // YOUR REAL CONFIG
             const firebaseConfig = {
                 apiKey: "AIzaSyAAazqZ1XnzpQ6A_cCHyQEsgXxq5jVVLXE",
                 authDomain: "apex-pharmacy-a69b5.firebaseapp.com",
@@ -162,8 +161,8 @@
                             <h1 className="text-5xl font-black text-emerald-500 mb-2 italic">APEX</h1>
                             <p className="text-slate-500 text-[10px] font-bold uppercase mb-12 tracking-[0.3em]">Sovereign Cloud</p>
                             <input id="u_box" placeholder="Username" className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold" />
-                            <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[1em]" />
-                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95">AUTHORIZE</button>
+                            <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[0.5em]" />
+                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95">AUTHENTICATE</button>
                         </div>
                     </div>
                 );
@@ -178,20 +177,20 @@
                             <h2 className="text-2xl font-black tracking-tighter italic">APEX <span className="text-emerald-600">Pro</span></h2>
                         </div>
                         <nav className="flex-1 space-y-1 overflow-y-auto no-scrollbar">
-                            <button onClick={()=>setView('DASHBOARD')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='DASHBOARD'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}>🏠 Dashboard</button>
-                            <button onClick={()=>setView('POS')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='POS'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}>🛒 Sales POS</button>
-                            {hasAccess('TECHNICIAN') && <button onClick={()=>setView('STOO')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='STOO'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}>📦 Inventory</button>}
-                            <button onClick={()=>setView('PATIENTS')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='PATIENTS'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}>👥 Patients</button>
-                            <button onClick={()=>setView('GUIDE')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='GUIDE'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}>📖 Med Guide</button>
-                            {hasAccess('MANAGER') && <button onClick={()=>setView('FINANCE')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='FINANCE'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}>💰 Financials</button>}
-                            {hasAccess('MANAGER') && <button onClick={()=>setView('USERS')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='USERS'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}>🛡️ Personnel</button>}
+                            <button onClick={()=>setView('DASHBOARD')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='DASHBOARD'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>📊 Dashboard</button>
+                            <button onClick={()=>setView('POS')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='POS'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>🛒 Point of Sale</button>
+                            {hasAccess('TECHNICIAN') && <button onClick={()=>setView('STOO')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='STOO'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>📦 Inventory</button>}
+                            <button onClick={()=>setView('PATIENTS')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='PATIENTS'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>👥 Clients</button>
+                            <button onClick={()=>setView('GUIDE')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='GUIDE'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>📖 Clinical Guide</button>
+                            {hasAccess('MANAGER') && <button onClick={()=>setView('FINANCE')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='FINANCE'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>💰 Finance</button>}
+                            {hasAccess('MANAGER') && <button onClick={()=>setView('USERS')} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase tracking-widest ${view==='USERS'?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>👤 Staff</button>}
                         </nav>
                         <div className="pt-6 border-t border-slate-800 mt-4">
                              <div className="flex items-center gap-3 mb-4">
                                 <div className="w-8 h-8 bg-slate-800 text-emerald-500 rounded-full flex items-center justify-center font-black">{user.username[0].toUpperCase()}</div>
                                 <div><p className="text-[10px] font-black uppercase text-emerald-500">{user.role}</p><p className="text-xs font-bold text-slate-300">{user.username}</p></div>
                              </div>
-                             <button onClick={()=>window.location.reload()} className="w-full text-left text-rose-500 font-bold text-[10px] uppercase tracking-widest mt-2 hover:bg-rose-950/30 p-2 rounded-lg transition-all">Terminate Session</button>
+                             <button onClick={()=>window.location.reload()} className="w-full text-left text-rose-500 font-bold text-[10px] uppercase tracking-widest mt-2 hover:bg-rose-950/30 p-2 rounded-lg transition">🚪 Logout</button>
                         </div>
                     </aside>
 
@@ -203,20 +202,20 @@
                             <div className="animate-in fade-in duration-700">
                                 <div className="flex justify-between items-center mb-10">
                                     <h2 className="text-4xl font-black tracking-tighter">Director's Overview</h2>
-                                    {hasAccess('MANAGER') && <button onClick={exportData} className="bg-slate-800 text-emerald-400 border border-emerald-900 px-6 py-3 rounded-2xl font-bold hover:bg-slate-700 transition-all text-xs tracking-widest uppercase">📥 Export Data</button>}
+                                    {hasAccess('MANAGER') && <button onClick={exportData} className="bg-slate-800 text-emerald-400 border border-emerald-900 px-6 py-3 rounded-2xl font-bold hover:bg-slate-700 transition">📥 Export Report</button>}
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 shadow-2xl border-l-8 border-emerald-500">
                                         <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Lifetime Revenue</p>
-                                        <h3 className="text-4xl font-black tracking-tighter text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} <span className="text-sm font-normal opacity-30 text-white uppercase">TZS</span></h3>
+                                        <h3 className="text-4xl font-black tracking-tighter text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} <span className="text-sm font-bold text-slate-500">TZS</span></h3>
                                     </div>
                                     <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 shadow-2xl border-l-8 border-blue-500">
                                         <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Inventory Wealth</p>
-                                        <h3 className="text-4xl font-black tracking-tighter text-blue-400">{data.inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0).toLocaleString()} <span className="text-sm font-normal opacity-30 text-white uppercase">At Cost</span></h3>
+                                        <h3 className="text-4xl font-black tracking-tighter text-blue-400">{data.inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0).toLocaleString()} <span className="text-sm font-bold text-slate-500">TZS</span></h3>
                                     </div>
                                     <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 shadow-2xl border-l-8 border-rose-500">
                                         <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Outstanding Debt</p>
-                                        <h3 className="text-4xl font-black tracking-tighter text-rose-400">{data.patients.reduce((a,b)=>a+(Number(b.creditBalance)||0),0).toLocaleString()} <span className="text-sm font-normal opacity-30 text-white uppercase">Unpaid</span></h3>
+                                        <h3 className="text-4xl font-black tracking-tighter text-rose-400">{data.patients.reduce((a,b)=>a+(Number(b.creditBalance)||0),0).toLocaleString()} <span className="text-sm font-bold text-slate-500">TZS</span></h3>
                                     </div>
                                 </div>
                             </div>
@@ -226,10 +225,10 @@
                         {view === 'POS' && (
                             <div className="flex gap-8 h-full animate-in slide-in-from-bottom duration-500">
                                 <div className="flex-1 space-y-6 overflow-y-auto no-scrollbar">
-                                    <input placeholder="Search disease, symptom or drug..." className="w-full p-6 bg-slate-900 border border-slate-800 rounded-[2.5rem] text-xl font-bold outline-none focus:ring-2 ring-emerald-500 shadow-xl transition-all" onChange={(e)=>setSearch(e.target.value.toLowerCase())} />
+                                    <input onChange={(e)=>setSearch(e.target.value)} placeholder="Search disease, symptom or drug..." className="w-full p-6 bg-slate-900 border border-slate-800 rounded-[2.5rem] text-xl font-bold outline-none focus:border-emerald-600 transition" />
                                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                                         {data.inventory.filter(p => (p.brandName||'').toLowerCase().includes(search) || (p.symptoms||'').toLowerCase().includes(search)).map(p => (
-                                            <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer active:scale-95 transition-all shadow-xl flex flex-col justify-between">
+                                            <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer transition-all active:scale-95">
                                                 <div>
                                                     <div className="flex justify-between mb-4"><span className="text-[9px] font-black text-emerald-500 uppercase">{p.category}</span></div>
                                                     <h4 className="font-black text-xl mb-1 tracking-tight">{p.brandName}</h4>
@@ -237,14 +236,14 @@
                                                 </div>
                                                 <div className="flex justify-between items-end">
                                                     <p className="text-2xl font-black text-emerald-400">{Number(p.price).toLocaleString()} <span className="text-xs text-slate-500">TZS</span></p>
-                                                    <p className={`text-[10px] font-black px-2 py-1 rounded-lg ${p.stock < 10 ? 'bg-rose-900 text-rose-300 animate-pulse':'bg-slate-800 text-slate-400'}`}>STK: {p.stock}</p>
+                                                    <p className={`text-[10px] font-black px-2 py-1 rounded-lg ${p.stock < 10 ? 'bg-rose-900 text-rose-300 animate-pulse':'bg-slate-800 text-slate-400'}`}>{p.stock} Left</p>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                                 <div className="w-96 bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-2xl h-fit border-t-8 border-emerald-600 sticky top-0 flex flex-col shrink-0">
-                                    <div className="flex justify-between items-center mb-8"><h3 className="font-black text-2xl tracking-tighter uppercase">Cart</h3><button onClick={()=>setCart([])} className="text-[10px] font-black text-rose-500 uppercase tracking-widest underline">Clear</button></div>
+                                    <div className="flex justify-between items-center mb-8"><h3 className="font-black text-2xl tracking-tighter uppercase">Cart</h3><button onClick={()=>setCart([])} className="text-rose-500 font-black text-xs">CLEAR</button></div>
                                     <div className="space-y-4 mb-8 overflow-auto max-h-[40vh] no-scrollbar px-1 font-bold text-sm">
                                         {cart.length === 0 && <p className="text-center text-slate-300 font-bold text-xs uppercase tracking-widest py-10">Cart is Empty</p>}
                                         {cart.map(i => (
@@ -253,39 +252,39 @@
                                                     <p className="text-sm uppercase">{i.brandName}</p>
                                                     <div className="flex items-center gap-2 mt-1">
                                                         <span className="text-[10px] font-bold text-slate-400">Price:</span>
-                                                        <input type="number" value={i.currentPrice} onChange={(e)=>updateCartItem(i.id, 'currentPrice', e.target.value)} className="w-20 bg-slate-50 rounded-lg text-xs font-black text-emerald-600 outline-none p-1 border border-slate-200 focus:border-emerald-500" />
+                                                        <input type="number" value={i.currentPrice} onChange={(e)=>updateCartItem(i.id, 'currentPrice', e.target.value)} className="w-20 bg-slate-500 text-white px-2 py-1 rounded text-xs font-bold" />
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col items-end gap-2">
-                                                    <input type="number" value={i.qty} onChange={(e)=>updateCartItem(i.id, 'qty', e.target.value)} className="w-16 p-2 bg-slate-50 rounded-xl text-center font-black text-slate-800 outline-none border border-slate-200 focus:border-emerald-500" />
+                                                    <input type="number" value={i.qty} onChange={(e)=>updateCartItem(i.id, 'qty', e.target.value)} className="w-16 p-2 bg-slate-50 rounded-xl text-slate-900 font-black text-center" />
                                                     <button onClick={()=>setCart(cart.filter(x=>x.id!==i.id))} className="text-[10px] text-rose-500 font-bold uppercase">Remove</button>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
-                                    <div className="flex justify-between font-black text-4xl mb-10 tracking-tighter text-emerald-600"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.currentPrice*i.qty),0).toLocaleString()}</span></div>
-                                    <button onClick={() => cart.length > 0 ? setCheckoutModal(true) : alert("Cart is empty")} className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black text-xl shadow-xl active:scale-95 transition-all hover:bg-emerald-600">PROCESS PAYMENT</button>
+                                    <div className="flex justify-between font-black text-4xl mb-10 tracking-tighter text-emerald-600"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0).toLocaleString()}</span></div>
+                                    <button onClick={() => cart.length > 0 ? setCheckoutModal(true) : alert("Cart is empty")} className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black text-lg shadow-lg hover:bg-black transition-all active:scale-95">CHECKOUT</button>
                                 </div>
                             </div>
                         )}
 
-                        {/* STOO */}
+                        {/* INVENTORY */}
                         {view === 'STOO' && (
                             <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in fade-in duration-500 h-full overflow-y-auto no-scrollbar">
                                 <div className="flex justify-between items-center mb-10">
                                     <h2 className="text-3xl font-black text-emerald-500 uppercase tracking-widest">Inventory Vault</h2>
-                                    <button onClick={() => setEditing({ type: 'PRODUCT', item: {} })} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:scale-105 transition-all text-[10px] tracking-widest uppercase">+ Add Product</button>
+                                    <button onClick={() => setEditing({ type: 'PRODUCT', item: {} })} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:scale-105 transition">+ ADD PRODUCT</button>
                                 </div>
                                 <table className="w-full text-left">
-                                    <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4">Product Family</th><th>Category</th><th>Stock</th><th>Margin</th><th className="text-right pb-4">Selling Price</th><th className="text-right pb-4">Manage</th></tr></thead>
+                                    <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4">Product Family</th><th>Category</th><th>Stock</th><th>Margin</th><th>Price</th><th></th></tr></thead>
                                     <tbody className="font-bold">{data.inventory.map(p => (
                                         <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50 transition-all group">
-                                            <td className="py-6"><p className="font-black text-white text-lg">{p.brandName}</p><p className="text-[10px] text-slate-500 uppercase">{p.genericName} • {p.strength}</p></td>
+                                            <td className="py-6"><p className="font-black text-white text-lg">{p.brandName}</p><p className="text-[10px] text-slate-500 uppercase">{p.genericName}</p></td>
                                             <td><span className="text-[9px] bg-slate-800 text-slate-400 px-3 py-1 rounded-full uppercase font-black tracking-widest inline-block">{p.category}</span></td>
                                             <td className={p.stock < 10 ? 'text-rose-500 text-xl' : 'text-slate-300 text-xl'}>{p.stock}</td>
                                             <td className="text-emerald-500">{p.price && p.costPrice ? (((p.price-p.costPrice)/p.price)*100).toFixed(0) : 0}%</td>
                                             <td className="text-right text-emerald-400 text-2xl tracking-tighter">{Number(p.price).toLocaleString()}</td>
-                                            <td className="text-right"><button onClick={(e)=>{ e.preventDefault(); setEditing({type: 'PRODUCT', item: p}); }} className="bg-slate-800 text-blue-400 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all">Edit</button></td>
+                                            <td className="text-right"><button onClick={(e)=>{ e.preventDefault(); setEditing({type: 'PRODUCT', item: p}); }} className="bg-slate-800 text-blue-400 px-4 py-2 rounded-xl font-black text-xs hover:bg-blue-600 hover:text-white transition">EDIT</button></td>
                                         </tr>
                                     ))}</tbody>
                                 </table>
@@ -297,22 +296,22 @@
                             <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in fade-in duration-500 h-full overflow-auto no-scrollbar">
                                 <div className="flex justify-between items-center mb-10">
                                     <h2 className="text-3xl font-black text-blue-500 uppercase tracking-tighter">Client Registry</h2>
-                                    <button onClick={() => setEditing({ type: 'PATIENT', item: {} })} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-[10px] tracking-widest">+ New Profile</button>
+                                    <button onClick={() => setEditing({ type: 'PATIENT', item: {} })} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-xs hover:scale-105 transition">+ ADD CLIENT</button>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {data.patients.map(pt => (
-                                        <div key={pt.id} className="p-8 bg-black rounded-[3rem] border border-slate-800 flex justify-between items-center group hover:border-blue-500 transition-all shadow-xl">
+                                        <div key={pt.id} className="p-8 bg-black rounded-[3rem] border border-slate-800 flex justify-between items-center group hover:border-blue-500 transition-all">
                                             <div>
                                                 <h4 className="font-black text-xl text-white uppercase tracking-tighter">{pt.name}</h4>
                                                 <p className="text-[10px] text-slate-500 font-bold uppercase mt-2 tracking-widest">{pt.sex || '-'} • {pt.age || '-'} YRS • {pt.weight || '-'} KG</p>
                                                 <p className="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-widest">📞 {pt.phone} • {pt.address}</p>
-                                                <button onClick={(e)=>{ e.preventDefault(); setHistoryModal(pt); }} className="text-[10px] text-blue-500 mt-4 underline uppercase font-bold tracking-widest">View Medical History</button>
+                                                <button onClick={(e)=>{ e.preventDefault(); setHistoryModal(pt); }} className="text-[10px] text-blue-500 mt-4 underline uppercase font-bold tracking-widest hover:text-blue-400">VIEW HISTORY</button>
                                             </div>
                                             <div className="flex flex-col items-end gap-3">
-                                                <div className="text-right"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Unpaid Debt</p><p className="text-rose-500 font-black text-2xl">{Number(pt.creditBalance || 0).toLocaleString()} <span className="text-xs">TZS</span></p></div>
+                                                <div className="text-right"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Unpaid Debt</p><p className="text-rose-500 text-2xl font-black">{Number(pt.creditBalance || 0).toLocaleString()} TZS</p></div>
                                                 <div className="flex gap-2">
-                                                    {(pt.creditBalance > 0) && <button onClick={(e)=>{e.preventDefault(); setEditing({type: 'DEBT', item: pt});}} className="text-[10px] font-black text-emerald-500 bg-slate-900 px-3 py-1 rounded-lg uppercase hover:bg-emerald-900 transition-colors">Clear Debt</button>}
-                                                    <button onClick={(e)=>{ e.preventDefault(); setEditing({type: 'PATIENT', item: pt}); }} className="text-[10px] font-black text-blue-500 bg-slate-900 px-3 py-1 rounded-lg uppercase hover:bg-blue-900 transition-colors">Edit</button>
+                                                    {(pt.creditBalance > 0) && <button onClick={(e)=>{e.preventDefault(); setEditing({type: 'DEBT', item: pt});}} className="text-[10px] font-black text-emerald-500 bg-slate-800 px-4 py-2 rounded-lg hover:bg-emerald-600 hover:text-white transition">CLEAR DEBT</button>}
+                                                    <button onClick={(e)=>{ e.preventDefault(); setEditing({type: 'PATIENT', item: pt}); }} className="text-[10px] font-black text-blue-500 bg-slate-800 px-4 py-2 rounded-lg hover:bg-blue-600 hover:text-white transition">EDIT</button>
                                                 </div>
                                             </div>
                                         </div>
@@ -326,18 +325,18 @@
                             <div className="animate-in fade-in duration-500 space-y-10">
                                 <h2 className="text-4xl font-black tracking-tighter uppercase italic decoration-emerald-500 underline underline-offset-8">Financial Ledger</h2>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 text-center shadow-2xl"><p className="text-[10px] font-black opacity-30 uppercase mb-4 tracking-widest">Gross Revenue</p><p className="text-4xl font-black text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()}</p></div>
-                                    <div className="bg-white text-slate-900 p-10 rounded-[3.5rem] text-center shadow-xl"><p className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest">Consumption (Bills)</p><p className="text-4xl font-black text-rose-500">{data.expenses.reduce((a,b)=>a+b.amount,0).toLocaleString()}</p></div>
-                                    <div className="bg-emerald-600 p-10 rounded-[3.5rem] shadow-2xl text-center"><p className="text-[10px] font-black opacity-70 uppercase mb-4 tracking-widest text-white">Net Profit</p><p className="text-4xl font-black text-white">{(data.sales.reduce((a,b)=>a+b.total,0) - data.expenses.reduce((a,b)=>a+b.amount,0)).toLocaleString()}</p></div>
+                                    <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 text-center shadow-2xl"><p className="text-[10px] font-black opacity-30 uppercase mb-2">Total Expenses</p><p className="text-4xl font-black text-rose-500">{data.expenses.reduce((a,b)=>a+b.amount,0).toLocaleString()} TZS</p></div>
+                                    <div className="bg-white text-slate-900 p-10 rounded-[3.5rem] text-center shadow-xl"><p className="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Net Profit</p><p className="text-4xl font-black text-emerald-600">{(data.sales.reduce((a,b)=>a+b.profit,0)-data.expenses.reduce((a,b)=>a+b.amount,0)).toLocaleString()} TZS</p></div>
+                                    <div className="bg-emerald-600 p-10 rounded-[3.5rem] shadow-2xl text-center"><p className="text-[10px] font-black opacity-70 uppercase mb-2 tracking-widest">Sales Target</p><p className="text-4xl font-black">100% ✓</p></div>
                                 </div>
                                 <div className="bg-slate-900 p-10 rounded-[3rem] border border-slate-800">
-                                     <div className="flex justify-between items-center mb-8"><h3 className="font-black text-xl uppercase tracking-tighter">Consumption Log</h3><button onClick={(e) => { e.preventDefault(); setEditing({ type: 'EXPENSE', item: {} }); }} className="text-xs font-bold text-emerald-500 bg-emerald-950/30 px-6 py-3 rounded-2xl tracking-widest uppercase hover:bg-emerald-900 transition-all">+ Record Bill</button></div>
+                                     <div className="flex justify-between items-center mb-8"><h3 className="font-black text-xl uppercase tracking-tighter">Consumption Log</h3><button onClick={(e)=>{e.preventDefault(); setEditing({type: 'EXPENSE', item: {}});}} className="bg-rose-600 text-white px-6 py-2 rounded-xl font-black text-xs hover:bg-rose-500 transition">+ LOG EXPENSE</button></div>
                                      <div className="space-y-3">{data.expenses.map(ex => (
-                                         <div key={ex.id} className="flex justify-between items-center p-4 bg-black rounded-2xl border border-slate-900">
-                                             <div><p className="font-bold text-xs uppercase tracking-widest">{ex.category}</p><p className="text-[10px] text-slate-600 italic">{ex.description}</p></div>
-                                             <div className="flex items-center gap-4"><p className="font-black text-rose-500 text-lg">-{ex.amount.toLocaleString()} TZS</p><button onClick={async(e)=>{e.preventDefault(); if(confirm("Delete expense?")) await window.db.collection("expenses").doc(ex.id).delete();}} className="text-slate-600 hover:text-rose-500">❌</button></div>
-                                         </div>
-                                     ))}</div>
+                                          <div key={ex.id} className="flex justify-between items-center p-4 bg-black rounded-2xl border border-slate-900">
+                                              <div><p className="font-bold text-xs uppercase tracking-widest">{ex.category}</p><p className="text-[10px] text-slate-600 italic">{ex.description}</p></div>
+                                              <div className="flex items-center gap-4"><p className="font-black text-rose-500 text-lg">-{ex.amount.toLocaleString()} TZS</p><button onClick={async(e)=>{e.preventDefault(); if(confirm("Delete?")) await window.db.collection("expenses").doc(ex.id).delete();}} className="text-slate-500 hover:text-rose-500 font-black">×</button></div>
+                                          </div>
+                                      ))}</div>
                                 </div>
                             </div>
                         )}
@@ -367,13 +366,13 @@
                         {view === 'USERS' && (
                              <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in slide-in-from-right duration-500 h-full overflow-y-auto no-scrollbar">
                                 <h2 className="text-3xl font-black mb-10 tracking-tighter uppercase">Personnel Authorization</h2>
-                                <button onClick={() => setEditing({ type: 'USER', item: {} })} className="bg-emerald-600 text-white px-8 py-4 rounded-3xl font-black shadow-lg mb-10 uppercase text-[10px] tracking-widest">+ Add Staff Member</button>
+                                <button onClick={() => setEditing({ type: 'USER', item: {} })} className="bg-emerald-600 text-white px-8 py-4 rounded-3xl font-black shadow-lg mb-10 uppercase text-xs hover:scale-105 transition">+ ADD STAFF MEMBER</button>
                                 <div className="space-y-4">
                                     {data.users.map(u => (
-                                        <div key={u.id} className="bg-black p-6 rounded-[2.5rem] border border-slate-800 flex justify-between items-center group hover:border-emerald-500 transition-all shadow-xl">
-                                            <div><p className="font-black text-xl text-white tracking-tighter uppercase">{u.username}</p><p className="text-[10px] text-slate-600 font-black uppercase tracking-widest mt-1">{u.role}</p></div>
+                                        <div key={u.id} className="bg-black p-6 rounded-[2.5rem] border border-slate-800 flex justify-between items-center group hover:border-emerald-500 transition-all">
+                                            <div><p className="font-black text-xl text-white tracking-tighter uppercase">{u.username}</p><p className="text-[10px] text-slate-600 font-black uppercase">{u.role} • {u.status}</p></div>
                                             <div className="flex gap-4">
-                                                <button onClick={()=>setEditing({type: 'USER', item: u})} className="px-6 py-2 bg-slate-900 text-blue-400 font-black text-[10px] uppercase rounded-xl hover:bg-blue-600 hover:text-white transition-colors">Manage Access</button>
+                                                <button onClick={()=>setEditing({type: 'USER', item: u})} className="px-6 py-2 bg-slate-900 text-blue-400 font-black text-[10px] uppercase rounded-lg hover:bg-blue-600 hover:text-white transition">MANAGE</button>
                                             </div>
                                         </div>
                                     ))}
@@ -420,47 +419,47 @@
                                             {editing.type === 'PRODUCT' && (
                                                 <div className="space-y-4">
                                                     <div className="grid grid-cols-2 gap-4">
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Brand Name</label><input name="brandName" defaultValue={editing.item.brandName} required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold" /></div>
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Category</label><select name="category" defaultValue={editing.item.category || 'Medicine'} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800"><option>Medicine</option><option>Medical Supplies</option><option>Cosmetics</option></select></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Brand Name</label><input name="brandName" defaultValue={editing.item.brandName || ''} required className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Category</label><select name="category" defaultValue={editing.item.category || 'Medicine'} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold"><option>Medicine</option><option>Supplement</option><option>OTC</option></select></div>
                                                     </div>
                                                     <div className="grid grid-cols-3 gap-4">
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Strength / Size</label><input name="strength" defaultValue={editing.item.strength} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Generic</label><input name="genericName" defaultValue={editing.item.genericName} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Stock Qty</label><input name="stock" type="number" defaultValue={editing.item.stock} required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-black text-emerald-500" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Strength / Size</label><input name="strength" defaultValue={editing.item.strength || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Generic</label><input name="genericName" defaultValue={editing.item.genericName || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Stock Qty</label><input name="stock" type="number" defaultValue={editing.item.stock || 0} required className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-4">
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Sell Price</label><input name="price" type="number" defaultValue={editing.item.price} required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-black text-xl text-emerald-500" /></div>
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Cost Price</label><input name="costPrice" type="number" defaultValue={editing.item.costPrice} required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 opacity-60" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Sell Price</label><input name="price" type="number" defaultValue={editing.item.price || 0} required className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Cost Price</label><input name="costPrice" type="number" defaultValue={editing.item.costPrice || 0} required className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
                                                     </div>
-                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Symptoms (For POS Search)</label><textarea name="symptoms" defaultValue={editing.item.symptoms} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 h-24 text-sm" placeholder="e.g. fever, headache, pain..."></textarea></div>
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Symptoms (For POS Search)</label><textarea name="symptoms" defaultValue={editing.item.symptoms || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold min-h-[80px]"></textarea></div>
                                                 </div>
                                             )}
 
                                             {editing.type === 'PATIENT' && (
                                                 <div className="space-y-4">
-                                                    <input name="name" defaultValue={editing.item.name} placeholder="Full Name" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold text-emerald-400 uppercase" />
+                                                    <input name="name" defaultValue={editing.item.name || ''} placeholder="Full Name" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
                                                     <div className="grid grid-cols-3 gap-4">
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Age</label><input name="age" type="number" defaultValue={editing.item.age} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Sex</label><select name="sex" defaultValue={editing.item.sex || 'Male'} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800"><option>Male</option><option>Female</option></select></div>
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Weight (Kg)</label><input name="weight" type="number" defaultValue={editing.item.weight} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Age</label><input name="age" type="number" defaultValue={editing.item.age || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Sex</label><select name="sex" defaultValue={editing.item.sex || 'M'} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold"><option>M</option><option>F</option></select></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Weight (Kg)</label><input name="weight" type="number" defaultValue={editing.item.weight || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-4">
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Phone</label><input name="phone" defaultValue={editing.item.phone} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
-                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Insurance ID</label><input name="cardId" defaultValue={editing.item.cardId} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Phone</label><input name="phone" defaultValue={editing.item.phone || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
+                                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Insurance ID</label><input name="cardId" defaultValue={editing.item.cardId || ''} className="w-full p-3 bg-black rounded-xl outline-none border border-slate-700 text-white font-bold" /></div>
                                                     </div>
-                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Physical Address</label><input name="address" defaultValue={editing.item.address} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" /></div>
+                                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Physical Address</label><input name="address" defaultValue={editing.item.address || ''} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" /></div>
                                                 </div>
                                             )}
 
                                             {editing.type === 'USER' && (
                                                 <div className="space-y-4">
-                                                    <input name="username" defaultValue={editing.item.username} placeholder="Username" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold" />
-                                                    <input name="pin" defaultValue={editing.item.pin} placeholder="4-Digit PIN" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 tracking-[1em] text-center font-black" />
-                                                    <select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold">
+                                                    <input name="username" defaultValue={editing.item.username || ''} placeholder="Username" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
+                                                    <input name="pin" defaultValue={editing.item.pin || ''} placeholder="4-Digit PIN" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
+                                                    <select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold">
                                                         <option>MANAGER</option><option>PHARMACIST</option><option>TECHNICIAN</option><option>ASSISTANT</option><option>DISPENSER</option>
                                                     </select>
                                                     {editing.item.id && (
-                                                        <select name="status" defaultValue={editing.item.status} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold text-emerald-500">
+                                                        <select name="status" defaultValue={editing.item.status || 'ACTIVE'} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold">
                                                             <option>ACTIVE</option><option>INACTIVE</option>
                                                         </select>
                                                     )}
@@ -469,28 +468,28 @@
 
                                             {editing.type === 'EXPENSE' && (
                                                 <div className="space-y-4">
-                                                    <select name="category" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-bold text-rose-500" onChange={(e)=>{document.getElementById('custom-cat').style.display = e.target.value === 'CUSTOM' ? 'block' : 'none';}}>
-                                                        <option>LUKU (Electricity)</option><option>Meal Allowance</option><option>Sewage Service</option><option>Internet Bundle</option><option>Rent</option><option value="CUSTOM">Other (Specify)</option>
+                                                    <select name="category" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 font-bold text-rose-500" onChange={(e)=>{document.getElementById('custom-cat').style.display = e.target.value === 'Other' ? 'block' : 'none';}}>
+                                                        <option>LUKU (Electricity)</option><option>Meal Allowance</option><option>Sewage Service</option><option>Internet Bundle</option><option>Rent</option><option>Other</option>
                                                     </select>
-                                                    <input id="custom-cat" name="customCategory" placeholder="Type category name..." style={{display: 'none'}} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" />
-                                                    <input name="amount" type="number" placeholder="Amount (TZS)" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800 font-black text-2xl" />
-                                                    <input name="description" placeholder="Description / Receipt Ref" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-800" />
+                                                    <input id="custom-cat" name="customCategory" placeholder="Type category name..." style={{display: 'none'}} className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
+                                                    <input name="amount" type="number" placeholder="Amount (TZS)" required className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
+                                                    <input name="description" placeholder="Description / Receipt Ref" className="w-full p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
                                                 </div>
                                             )}
 
                                             <div className="flex gap-4 pt-8">
-                                                <button type="submit" className="flex-1 bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500 transition-all active:scale-95">COMMIT TO VAULT</button>
+                                                <button type="submit" className="flex-1 bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500 transition-all active:scale-95">SAVE</button>
                                                 {editing.item.id && (
                                                     <button type="button" onClick={async(e)=>{
                                                         e.preventDefault();
                                                         if(confirm("Permanently Purge Record?")) {
-                                                            const col = editing.type === 'PRODUCT' ? 'inventory' : editing.type === 'CLIENT' ? 'patients' : 'users';
+                                                            const col = editing.type === 'PRODUCT' ? 'inventory' : editing.type === 'PATIENT' ? 'patients' : 'users';
                                                             await window.db.collection(col).doc(editing.item.id).delete();
                                                             setEditing(null);
                                                         }
-                                                    }} className="bg-rose-950 border border-rose-900 text-rose-500 p-5 rounded-[2rem] hover:bg-rose-900 hover:text-white transition-all">DEL</button>
+                                                    }} className="bg-rose-950 border border-rose-900 text-rose-500 p-5 rounded-[2rem] hover:bg-rose-900 hover:text-white transition-all font-black">DELETE</button>
                                                 )}
-                                                <button type="button" onClick={(e)=>{e.preventDefault(); setEditing(null);}} className="p-5 bg-black border border-slate-800 rounded-[2rem] font-bold text-xs uppercase tracking-widest text-slate-400 hover:text-white transition-all">Cancel</button>
+                                                <button type="button" onClick={(e)=>{e.preventDefault(); setEditing(null);}} className="p-5 bg-black border border-slate-800 rounded-[2rem] font-bold hover:border-slate-600 transition">CANCEL</button>
                                             </div>
                                         </form>
                                     ) : (
@@ -500,13 +499,13 @@
                                             const amount = Number(new FormData(e.target).get('amount'));
                                             const client = data.patients.find(c => c.id === editing.item.id);
                                             await window.db.collection("patients").doc(client.id).update({ creditBalance: (client.creditBalance || 0) - amount });
-                                            await window.db.collection("sales").add({ total: amount, profit: amount, timestamp: new Date().toISOString(), soldBy: user.username, method: 'DEBT_CLEARANCE', items: [{brandName: `Debt Clearance: ${client.name}`, qty: 1, currentPrice: amount}] });
+                                            await window.db.collection("sales").add({ total: amount, profit: amount, timestamp: new Date().toISOString(), soldBy: user.username, method: 'DEBT_CLEARANCE' });
                                             setEditing(null); alert("Debt Cleared & Revenue Updated!");
                                         }}>
                                             <h3 className="text-2xl font-black mb-6 text-emerald-500 uppercase tracking-tighter">Clear Debt: {editing.item.name}</h3>
-                                            <input name="amount" type="number" placeholder="Amount Paid (TZS)" required className="w-full p-4 mb-6 bg-black rounded-2xl outline-none border border-slate-800 font-black text-xl text-center text-emerald-400" />
-                                            <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-emerald-500 transition-all">Confirm Payment</button>
-                                            <button type="button" onClick={(e)=>{e.preventDefault(); setEditing(null)}} className="w-full mt-6 text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white transition-all">Cancel</button>
+                                            <input name="amount" type="number" placeholder="Amount Paid (TZS)" required className="w-full p-4 mb-6 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold" />
+                                            <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-emerald-500 transition-all">CONFIRM PAYMENT</button>
+                                            <button type="button" onClick={(e)=>{e.preventDefault(); setEditing(null)}} className="w-full mt-6 text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white transition">CANCEL</button>
                                         </form>
                                     )}
                                 </div>
@@ -520,17 +519,17 @@
                                     <h3 className="text-3xl font-black mb-2 text-emerald-500 italic tracking-tighter">Finalize Bill</h3>
                                     <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-10">Select Payment Method</p>
                                     <div className="space-y-4 mb-10">
-                                        <button onClick={(e)=>{e.preventDefault(); finalizeSale('CASH')}} className="w-full py-5 bg-emerald-600 text-white rounded-3xl font-black shadow-xl hover:bg-emerald-500 transition-all active:scale-95 flex justify-center items-center gap-3">💰 CASH PAYMENT</button>
-                                        <button onClick={(e)=>{e.preventDefault(); finalizeSale('MOBILE')}} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black shadow-xl hover:bg-blue-500 transition-all active:scale-95 flex justify-center items-center gap-3">📱 M-PESA / TIGO</button>
+                                        <button onClick={(e)=>{e.preventDefault(); finalizeSale('CASH')}} className="w-full py-5 bg-emerald-600 text-white rounded-3xl font-black shadow-xl hover:bg-emerald-500 transition-all active:scale-95">💵 CASH</button>
+                                        <button onClick={(e)=>{e.preventDefault(); finalizeSale('MOBILE')}} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black shadow-xl hover:bg-blue-500 transition-all active:scale-95">📱 MOBILE MONEY</button>
                                         <button onClick={(e)=>{
                                             e.preventDefault();
                                             const pid = prompt("Enter Patient Card ID or Name for Debt Tracking:");
                                             const pt = data.patients.find(p => p.cardId === pid || p.name.toLowerCase() === pid?.toLowerCase());
                                             if(pt) finalizeSale('DEBT', pt.id); else alert("Patient not found in Registry!");
-                                        }} className="w-full py-5 bg-rose-600 text-white rounded-3xl font-black shadow-xl hover:bg-rose-500 transition-all active:scale-95 flex justify-center items-center gap-3">📓 RECORD DEBT (DENI)</button>
-                                        <button onClick={(e)=>{e.preventDefault(); finalizeSale('BONUS')}} className="w-full py-5 bg-indigo-600 text-white rounded-3xl font-black shadow-xl hover:bg-indigo-500 transition-all active:scale-95 flex justify-center items-center gap-3">🎁 REWARD / BONUS</button>
+                                        }} className="w-full py-5 bg-rose-600 text-white rounded-3xl font-black shadow-xl hover:bg-rose-500 transition-all active:scale-95">📋 ON CREDIT</button>
+                                        <button onClick={(e)=>{e.preventDefault(); finalizeSale('BONUS')}} className="w-full py-5 bg-indigo-600 text-white rounded-3xl font-black shadow-xl hover:bg-indigo-500 transition-all active:scale-95">🎁 BONUS CREDIT</button>
                                     </div>
-                                    <button onClick={(e)=>{e.preventDefault(); setCheckoutModal(false)}} className="text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white transition-all">Cancel Transaction</button>
+                                    <button onClick={(e)=>{e.preventDefault(); setCheckoutModal(false)}} className="text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white transition">CANCEL</button>
                                 </div>
                             </div>
                         )}
@@ -544,10 +543,10 @@
                                             <h3 className="text-3xl font-black text-emerald-500 uppercase tracking-tighter italic">Medical History</h3>
                                             <p className="text-sm font-bold mt-2 uppercase text-slate-400">{historyModal.name} • {historyModal.age || '?'} YRS</p>
                                         </div>
-                                        <button onClick={(e)=>{e.preventDefault(); setHistoryModal(null)}} className="bg-black p-4 rounded-full text-slate-500 hover:text-white font-bold">X</button>
+                                        <button onClick={(e)=>{e.preventDefault(); setHistoryModal(null)}} className="bg-black p-4 rounded-full text-slate-500 hover:text-white font-black">×</button>
                                     </div>
                                     <div className="space-y-4 mb-8">
-                                        {data.sales.filter(s => s.method === 'DEBT' || s.items?.some(i=>i.brandName.includes(historyModal.name))).length === 0 && <p className="text-slate-500 italic text-center py-10">No history found for this patient.</p>}
+                                        {data.sales.filter(s => s.method === 'DEBT' || s.items?.some(i=>i.brandName.includes(historyModal.name))).length === 0 && <p className="text-slate-500 italic text-center py-10">No purchase history for this client.</p>}
                                         {data.sales.filter(s => s.method === 'DEBT' || s.patientId === historyModal.id || s.items?.some(i=>i.brandName.includes(historyModal.name))).map((s, idx) => (
                                             <div key={idx} className="bg-black p-6 rounded-3xl border border-slate-800">
                                                 <div className="flex justify-between mb-4 border-b border-slate-800 pb-2">
@@ -555,7 +554,7 @@
                                                     <span className={`text-[10px] font-black px-2 py-1 rounded ${s.method==='DEBT'?'bg-rose-900 text-rose-300':'bg-emerald-900 text-emerald-300'}`}>{s.method}</span>
                                                 </div>
                                                 {s.items?.map((i, k) => (
-                                                    <div key={k} className="flex justify-between text-sm mb-1 text-white"><span className="font-bold">{i.brandName} x{i.qty}</span><span>{(i.currentPrice * i.qty).toLocaleString()}</span></div>
+                                                    <div key={k} className="flex justify-between text-sm mb-1 text-white"><span className="font-bold">{i.brandName} x{i.qty}</span><span>{(i.currentPrice * i.qty).toLocaleString()} TZS</span></div>
                                                 ))}
                                                 <p className="text-right font-black text-emerald-500 mt-4 border-t border-slate-800 pt-2">Total: {s.total.toLocaleString()} TZS</p>
                                             </div>
@@ -570,7 +569,7 @@
         };
 
         const root = ReactDOM.createRoot(document.getElementById('apex-root'));
-        root.render(e(App));
+        root.render(<App />);
     </script>
 </body>
 </html>
