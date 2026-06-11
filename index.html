@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>APEX | Sovereign ERP (Vercel Edition)</title>
-    <!-- PRODUCTION LIBRARIES -->
+    <title>APEX | Sovereign Enterprise</title>
+    <!-- LIBRARIES -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; background-color: #020617; color: white; }
@@ -24,24 +24,23 @@
     <div id="apex-root">
         <div style="height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#020617;">
             <h1 style="font-size:4rem;font-weight:900;color:#10b981;font-style:italic;">APEX</h1>
-            <p style="color:#64748b;letter-spacing:4px;font-weight:bold;margin-top:10px;">VERCEL ENGINE BOOTING...</p>
+            <p style="color:#64748b;letter-spacing:4px;font-weight:bold;margin-top:10px;">LOADING LOCAL VAULT...</p>
         </div>
     </div>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // --- 1. LOCAL BROWSER VAULT (DEXIE) - NO FIREBASE! ---
-        const db = new Dexie("ApexVercelVault");
+        // --- 1. LOCAL DATABASE (DEXIE) ---
+        const db = new Dexie("ApexSovereignDB");
         db.version(1).stores({
-            inventory: "++id, brandName, category, symptoms",
-            sales: "++id, timestamp, method",
+            inventory: "++id, brandName, genericName, symptoms, category",
+            sales: "++id, timestamp, total",
             users: "++id, username, pin, role",
             patients: "++id, name, cardId",
             expenses: "++id, category, date"
         });
 
-        // --- 2. APEX LOGIC ---
         const App = () => {
             const [view, setView] = useState('LOGIN');
             const [user, setUser] = useState(null);
@@ -49,7 +48,6 @@
             const [cart, setCart] = useState([]);
             const [search, setSearch] = useState("");
             
-            // Modals
             const [editing, setEditing] = useState(null); 
             const [checkoutModal, setCheckoutModal] = useState(false);
             const [historyModal, setHistoryModal] = useState(null);
@@ -57,14 +55,14 @@
             // DATA REFRESHER
             const refresh = async () => {
                 const i = await db.inventory.toArray();
-                const s = await db.sales.orderBy('id').reverse().toArray();
+                const s = await db.sales.orderBy('id').reverse().limit(50).toArray();
                 const u = await db.users.toArray();
                 const p = await db.patients.toArray();
-                const ex = await db.expenses.orderBy('id').reverse().toArray();
+                const ex = await db.expenses.toArray();
                 setData({ inventory: i, sales: s, users: u, patients: p, expenses: ex });
             };
 
-            // BOOTSTRAP
+            // BOOTSTRAP ADMIN
             useEffect(() => {
                 const init = async () => {
                     if (await db.users.count() === 0) {
@@ -75,25 +73,22 @@
                 init();
             }, [user]);
 
-            // PERMISSIONS
             const hasAccess = (level) => {
                 const roles = { 'MANAGER': 4, 'PHARMACIST': 3, 'TECHNICIAN': 2, 'ASSISTANT': 1, 'DISPENSER': 0 };
                 return roles[user?.role] >= roles[level];
             };
 
-            // LOGIN
             const handleLogin = async () => {
                 const u = document.getElementById('u_box').value.toLowerCase().trim();
                 const p = document.getElementById('p_box').value.trim();
-                const found = await db.users.where({ username: u }).first();
-                if (found && found.pin === p && found.status === 'ACTIVE') {
+                const found = await db.users.where('username').equals(u).first();
+                if (found && found.pin === p && found.status !== 'INACTIVE') {
                     setUser(found); setView('DASHBOARD');
-                } else alert("Access Denied: Invalid Credentials or Inactive Account.");
+                } else alert("Access Denied: Invalid Credentials");
             };
 
-            // POS CART LOGIC
             const addToCart = (p) => {
-                if (p.stock <= 0) return alert("OUT OF STOCK");
+                if (p.stock <= 0) return alert("OUT OF STOCK!");
                 setCart(prev => {
                     const ex = prev.find(i => i.id === p.id);
                     if (ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
@@ -110,7 +105,7 @@
                 const totalCost = cart.reduce((s,i)=>s+(i.costPrice*i.qty), 0);
                 
                 await db.sales.add({
-                    total, profit: total - totalCost, timestamp: new Date().toISOString(), soldBy: user.username, method, items: cart, patientId
+                    total, profit: total - totalCost, timestamp: new Date().toISOString(), soldBy: user.username, method, items: cart
                 });
 
                 if (method === 'DEBT' && patientId) {
@@ -120,7 +115,7 @@
 
                 for(const i of cart) await db.inventory.update(i.id, { stock: i.stock - i.qty });
                 
-                setCart([]); setCheckoutModal(false); refresh(); alert("Sale Authorized");
+                setCart([]); setCheckoutModal(false); refresh(); alert("Transaction Authorized");
             };
 
             const clearDebt = async (e) => {
@@ -137,32 +132,17 @@
             };
 
             const exportData = () => {
-                const ws = XLSX.utils.json_to_sheet(data.sales.map(s => ({ Date: new Date(s.timestamp).toLocaleString(), Amount: s.total, Profit: s.profit, Method: s.method, SoldBy: s.soldBy })));
+                const ws = XLSX.utils.json_to_sheet(data.sales.map(s => ({ Date: new Date(s.timestamp).toLocaleString(), Amount: s.total, Method: s.method, SoldBy: s.soldBy })));
                 const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Sales Report");
                 XLSX.writeFile(wb, `Apex_Report_${new Date().toLocaleDateString()}.xlsx`);
             };
 
-            // CHART GENERATOR
-            const getChartData = () => {
-                const days = Array.from({length: 7}, (_, i) => {
-                    const d = new Date(); d.setDate(d.getDate() - (6 - i));
-                    return d.toISOString().split('T')[0];
-                });
-                const chartData = days.map(d => {
-                    const dayTotal = data.sales.filter(s => s.timestamp.startsWith(d)).reduce((a,b)=>a+b.total, 0);
-                    return { day: d.slice(5), total: dayTotal };
-                });
-                const max = Math.max(...chartData.map(d=>d.total), 1);
-                return { chartData, max };
-            };
-
-            // --- UI: LOGIN ---
             if (!user) {
                 return (
                     <div className="h-screen flex items-center justify-center bg-black">
                         <div className="bg-slate-900 p-12 rounded-[4rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
                             <h1 className="text-5xl font-black text-emerald-500 mb-2 italic tracking-tighter">APEX</h1>
-                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-12 tracking-[0.3em]">Vercel Platform</p>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-12 tracking-[0.3em]">Sovereign Local Vault</p>
                             <input id="u_box" placeholder="Username" className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold" />
                             <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[1em]" />
                             <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95">AUTHORIZE</button>
@@ -171,23 +151,20 @@
                 );
             }
 
-            const { chartData, max } = getChartData();
-
             return (
                 <div className="flex h-screen overflow-hidden bg-slate-950">
-                    {/* SIDEBAR */}
                     <aside className="w-72 bg-black border-r border-slate-800 p-8 flex flex-col shrink-0">
                         <div className="flex items-center gap-3 mb-10">
                             <div className="w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-emerald-500/30">A</div>
                             <h2 className="text-2xl font-black tracking-tighter italic">APEX <span className="text-emerald-600">Pro</span></h2>
                         </div>
                         <nav className="flex-1 space-y-1 overflow-y-auto no-scrollbar">
-                            <button onClick={()=>setView('DASHBOARD')} className={`w-full flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='DASHBOARD'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.LayoutDashboard size={20}/> Dashboard</button>
-                            <button onClick={()=>setView('POS')} className={`w-full flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='POS'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.ShoppingCart size={20}/> POS Sales</button>
-                            {hasAccess('TECHNICIAN') && <button onClick={()=>setView('STOO')} className={`w-full flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='STOO'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.Package size={20}/> Inventory</button>}
-                            <button onClick={()=>setView('PATIENTS')} className={`w-full flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='PATIENTS'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.Users size={20}/> Patients</button>
-                            {hasAccess('MANAGER') && <button onClick={()=>setView('FINANCE')} className={`w-full flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='FINANCE'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.PieChart size={20}/> Financials</button>}
-                            {hasAccess('MANAGER') && <button onClick={()=>setView('USERS')} className={`w-full flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='USERS'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.ShieldCheck size={20}/> Personnel</button>}
+                            <button onClick={()=>setView('DASHBOARD')} className={`w-full text-left flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='DASHBOARD'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.LayoutDashboard size={20}/> Dashboard</button>
+                            <button onClick={()=>setView('POS')} className={`w-full text-left flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='POS'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.ShoppingCart size={20}/> Sales POS</button>
+                            {hasAccess('TECHNICIAN') && <button onClick={()=>setView('STOO')} className={`w-full text-left flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='STOO'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.Package size={20}/> Inventory</button>}
+                            <button onClick={()=>setView('PATIENTS')} className={`w-full text-left flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='PATIENTS'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.Users size={20}/> Patients</button>
+                            {hasAccess('MANAGER') && <button onClick={()=>setView('FINANCE')} className={`w-full text-left flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='FINANCE'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.PieChart size={20}/> Financials</button>}
+                            {hasAccess('MANAGER') && <button onClick={()=>setView('USERS')} className={`w-full text-left flex items-center gap-4 p-4 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${view==='USERS'?'active-tab':'text-slate-500 hover:bg-slate-900'}`}><lucide.ShieldCheck size={20}/> Personnel</button>}
                         </nav>
                         <div className="pt-6 border-t border-slate-800 mt-4">
                              <div className="flex items-center gap-3 mb-4">
@@ -198,50 +175,30 @@
                         </div>
                     </aside>
 
-                    {/* MAIN CONTENT AREA */}
                     <main className="flex-1 p-8 md:p-10 overflow-auto no-scrollbar relative">
-                        
-                        {/* DASHBOARD */}
                         {view === 'DASHBOARD' && (
                             <div className="animate-in fade-in duration-700">
                                 <div className="flex justify-between items-center mb-10">
-                                    <h2 className="text-4xl font-black tracking-tighter">Command Center</h2>
+                                    <h2 className="text-4xl font-black tracking-tighter">Director's Overview</h2>
                                     {hasAccess('MANAGER') && <button onClick={exportData} className="bg-slate-800 text-emerald-400 border border-emerald-900 px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-slate-700 transition-all text-xs tracking-widest uppercase"><lucide.Download size={16}/> Export Data</button>}
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                                    <div className="bg-slate-900 p-10 rounded-[3rem] border border-emerald-500 shadow-2xl">
-                                        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Lifetime Revenue</p>
-                                        <h3 className="text-5xl font-black tracking-tighter text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} <span className="text-sm font-normal opacity-30 text-white uppercase">TZS</span></h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-emerald-500 shadow-2xl">
+                                        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Total Revenue</p>
+                                        <h3 className="text-4xl font-black text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} <span className="text-sm font-normal opacity-30 text-white uppercase">TZS</span></h3>
                                     </div>
-                                    <div className="bg-slate-900 p-10 rounded-[3rem] border border-blue-500 shadow-2xl">
-                                        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Inventory Wealth</p>
-                                        <h3 className="text-5xl font-black tracking-tighter text-blue-400">{data.inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0).toLocaleString()} <span className="text-sm font-normal opacity-30 text-white uppercase">At Cost</span></h3>
+                                    <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-blue-500 shadow-2xl">
+                                        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Inventory Value</p>
+                                        <h3 className="text-4xl font-black text-blue-400">{data.inventory.reduce((a,b)=>a+(b.costPrice*b.stock),0).toLocaleString()} <span className="text-sm font-normal opacity-30 text-white uppercase">At Cost</span></h3>
                                     </div>
-                                    <div className="bg-slate-900 p-10 rounded-[3rem] border border-rose-500 shadow-2xl">
-                                        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Outstanding Debt</p>
-                                        <h3 className="text-5xl font-black tracking-tighter text-rose-400">{data.patients.reduce((a,b)=>a+(Number(b.creditBalance)||0),0).toLocaleString()} <span className="text-sm font-normal opacity-30 text-white uppercase">Unpaid</span></h3>
-                                    </div>
-                                </div>
-
-                                {/* 7-DAY GRAPH */}
-                                <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 shadow-2xl">
-                                    <h3 className="text-xl font-black mb-6 flex items-center gap-2 tracking-tighter"><lucide.BarChart2 className="text-emerald-500" /> 7-Day Revenue Trend</h3>
-                                    <div className="flex items-end gap-2 h-48 pt-4">
-                                        {chartData.map((d, idx) => (
-                                            <div key={idx} className="flex-1 flex flex-col items-center gap-2 group">
-                                                <div className="w-full bg-slate-800 rounded-t-xl relative flex items-end justify-center group-hover:bg-emerald-900 transition-all" style={{height: '100%'}}>
-                                                    <div className="w-full bg-emerald-500 rounded-t-xl transition-all duration-1000" style={{height: `${(d.total / max) * 100}%`}}></div>
-                                                    <span className="absolute -top-6 text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity text-emerald-400">{d.total.toLocaleString()}</span>
-                                                </div>
-                                                <span className="text-[10px] font-bold text-slate-500">{d.day}</span>
-                                            </div>
-                                        ))}
+                                    <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-rose-500 shadow-2xl">
+                                        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Unpaid Debt</p>
+                                        <h3 className="text-4xl font-black text-rose-400">{data.patients.reduce((a,b)=>a+(Number(b.creditBalance)||0),0).toLocaleString()} <span className="text-sm font-normal opacity-30 text-white uppercase">TZS</span></h3>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* POS */}
                         {view === 'POS' && (
                             <div className="flex gap-8 h-full animate-in slide-in-from-bottom duration-500">
                                 <div className="flex-1 space-y-6 overflow-y-auto no-scrollbar">
@@ -251,9 +208,9 @@
                                     </div>
                                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                                         {data.inventory.filter(p => p.brandName.toLowerCase().includes(search) || p.symptoms?.toLowerCase().includes(search)).map(p => (
-                                            <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer active:scale-95 transition-all shadow-xl flex flex-col justify-between">
+                                            <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer active:scale-95 transition-all shadow-xl flex flex-col justify-between h-48">
                                                 <div>
-                                                    <div className="flex justify-between mb-4"><span className="text-[9px] font-black text-emerald-500 uppercase">{p.category} {p.subCategory && `(${p.subCategory})`}</span></div>
+                                                    <div className="flex justify-between mb-4"><span className="text-[9px] font-black text-emerald-500 uppercase">{p.category}</span></div>
                                                     <h4 className="font-black text-xl mb-1 tracking-tight">{p.brandName}</h4>
                                                     <p className="text-[10px] text-slate-500 font-bold uppercase mb-6">{p.strength} • {p.genericName}</p>
                                                 </div>
@@ -298,11 +255,11 @@
                                     <button onClick={() => setEditing({ type: 'PRODUCT', item: {} })} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:scale-105 transition-all text-[10px] tracking-widest uppercase">+ Add Product</button>
                                 </div>
                                 <table className="w-full text-left">
-                                    <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4">Product</th><th>Category</th><th>Stock</th><th>Margin</th><th className="text-right pb-4">Selling Price</th><th className="text-right pb-4">Manage</th></tr></thead>
+                                    <thead><tr className="text-slate-500 text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4">Product Family</th><th>Category</th><th>Stock</th><th>Margin</th><th className="text-right pb-4">Selling Price</th><th className="text-right pb-4">Manage</th></tr></thead>
                                     <tbody className="font-bold">{data.inventory.map(p => (
                                         <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50 transition-all group">
                                             <td className="py-6"><p className="font-black text-white text-lg">{p.brandName}</p><p className="text-[10px] text-slate-500 uppercase">{p.genericName} • {p.strength}</p></td>
-                                            <td><p className="text-[9px] bg-slate-800 text-slate-400 px-3 py-1 rounded-full uppercase font-black tracking-widest inline-block">{p.category}</p><br/>{p.subCategory && <span className="text-[8px] text-emerald-500 uppercase">{p.subCategory}</span>}</td>
+                                            <td><span className="text-[9px] bg-slate-800 text-slate-400 px-3 py-1 rounded-full uppercase font-black tracking-widest">{p.category}</span></td>
                                             <td className={p.stock < 10 ? 'text-rose-500 text-xl' : 'text-slate-300 text-xl'}>{p.stock}</td>
                                             <td className="text-emerald-500">{p.price && p.costPrice ? (((p.price-p.costPrice)/p.price)*100).toFixed(0) : 0}%</td>
                                             <td className="text-right text-emerald-400 text-2xl tracking-tighter">{Number(p.price).toLocaleString()}</td>
@@ -317,7 +274,7 @@
                             <div className="bg-slate-900 p-10 rounded-[3.5rem] border border-slate-800 animate-in fade-in duration-500 h-full overflow-auto no-scrollbar">
                                 <div className="flex justify-between items-center mb-10">
                                     <h2 className="text-3xl font-black text-blue-500 uppercase tracking-tighter">Client Registry</h2>
-                                    <button onClick={() => setEditing({ type: 'CLIENT', item: {} })} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-[10px] tracking-widest">+ New Profile</button>
+                                    <button onClick={() => setEditing({ type: 'PATIENT', item: {} })} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-[10px] tracking-widest">+ New Profile</button>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {data.patients.map(pt => (
@@ -332,7 +289,7 @@
                                                 <div className="text-right"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Unpaid Debt</p><p className="text-rose-500 font-black text-2xl">{Number(pt.creditBalance || 0).toLocaleString()} <span className="text-xs">TZS</span></p></div>
                                                 <div className="flex gap-2">
                                                     {(pt.creditBalance > 0) && <button onClick={()=>setEditing({type: 'DEBT', item: pt})} className="text-[10px] font-black text-emerald-500 bg-slate-900 px-3 py-1 rounded-lg uppercase hover:bg-emerald-900 transition-colors">Clear Debt</button>}
-                                                    <button onClick={(e)=>{ e.preventDefault(); setEditing({type: 'CLIENT', item: pt}); }} className="text-[10px] font-black text-blue-500 bg-slate-900 px-3 py-1 rounded-lg uppercase hover:bg-blue-900 transition-colors">Edit</button>
+                                                    <button onClick={(e)=>{ e.preventDefault(); setEditing({type: 'PATIENT', item: pt}); }} className="text-[10px] font-black text-blue-500 bg-slate-900 px-3 py-1 rounded-lg uppercase hover:bg-blue-900 transition-colors">Edit</button>
                                                 </div>
                                             </div>
                                         </div>
@@ -350,11 +307,11 @@
                                     <div className="bg-emerald-600 p-10 rounded-[3.5rem] shadow-2xl text-center"><p className="text-[10px] font-black opacity-70 uppercase mb-4 tracking-widest text-white">Net Profit</p><p className="text-4xl font-black text-white">{(data.sales.reduce((a,b)=>a+b.total,0) - data.expenses.reduce((a,b)=>a+b.amount,0)).toLocaleString()}</p></div>
                                 </div>
                                 <div className="bg-slate-900 p-10 rounded-[3rem] border border-slate-800">
-                                     <div className="flex justify-between items-center mb-8"><h3 className="font-black text-xl uppercase tracking-tighter">Consumption Log</h3><button onClick={(e) => { e.preventDefault(); setEditing({ type: 'EXPENSE', item: {} }); }} className="text-xs font-bold text-emerald-500 bg-emerald-950/30 px-6 py-3 rounded-2xl tracking-widest uppercase hover:bg-emerald-900 transition-all">+ Record Bill</button></div>
+                                     <div className="flex justify-between items-center mb-8"><h3 className="font-black text-xl uppercase tracking-tighter">Consumption Log</h3><button onClick={() => setEditing({ type: 'EXPENSE', item: {} })} className="text-xs font-bold text-emerald-500 bg-emerald-950/30 px-6 py-3 rounded-2xl tracking-widest uppercase hover:bg-emerald-900 transition-all">+ Record Bill</button></div>
                                      <div className="space-y-3">{data.expenses.map(ex => (
                                          <div key={ex.id} className="flex justify-between items-center p-4 bg-black rounded-2xl border border-slate-900">
                                              <div><p className="font-bold text-xs uppercase tracking-widest">{ex.category}</p><p className="text-[10px] text-slate-600 italic">{ex.description}</p></div>
-                                             <div className="flex items-center gap-4"><p className="font-black text-rose-500 text-lg">-{ex.amount.toLocaleString()} TZS</p><button onClick={async(e)=>{e.preventDefault(); if(confirm("Delete expense?")) await db.expenses.delete(ex.id); refresh();}} className="text-slate-600 hover:text-rose-500"><lucide.Trash2 size={16}/></button></div>
+                                             <div className="flex items-center gap-4"><p className="font-black text-rose-500 text-lg">-{ex.amount.toLocaleString()} TZS</p><button onClick={async(e)=>{e.preventDefault(); if(confirm("Delete expense?")) { await db.expenses.delete(ex.id); refresh(); }}} className="text-slate-600 hover:text-rose-500"><lucide.Trash2 size={16}/></button></div>
                                          </div>
                                      ))}</div>
                                 </div>
@@ -378,9 +335,7 @@
                              </div>
                         )}
 
-                        {/* ==========================================
-                            MODALS (EDITING, CREATING, CHECKOUT)
-                        ========================================== */}
+                        {/* --- ALL MODALS --- */}
                         {editing && (
                             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay animate-in zoom-in duration-200">
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar">
@@ -474,12 +429,12 @@
                                         )}
 
                                         <div className="flex gap-4 pt-8">
-                                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500 transition-all active:scale-95">COMMIT TO VAULT</button>
+                                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500 transition-all active:scale-95">SAVE TO VAULT</button>
                                             {editing.item.id && editing.type !== 'EXPENSE' && (
                                                 <button type="button" onClick={async(e)=>{
                                                     e.preventDefault();
                                                     if(confirm("Permanently Purge Record?")) {
-                                                        const col = editing.type === 'PRODUCT' ? 'inventory' : editing.type === 'PATIENT' ? 'patients' : 'users';
+                                                        const col = editing.type === 'PRODUCT' ? 'inventory' : editing.type === 'CLIENT' ? 'patients' : 'users';
                                                         await db[col].delete(editing.item.id);
                                                         setEditing(null); refresh();
                                                     }
@@ -492,7 +447,6 @@
                             </div>
                         )}
 
-                        {/* CHECKOUT MODAL */}
                         {checkoutModal && (
                             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay animate-in zoom-in duration-200">
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-10 rounded-[3.5rem] shadow-2xl text-center">
@@ -515,7 +469,6 @@
                             </div>
                         )}
 
-                        {/* DEBT CLEARANCE MODAL */}
                         {editing && editing.type === 'DEBT' && (
                             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay animate-in zoom-in duration-200">
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-sm p-10 rounded-[3.5rem] shadow-2xl text-center">
@@ -529,7 +482,6 @@
                             </div>
                         )}
 
-                        {/* PATIENT HISTORY MODAL */}
                         {historyModal && (
                             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay animate-in fade-in">
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-3xl p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar">
