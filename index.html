@@ -18,7 +18,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    <!-- ADDED: Chart.js for graphs -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
@@ -110,74 +109,126 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
+        // TANZANIA STG Data Extracted Directly from the 2021 PDF
         const TANZANIA_STG = {
-            'Malaria': {
-                diagnosis: 'Blood smear microscopy, Rapid diagnostic test (RDT)',
-                indications: 'Fever + positive diagnostic test',
-                signs_symptoms: 'Fever, chills, headache, body aches, sweating, nausea, vomiting',
-                contraindications: 'Severe renal impairment (G6PD deficiency for primaquine)',
-                side_effects: 'Nausea, vomiting, abdominal pain, diarrhea, headache',
-                adverse_effects: 'Steven-Johnson syndrome, hepatotoxicity, severe hemolysis',
+            'Uncomplicated Malaria': {
+                diagnosis: 'Confirmed by microscopy or mRDT regardless of whether fever is present.',
+                indications: 'Fever, headache, joint pains, malaise, vomiting, diarrhoea',
+                signs_symptoms: 'Body ache, poor appetite, pallor, enlarged spleen',
+                contraindications: 'Use Dihydroartemisinin-piperaquine if ALu fails or is contraindicated.',
+                side_effects: 'Nausea, vomiting, abdominal pain',
+                adverse_effects: 'Treatment failure if parasite antigens persist',
                 treatment: {
-                    adult: { dose: '80/480mg', frequency: '6 doses over 3 days', route: 'Oral' },
-                    child: { dose: '4-8kg: 10mg/4mg, >8kg: weight-based', frequency: 'Same as adult', route: 'Oral' },
-                    pregnancy: { dose: 'Quinine 10mg/kg IV 8-hourly', frequency: 'Acute phase', route: 'IV' },
-                    neonate: { dose: 'Refer to facility', frequency: 'N/A', route: 'IV' },
-                    special: 'Severe: IV Artesunate 2.4mg/kg at 0,12,24hrs then daily'
+                    adult: { dose: 'Artemether+Lumefantrine (ALu) 20mg+120mg: 4 tablets', frequency: 'Twice daily for 3 days', route: 'Oral' },
+                    child: { dose: 'ALu based on weight (e.g. 5-14kg: 1 tablet, 15-24kg: 2 tablets)', frequency: 'Twice daily for 3 days', route: 'Oral' },
+                    pregnancy: { dose: 'ALu recommended in all trimesters', frequency: 'Twice daily for 3 days', route: 'Oral' },
+                    neonate: { dose: 'Parental Artesunate is recommended for neonates', frequency: 'N/A', route: 'IV/IM' },
+                    special: 'Ensure compulsory testing before treatment.'
                 },
-                alternative: 'Dihydroartemisinin-piperaquine, Atovaquone-proguanil',
-                reference: 'Tanzania STG 2024'
+                alternative: 'Dihydroartemisinin-piperaquine (FDC)',
+                reference: 'Tanzania STG 2021 (Chapter 5.2.1)'
             },
-            'Typhoid Fever': {
-                diagnosis: 'Blood/bone marrow culture, Widal test (interpret carefully)',
-                indications: 'Sustained fever + positive culture',
-                signs_symptoms: 'Sustained high fever, rose spots rash, abdominal pain, constipation/diarrhea, hepatosplenomegaly, altered mental status',
-                contraindications: 'Allergy to beta-lactams (use fluoroquinolones)',
-                side_effects: 'Diarrhea, abdominal discomfort, photosensitivity (fluoroquinolones)',
-                adverse_effects: 'Anaphylaxis, C. difficile colitis, tendon rupture',
+            'Cholera': {
+                diagnosis: 'Liquid stool or rectal swab for Vibrio cholerae culture or PCR.',
+                indications: 'Sudden onset of painless watery diarrhoea, vomiting, severe dehydration.',
+                signs_symptoms: 'Profuse watery stool (rice-water), muscular cramps, leading to hypovolemic shock.',
+                contraindications: 'Doxycycline contraindicated in pregnancy.',
+                side_effects: 'GI upset, nausea',
+                adverse_effects: 'Hyper-metabolic Acidosis if 0.9% sodium chloride is used aggressively',
                 treatment: {
-                    adult: { dose: 'Ceftriaxone 2g IV/IM', frequency: '12-hourly x 7 days', route: 'IV/IM' },
-                    child: { dose: '80mg/kg/day', frequency: '2-3 divided doses', route: 'IV/IM' },
-                    pregnancy: { dose: 'Ceftriaxone 2g', frequency: '12-hourly', route: 'IV/IM' },
-                    neonate: { dose: '50mg/kg', frequency: '8-12 hourly', route: 'IV/IM' },
-                    special: 'MDR: Continue same + monitor resistance. Chronic carriers: Ciprofloxacin 500mg BD x 28 days'
-                },
-                alternative: 'Fluoroquinolone if resistant, Chloramphenicol (2nd line)',
-                reference: 'Tanzania STG 2024'
-            },
-            'Pneumonia (Community-Acquired)': {
-                diagnosis: 'Chest X-ray, Sputum culture, Blood culture (severe)',
-                indications: 'Cough + fever + crackles/consolidation',
-                signs_symptoms: 'Cough, fever, chest pain, dyspnea, tachypnea, crackles on auscultation',
-                contraindications: 'Severe renal impairment (adjust dosing)',
-                side_effects: 'GI upset, rash, photosensitivity, headache',
-                adverse_effects: 'Anaphylaxis, Stevens-Johnson syndrome, hepatotoxicity',
-                treatment: {
-                    adult: { dose: 'Amoxicillin 500mg', frequency: '8-hourly x 5-7 days', route: 'Oral' },
-                    child: { dose: '25-45mg/kg/day', frequency: '3 divided doses', route: 'Oral' },
-                    pregnancy: { dose: 'Amoxicillin 500mg', frequency: 'TDS', route: 'Oral' },
-                    neonate: { dose: '50mg/kg/day', frequency: '2-3 divided', route: 'IV' },
-                    special: 'Severe: Ceftriaxone 2g IV 12-hourly + Oxygen + Monitor'
-                },
-                alternative: 'Cefixime, Macrolides if atypical',
-                reference: 'Tanzania STG 2024'
-            },
-            'UTI': {
-                diagnosis: 'Urine culture, Urinalysis (>5 WBC/hpf)',
-                indications: 'Dysuria + pyuria + culture positive',
-                signs_symptoms: 'Dysuria, frequency, urgency, suprapubic pain, fever (pyelonephritis)',
-                contraindications: 'Nitrofurantoin: G6PD deficiency, pregnancy >36 weeks',
-                side_effects: 'GI upset, photosensitivity, peripheral neuropathy',
-                adverse_effects: 'Stevens-Johnson syndrome, hepatotoxicity, tendon rupture',
-                treatment: {
-                    adult: { dose: 'Nitrofurantoin 100mg', frequency: 'BD x 5-7 days', route: 'Oral' },
-                    child: { dose: '5mg/kg/day', frequency: '2-4 divided doses', route: 'Oral' },
-                    pregnancy: { dose: 'Nitrofurantoin 100mg (first 2 trim)', frequency: 'BD x 5 days', route: 'Oral' },
+                    adult: { dose: 'Doxycycline 300 mg stat OR Ciprofloxacin 1g stat', frequency: 'Stat', route: 'Oral' },
+                    child: { dose: 'Erythromycin syrup 12.5mg/kg', frequency: '6 hourly for 5 days', route: 'Oral' },
+                    pregnancy: { dose: 'Erythromycin 500mg', frequency: '8 hourly for 7 days', route: 'Oral' },
                     neonate: { dose: 'Refer to specialist', frequency: 'N/A', route: 'N/A' },
-                    special: 'Pyelonephritis: Fluoroquinolone or Cephalosporin'
+                    special: 'Aggressive rehydration with IV Ringer Lactate or ORS + Zinc 20mg daily for children.'
                 },
-                alternative: 'Ciprofloxacin, Cephalexin',
-                reference: 'Tanzania STG 2024'
+                alternative: 'Azithromycin 500mg once a day for 7 days',
+                reference: 'Tanzania STG 2021 (Chapter 4.1.1)'
+            },
+            'Community Acquired Pneumonia': {
+                diagnosis: 'Chest X-ray, Sputum culture, Blood culture (severe)',
+                indications: 'Fever, cough, tachypnea, chest pain',
+                signs_symptoms: 'Cough dry or productive, dyspnea, pleuritic chest pain, crepitations/rales',
+                contraindications: 'Severe renal impairment (adjust dosing)',
+                side_effects: 'GI upset, rash',
+                adverse_effects: 'Anaphylaxis',
+                treatment: {
+                    adult: { dose: 'Erythromycin 500mg OR Ampicillin+Cloxacillin 500-1000mg', frequency: '8 hourly for 5-7 days', route: 'Oral' },
+                    child: { dose: 'Amoxicillin 25mg/kg', frequency: '8 hourly for 5 days', route: 'Oral' },
+                    pregnancy: { dose: 'Erythromycin 500mg', frequency: '8 hourly', route: 'Oral' },
+                    neonate: { dose: 'Benzyl Penicillin 50,000 units/kg', frequency: '6 hourly', route: 'IV/IM' },
+                    special: 'Severe: Ceftriaxone + Sulbactam 1.5g IV 12-hourly + Metronidazole'
+                },
+                alternative: 'Doxycycline 100mg 12-hourly or Azithromycin 500mg stat',
+                reference: 'Tanzania STG 2021 (Chapter 9.1.1.2)'
+            },
+            'Asthma (Acute Attack)': {
+                diagnosis: 'Spirometry with reversibility test, PEFR measurement',
+                indications: 'Wheeze, shortness of breath, chest tightness, prolonged exhalation',
+                signs_symptoms: 'Tachypnea, tachycardia, diffuse musical wheezes, use of accessory muscles',
+                contraindications: 'Avoid non-selective β-blockers, NSAIDs may trigger attacks',
+                side_effects: 'Tachycardia, tremors (Salbutamol)',
+                adverse_effects: 'Hypokalemia with high dose salbutamol',
+                treatment: {
+                    adult: { dose: 'Salbutamol nebulization 5mg OR Inhaler 4-10 puffs', frequency: 'Every 20 mins for 1st hour', route: 'Inhalation' },
+                    child: { dose: 'Salbutamol nebulization 2.5mg', frequency: 'Every 20 mins for 1st hour', route: 'Inhalation' },
+                    pregnancy: { dose: 'Salbutamol as above', frequency: 'PRN', route: 'Inhalation' },
+                    neonate: { dose: 'Refer to specialist', frequency: 'N/A', route: 'N/A' },
+                    special: 'Add Prednisolone 40mg (Adults) or 1-2mg/kg (Children) for 5-7 days'
+                },
+                alternative: 'Ipratropium bromide (inhalation) 0.25-0.5mg 6-8 hourly',
+                reference: 'Tanzania STG 2021 (Chapter 9.2.1)'
+            },
+            'Peptic Ulcer Disease (PUD)': {
+                diagnosis: 'Endoscopic evidence, Positive stool antigen test for H. pylori, Urease breath test',
+                indications: 'Burning epigastric abdominal pain relived by antacids',
+                signs_symptoms: 'Anorexia, early satiety, bloating, hematemesis or melena stools',
+                contraindications: 'Avoid NSAIDs',
+                side_effects: 'Headache, GI upset',
+                adverse_effects: 'Bleeding, perforation if untreated',
+                treatment: {
+                    adult: { dose: 'Omeprazole 20mg OR Pantoprazole 40mg', frequency: '24 hourly for 8 weeks', route: 'Oral' },
+                    child: { dose: 'Refer to specialist', frequency: 'N/A', route: 'N/A' },
+                    pregnancy: { dose: 'Omeprazole 20mg', frequency: '24 hourly', route: 'Oral' },
+                    neonate: { dose: 'N/A', frequency: 'N/A', route: 'N/A' },
+                    special: 'If H. Pylori positive (Triple Therapy): Omeprazole 20mg + Amoxicillin 1g + Metronidazole 400mg'
+                },
+                alternative: 'Lansoprazole 30mg or Esomeprazole 20mg',
+                reference: 'Tanzania STG 2021 (Chapter 10.2.1.2)'
+            },
+            'Pre-Eclampsia (Severe)': {
+                diagnosis: 'BP >= 160/110 mmHg, Proteinuria >= 300mg/24 hours',
+                indications: 'Elevated BP in pregnancy with features of end organ damage',
+                signs_symptoms: 'Severe headache, epigastric pain, blurring of vision, pulmonary oedema',
+                contraindications: 'ACE inhibitors/ARBs are strictly contraindicated in pregnancy',
+                side_effects: 'Hypotension, dizziness',
+                adverse_effects: 'Fetal distress if BP dropped too rapidly',
+                treatment: {
+                    adult: { dose: 'Hydralazine 5mg IV over 4 mins AND Methyldopa 500mg 8 hourly', frequency: 'Titrate to BP < 110mmHg diastolic', route: 'IV/Oral' },
+                    child: { dose: 'N/A', frequency: 'N/A', route: 'N/A' },
+                    pregnancy: { dose: 'Hydralazine IV + Methyldopa 500mg PO', frequency: 'Until BP stabilized', route: 'IV/Oral' },
+                    neonate: { dose: 'N/A', frequency: 'N/A', route: 'N/A' },
+                    special: 'Seizure Prophylaxis: Magnesium Sulfate (IV) 4g of 20% slowly over 5 mins, maintain 1g/hr'
+                },
+                alternative: 'Labetalol (IV bolus) 10-20mg stat, Nifedipine 20mg 8 hourly',
+                reference: 'Tanzania STG 2021 (Chapter 11.7.3)'
+            },
+            'Acute Otitis Media': {
+                diagnosis: 'Otoscope examination of external auditory canal and tympanic membrane',
+                indications: 'Previous upper respiratory tract infection, painful ear, fever',
+                signs_symptoms: 'Restlessness, hearing reduced, inflamed bulged tympanic membrane',
+                contraindications: 'Penicillin allergy (Use Azithromycin)',
+                side_effects: 'Diarrhea, rash',
+                adverse_effects: 'Mastoiditis if poorly treated',
+                treatment: {
+                    adult: { dose: 'Amoxicillin+Clavulanic acid 375-625mg', frequency: '12 hourly for 10 days', route: 'Oral' },
+                    child: { dose: 'Amoxicillin+Clavulanic acid 25-30mg/kg/day', frequency: 'Divided doses for 7-14 days', route: 'Oral' },
+                    pregnancy: { dose: 'Amoxicillin+Clavulanic acid', frequency: '12 hourly for 10 days', route: 'Oral' },
+                    neonate: { dose: 'Refer to specialist', frequency: 'N/A', route: 'N/A' },
+                    special: 'Add Paracetamol or Ibuprofen for pain and fever control.'
+                },
+                alternative: 'Azithromycin 500mg 24 hourly for 5 days or Ceftriaxone IV',
+                reference: 'Tanzania STG 2021 (Chapter 15.3.1)'
             }
         };
 
@@ -188,11 +239,11 @@
             const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [] });
             const [cart, setCart] = useState([]);
             const [search, setSearch] = useState("");
+            const [stgSearch, setStgSearch] = useState(""); // Deep Search state for STG
             const [isOnline, setIsOnline] = useState(navigator.onLine);
             
             const [editing, setEditing] = useState(null); 
             const [checkoutModal, setCheckoutModal] = useState(false);
-            const [historyModal, setHistoryModal] = useState(null);
             const [stgModal, setStgModal] = useState(null);
             const [medicalHistoryModal, setMedicalHistoryModal] = useState(null);
 
@@ -348,7 +399,24 @@
                 alert("Medical history added!");
             };
 
-            // ADDED: Chart Logic for Finance View
+            // Calculate Item Profitability
+            const getItemProfitability = () => {
+                const itemStats = {};
+                data.sales.forEach(sale => {
+                    (sale.items || []).forEach(item => {
+                        if (!itemStats[item.id]) {
+                            itemStats[item.id] = { name: item.brandName, qty: 0, revenue: 0, cost: 0, profit: 0 };
+                        }
+                        itemStats[item.id].qty += Number(item.qty);
+                        itemStats[item.id].revenue += (Number(item.currentPrice) * Number(item.qty));
+                        itemStats[item.id].cost += (Number(item.costPrice) * Number(item.qty));
+                        itemStats[item.id].profit += ((Number(item.currentPrice) - Number(item.costPrice)) * Number(item.qty));
+                    });
+                });
+                return Object.values(itemStats).sort((a,b) => b.profit - a.profit);
+            };
+
+            // Chart Logic for Finance View
             useEffect(() => {
                 if (view !== 'FINANCE') return;
 
@@ -401,22 +469,26 @@
                 };
             }, [view, data.sales]);
 
-            // ADDED: Calculate Item Profitability
-            const getItemProfitability = () => {
-                const itemStats = {};
-                data.sales.forEach(sale => {
-                    (sale.items || []).forEach(item => {
-                        if (!itemStats[item.id]) {
-                            itemStats[item.id] = { name: item.brandName, qty: 0, revenue: 0, cost: 0, profit: 0 };
-                        }
-                        itemStats[item.id].qty += Number(item.qty);
-                        itemStats[item.id].revenue += (Number(item.currentPrice) * Number(item.qty));
-                        itemStats[item.id].cost += (Number(item.costPrice) * Number(item.qty));
-                        itemStats[item.id].profit += ((Number(item.currentPrice) - Number(item.costPrice)) * Number(item.qty));
-                    });
-                });
-                return Object.values(itemStats).sort((a,b) => b.profit - a.profit);
-            };
+            // DEEP SEARCH FILTER FOR STG
+            const filteredSTG = Object.entries(TANZANIA_STG).filter(([disease, guide]) => {
+                if (!stgSearch) return true;
+                const term = stgSearch.toLowerCase();
+                
+                // Check if the title matches
+                if (disease.toLowerCase().includes(term)) return true;
+
+                // Recursive function to search all nested strings in the guide object
+                const searchInObj = (obj) => {
+                    for (let key in obj) {
+                        const val = obj[key];
+                        if (typeof val === 'string' && val.toLowerCase().includes(term)) return true;
+                        if (typeof val === 'object' && searchInObj(val)) return true;
+                    }
+                    return false;
+                };
+
+                return searchInObj(guide);
+            });
 
             // --- LOGIN SCREEN ---
             if (!user) {
@@ -514,9 +586,9 @@
                         {view === 'POS' && (
                             <div className={`flex ${isMobile ? 'flex-col' : 'flex-row'} gap-4 md:gap-8 h-full`}>
                                 <div className="flex-1 space-y-4 md:space-y-6">
-                                    <input onChange={(e)=>setSearch(e.target.value)} placeholder="Search..." className="w-full p-4 md:p-6 bg-slate-900 border border-slate-800 rounded-[2.5rem] font-bold outline-none focus:border-emerald-600 text-sm md:text-base" />
+                                    <input onChange={(e)=>setSearch(e.target.value)} placeholder="Search Inventory..." className="w-full p-4 md:p-6 bg-slate-900 border border-slate-800 rounded-[2.5rem] font-bold outline-none focus:border-emerald-600 text-sm md:text-base" />
                                     <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-3'} gap-3 md:gap-4`}>
-                                        {data.inventory.filter(p => (p.brandName||'').toLowerCase().includes(search)).map(p => (
+                                        {data.inventory.filter(p => (p.brandName||'').toLowerCase().includes(search.toLowerCase())).map(p => (
                                             <div key={p.id} onClick={()=>addToCart(p)} className="bg-slate-900 border border-slate-800 p-4 md:p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer transition-all active:scale-95">
                                                 <h4 className="font-black text-sm md:text-lg mb-1">{p.brandName}</h4>
                                                 <p className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase mb-3 md:mb-6">{p.strength}</p>
@@ -573,20 +645,40 @@
                             </div>
                         )}
 
-                        {/* STG */}
+                        {/* STG WITH DEEP SEARCH */}
                         {view === 'STG' && (
-                            <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800 h-full overflow-y-auto">
-                                <h2 className="text-2xl md:text-3xl font-black mb-2 uppercase">Tanzania STG</h2>
-                                <p className="text-slate-500 text-xs md:text-sm mb-6">Ministry of Health - Current Edition</p>
-                                <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4 md:gap-6`}>
-                                    {Object.entries(TANZANIA_STG).map(([disease, guide]) => (
-                                        <div key={disease} onClick={()=>setStgModal({disease, ...guide})} className="p-4 md:p-6 stg-section rounded-[2.5rem] cursor-pointer hover:opacity-80 transition-all">
-                                            <h4 className="text-emerald-400 font-black text-sm md:text-lg uppercase mb-2">{disease}</h4>
-                                            <p className="text-[9px] md:text-[10px] text-slate-500 font-bold mb-2">Signs & Symptoms</p>
-                                            <p className="text-xs md:text-sm text-slate-300 line-clamp-2">{guide.signs_symptoms}</p>
-                                            <button className="text-emerald-500 text-[10px] font-black mt-3 hover:text-emerald-400">VIEW FULL →</button>
-                                        </div>
-                                    ))}
+                            <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800 h-full flex flex-col">
+                                <div className="flex-none mb-6 md:mb-8">
+                                    <h2 className="text-2xl md:text-3xl font-black mb-2 uppercase text-emerald-500">Tanzania STG</h2>
+                                    <p className="text-slate-500 text-xs md:text-sm mb-6">Ministry of Health - Essential Medicines & Treatment Guidelines</p>
+                                    
+                                    {/* DEEP SEARCH INPUT */}
+                                    <input 
+                                        type="text" 
+                                        placeholder="🔍 Search any disease, symptom, drug name, or condition..." 
+                                        value={stgSearch}
+                                        onChange={(e) => setStgSearch(e.target.value)}
+                                        className="w-full p-4 md:p-5 bg-black border border-slate-700 rounded-[2rem] text-white outline-none focus:border-emerald-500 transition-all font-bold text-sm md:text-base shadow-inner"
+                                    />
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto no-scrollbar pr-2">
+                                    <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4 md:gap-6`}>
+                                        {filteredSTG.map(([disease, guide]) => (
+                                            <div key={disease} onClick={()=>setStgModal({disease, ...guide})} className="p-4 md:p-6 stg-section rounded-[2.5rem] cursor-pointer hover:border hover:border-emerald-500 transition-all shadow-xl">
+                                                <h4 className="text-emerald-400 font-black text-sm md:text-lg uppercase mb-2">{disease}</h4>
+                                                <p className="text-[9px] md:text-[10px] text-slate-400 font-black uppercase mb-1">Key Signs & Symptoms</p>
+                                                <p className="text-xs md:text-sm text-slate-300 line-clamp-2">{guide.signs_symptoms}</p>
+                                                <button className="text-emerald-500 text-[10px] font-black mt-4 bg-emerald-950/30 px-3 py-1 rounded-lg">READ FULL PROTOCOL →</button>
+                                            </div>
+                                        ))}
+                                        {filteredSTG.length === 0 && (
+                                            <div className="col-span-full flex flex-col items-center justify-center py-20 opacity-50">
+                                                <p className="text-4xl mb-4">🩺</p>
+                                                <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">No guidelines found matching your search</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -626,7 +718,7 @@
                                     <div className="bg-emerald-600 p-6 md:p-10 rounded-[3.5rem] text-center"><p className="text-[9px] md:text-[10px] font-black uppercase mb-2">Total Sales Vol.</p><p className="text-3xl md:text-4xl font-black">{data.sales.length} ✓</p></div>
                                 </div>
 
-                                {/* ADDED: Graph / Chart for Sales */}
+                                {/* Graph / Chart for Sales */}
                                 <div className="bg-slate-900 p-6 md:p-8 rounded-[3.5rem] border border-slate-800">
                                     <h3 className="text-xl md:text-2xl font-black uppercase mb-6 text-emerald-500">7-Day Revenue & Profit Trend</h3>
                                     <div className="w-full h-64 md:h-80">
@@ -634,7 +726,7 @@
                                     </div>
                                 </div>
 
-                                {/* ADDED: Item Profit & Loss Detail */}
+                                {/* Item Profit & Loss Detail */}
                                 <div className="bg-slate-900 p-6 md:p-8 rounded-[3.5rem] border border-slate-800">
                                     <h3 className="text-xl md:text-2xl font-black uppercase mb-6 text-purple-500">Item Performance Ledger</h3>
                                     <div className="overflow-x-auto max-h-96">
@@ -798,7 +890,7 @@
                                                     <option>MANAGER</option><option>PHARMACIST</option><option>TECHNICIAN</option><option>DISPENSER</option>
                                                 </select>
                                                 
-                                                {/* ADDED: Delete User Button */}
+                                                {/* Delete User Button */}
                                                 {editing.item.id && (
                                                     <div className="pt-2">
                                                         <button type="button" onClick={() => handleDeletePersonnel(editing.item.id)} className="w-full bg-rose-600/20 text-rose-500 border border-rose-600/50 py-3 rounded-xl font-bold hover:bg-rose-600 hover:text-white transition-all text-xs md:text-sm uppercase tracking-widest">
