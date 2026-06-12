@@ -18,6 +18,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <!-- ADDED: Chart.js for graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js').catch(e => console.log('SW registration failed'));
@@ -78,6 +80,11 @@
                 if (!window.offlineDB.db) return resolve(null);
                 const tx = window.offlineDB.db.transaction(store, 'readwrite');
                 tx.objectStore(store).put(data).onsuccess = (e) => resolve(e.target.result);
+            }),
+            delete: async (store, key) => new Promise((resolve) => {
+                if (!window.offlineDB.db) return resolve();
+                const tx = window.offlineDB.db.transaction(store, 'readwrite');
+                tx.objectStore(store).delete(key).onsuccess = () => resolve();
             })
         };
         window.offlineDB.init();
@@ -103,7 +110,6 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // COMPREHENSIVE TANZANIA STG
         const TANZANIA_STG = {
             'Malaria': {
                 diagnosis: 'Blood smear microscopy, Rapid diagnostic test (RDT)',
@@ -272,6 +278,22 @@
                 if (confirm("Logout?")) { setUser(null); setView('LOGIN'); window.location.reload(); }
             };
 
+            const handleDeletePersonnel = async (id) => {
+                if(!confirm("⚠️ WARNING: Are you sure you want to completely permanently delete this personnel? This action cannot be undone.")) return;
+                try {
+                    if (window.db && isOnline) {
+                        await window.db.collection('users').doc(id).delete();
+                    } else {
+                        await window.offlineDB.delete('users', id);
+                        await loadFromOfflineDB();
+                    }
+                    setEditing(null);
+                    alert("Personnel deleted successfully.");
+                } catch (err) {
+                    alert("Error deleting personnel: " + err.message);
+                }
+            };
+
             const addToCart = (p) => {
                 setCart(prev => {
                     const ex = prev.find(i => i.id === p.id);
@@ -324,6 +346,76 @@
                     await loadFromOfflineDB();
                 }
                 alert("Medical history added!");
+            };
+
+            // ADDED: Chart Logic for Finance View
+            useEffect(() => {
+                if (view !== 'FINANCE') return;
+
+                const last7Days = [...Array(7)].map((_, i) => {
+                    const d = new Date();
+                    d.setDate(d.getDate() - i);
+                    return d.toLocaleDateString();
+                }).reverse();
+
+                const revenueByDay = last7Days.map(date => {
+                    return data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === date)
+                                     .reduce((sum, s) => sum + s.total, 0);
+                });
+                const profitByDay = last7Days.map(date => {
+                    return data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === date)
+                                     .reduce((sum, s) => sum + s.profit, 0);
+                });
+
+                const ctx = document.getElementById('financeChart');
+                if (!ctx) return;
+                
+                if (window.financeChartInstance) {
+                    window.financeChartInstance.destroy();
+                }
+
+                window.financeChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: last7Days,
+                        datasets: [
+                            { label: 'Revenue (TZS)', data: revenueByDay, backgroundColor: '#10b981', borderRadius: 4 },
+                            { label: 'Profit (TZS)', data: profitByDay, backgroundColor: '#3b82f6', borderRadius: 4 }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#1e293b' }, ticks: { color: '#64748b' } },
+                            x: { grid: { display: false }, ticks: { color: '#64748b' } }
+                        },
+                        plugins: {
+                            legend: { labels: { color: '#cbd5e1', font: { family: 'Plus Jakarta Sans' } } }
+                        }
+                    }
+                });
+
+                return () => {
+                    if (window.financeChartInstance) window.financeChartInstance.destroy();
+                };
+            }, [view, data.sales]);
+
+            // ADDED: Calculate Item Profitability
+            const getItemProfitability = () => {
+                const itemStats = {};
+                data.sales.forEach(sale => {
+                    (sale.items || []).forEach(item => {
+                        if (!itemStats[item.id]) {
+                            itemStats[item.id] = { name: item.brandName, qty: 0, revenue: 0, cost: 0, profit: 0 };
+                        }
+                        itemStats[item.id].qty += Number(item.qty);
+                        itemStats[item.id].revenue += (Number(item.currentPrice) * Number(item.qty));
+                        itemStats[item.id].cost += (Number(item.costPrice) * Number(item.qty));
+                        itemStats[item.id].profit += ((Number(item.currentPrice) - Number(item.costPrice)) * Number(item.qty));
+                    });
+                });
+                return Object.values(itemStats).sort((a,b) => b.profit - a.profit);
             };
 
             // --- LOGIN SCREEN ---
@@ -526,18 +618,62 @@
                         {view === 'FINANCE' && (
                             <div className="space-y-6 md:space-y-10 h-full overflow-y-auto pb-10">
                                 <h2 className="text-2xl md:text-4xl font-black uppercase">Financial Ledger</h2>
+                                
+                                {/* Top Metrics */}
                                 <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-4 md:gap-6`}>
                                     <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800 text-center"><p className="text-[9px] md:text-[10px] font-black uppercase mb-2">Expenses</p><p className="text-2xl md:text-4xl font-black text-rose-500">{data.expenses.reduce((a,b)=>a+b.amount,0).toLocaleString()} TZS</p></div>
                                     <div className="bg-white text-slate-900 p-6 md:p-10 rounded-[3.5rem] text-center"><p className="text-[9px] md:text-[10px] font-black uppercase mb-2">Net Profit</p><p className="text-2xl md:text-4xl font-black text-emerald-600">{(data.sales.reduce((a,b)=>a+b.profit,0)-data.expenses.reduce((a,b)=>a+b.amount,0)).toLocaleString()} TZS</p></div>
-                                    <div className="bg-emerald-600 p-6 md:p-10 rounded-[3.5rem] text-center"><p className="text-[9px] md:text-[10px] font-black uppercase mb-2">Total Sales</p><p className="text-3xl md:text-4xl font-black">{data.sales.length} ✓</p></div>
+                                    <div className="bg-emerald-600 p-6 md:p-10 rounded-[3.5rem] text-center"><p className="text-[9px] md:text-[10px] font-black uppercase mb-2">Total Sales Vol.</p><p className="text-3xl md:text-4xl font-black">{data.sales.length} ✓</p></div>
                                 </div>
 
-                                {/* ADDED: SALES HISTORY TABLE */}
+                                {/* ADDED: Graph / Chart for Sales */}
+                                <div className="bg-slate-900 p-6 md:p-8 rounded-[3.5rem] border border-slate-800">
+                                    <h3 className="text-xl md:text-2xl font-black uppercase mb-6 text-emerald-500">7-Day Revenue & Profit Trend</h3>
+                                    <div className="w-full h-64 md:h-80">
+                                        <canvas id="financeChart"></canvas>
+                                    </div>
+                                </div>
+
+                                {/* ADDED: Item Profit & Loss Detail */}
+                                <div className="bg-slate-900 p-6 md:p-8 rounded-[3.5rem] border border-slate-800">
+                                    <h3 className="text-xl md:text-2xl font-black uppercase mb-6 text-purple-500">Item Performance Ledger</h3>
+                                    <div className="overflow-x-auto max-h-96">
+                                        <table className="w-full text-left text-xs md:text-base">
+                                            <thead className="sticky top-0 bg-slate-900 z-10">
+                                                <tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4">
+                                                    <th className="pb-4 px-2 min-w-[150px]">Product</th>
+                                                    <th className="pb-4 px-2">Units Sold</th>
+                                                    <th className="pb-4 px-2">Revenue (TZS)</th>
+                                                    <th className="pb-4 px-2">Cost (TZS)</th>
+                                                    <th className="pb-4 px-2">Net Profit/Loss</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {getItemProfitability().map((stat, idx) => (
+                                                    <tr key={idx} className="border-b border-slate-800/50 hover:bg-black/50">
+                                                        <td className="py-4 px-2 font-black text-white">{stat.name}</td>
+                                                        <td className="py-4 px-2 text-slate-300">{stat.qty}</td>
+                                                        <td className="py-4 px-2 text-blue-400">{stat.revenue.toLocaleString()}</td>
+                                                        <td className="py-4 px-2 text-rose-400">{stat.cost.toLocaleString()}</td>
+                                                        <td className={`py-4 px-2 font-black ${stat.profit >= 0 ? 'text-emerald-400' : 'text-rose-500'}`}>
+                                                            {stat.profit > 0 ? '+' : ''}{stat.profit.toLocaleString()}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                {getItemProfitability().length === 0 && (
+                                                    <tr><td colSpan="5" className="text-center py-8 text-slate-500 font-bold uppercase">No item sales recorded</td></tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* SALES HISTORY TABLE */}
                                 <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800">
                                     <h3 className="text-xl md:text-2xl font-black uppercase mb-6 text-blue-500">Sales History</h3>
-                                    <div className="overflow-x-auto">
+                                    <div className="overflow-x-auto max-h-96">
                                         <table className="w-full text-left text-xs md:text-base">
-                                            <thead>
+                                            <thead className="sticky top-0 bg-slate-900 z-10">
                                                 <tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4">
                                                     <th className="pb-4 px-2 min-w-[120px]">Date</th>
                                                     <th className="pb-4 px-2 min-w-[200px]">Items Sold</th>
@@ -590,7 +726,7 @@
                             </div>
                         )}
 
-                        {/* EDIT MODALS - FIXED TO SAVE DIRECTLY TO FIREBASE */}
+                        {/* EDIT MODALS */}
                         {editing && (
                             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh]">
@@ -603,7 +739,6 @@
                                             let collectionName = '';
                                             let finalData = {};
                                             
-                                            // Process the Form Data based on Type
                                             if (editing.type === 'PRODUCT') {
                                                 collectionName = 'inventory';
                                                 finalData = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock) };
@@ -617,7 +752,6 @@
                                                 finalData = editing.item.id ? payload : { ...payload, status: 'ACTIVE' };
                                             }
 
-                                            // Push to Database correctly!
                                             if (window.db && isOnline) {
                                                 if (editing.item.id) {
                                                     await window.db.collection(collectionName).doc(editing.item.id).update(finalData);
@@ -625,7 +759,6 @@
                                                     await window.db.collection(collectionName).add(finalData);
                                                 }
                                             } else {
-                                                // Save offline locally if no internet
                                                 const newId = editing.item.id || `${collectionName.substring(0,3)}_${Date.now()}`;
                                                 await window.offlineDB.put(collectionName, { id: newId, ...finalData });
                                                 await loadFromOfflineDB();
@@ -664,6 +797,15 @@
                                                 <select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base">
                                                     <option>MANAGER</option><option>PHARMACIST</option><option>TECHNICIAN</option><option>DISPENSER</option>
                                                 </select>
+                                                
+                                                {/* ADDED: Delete User Button */}
+                                                {editing.item.id && (
+                                                    <div className="pt-2">
+                                                        <button type="button" onClick={() => handleDeletePersonnel(editing.item.id)} className="w-full bg-rose-600/20 text-rose-500 border border-rose-600/50 py-3 rounded-xl font-bold hover:bg-rose-600 hover:text-white transition-all text-xs md:text-sm uppercase tracking-widest">
+                                                            🗑️ Delete Personnel
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </>
                                         )}
 
@@ -676,8 +818,6 @@
                             </div>
                         )}
 
-                        {/* OTHER MODALS (STG, HISTORY, CHECKOUT)... */}
-                        
                         {/* MEDICAL HISTORY MODAL */}
                         {medicalHistoryModal && (
                             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
