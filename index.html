@@ -103,7 +103,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // COMPREHENSIVE TANZANIA STG WITH ALL PATIENT GROUPS
+        // COMPREHENSIVE TANZANIA STG
         const TANZANIA_STG = {
             'Malaria': {
                 diagnosis: 'Blood smear microscopy, Rapid diagnostic test (RDT)',
@@ -156,74 +156,6 @@
                 alternative: 'Cefixime, Macrolides if atypical',
                 reference: 'Tanzania STG 2024'
             },
-            'Tuberculosis (Drug-Sensitive)': {
-                diagnosis: 'Sputum smear microscopy, GeneXpert MTB/RIF, Culture',
-                indications: 'Positive smear/GeneXpert + clinical features',
-                signs_symptoms: 'Chronic cough >3 weeks, hemoptysis, fever, night sweats, weight loss, dyspnea',
-                contraindications: 'Severe liver disease (monitor LFTs)',
-                side_effects: 'Peripheral neuropathy, nausea, GI upset, discoloration of body fluids',
-                adverse_effects: 'Hepatotoxicity, optic neuritis, gout, ototoxicity',
-                treatment: {
-                    adult: { dose: 'H 300mg/R 600mg/Z 1500mg/E 800mg daily', frequency: '2 months intensive + 4 months continuation', route: 'Oral' },
-                    child: { dose: 'Weight-based dosing', frequency: 'Same phases', route: 'Oral' },
-                    pregnancy: { dose: 'H/R/E (avoid Z)', frequency: '2mo + 7mo', route: 'Oral' },
-                    neonate: { dose: 'Refer to TB center', frequency: 'Standard regimen', route: 'Oral' },
-                    special: 'TB/HIV: Start TB therapy first, ART after 2 weeks (CD4 <50: 2 weeks)'
-                },
-                alternative: 'Levofloxacin-based for drug resistance',
-                reference: 'Tanzania STG 2024 - TB/HIV'
-            },
-            'Hypertension': {
-                diagnosis: 'BP ≥140/90 on 3 occasions',
-                indications: 'Sustained elevated BP',
-                signs_symptoms: 'Often asymptomatic, headache, chest pain, dyspnea in severe cases',
-                contraindications: 'ACE-I if pregnant (teratogenic), CCB if cardiogenic shock',
-                side_effects: 'Dizziness, cough (ACE-I), edema (CCB), hypokalemia (thiazide)',
-                adverse_effects: 'Angioedema, hyperkalemia, acute MI, stroke',
-                treatment: {
-                    adult: { dose: 'Lisinopril 10mg or Amlodipine 5mg daily', frequency: 'Once daily', route: 'Oral' },
-                    child: { dose: 'Weight-based dosing', frequency: 'Daily', route: 'Oral' },
-                    pregnancy: { dose: 'Methyldopa 250mg or Nifedipine', frequency: 'BD-TDS', route: 'Oral' },
-                    neonate: { dose: 'Refer to specialist', frequency: 'N/A', route: 'N/A' },
-                    special: 'Diabetics: ACE-I preferred. Elderly: Start low, titrate slowly'
-                },
-                alternative: 'Atenolol, Hydrochlorothiazide, Calcium-channel blockers',
-                reference: 'Tanzania STG 2024'
-            },
-            'Diabetes Type 2': {
-                diagnosis: 'FBS ≥126 mg/dL or HbA1c ≥6.5% or Random BS ≥200 + symptoms',
-                indications: 'Confirmed hyperglycemia',
-                signs_symptoms: 'Polyuria, polydipsia, fatigue, weight loss, recurrent infections',
-                contraindications: 'Metformin: eGFR <30, lactic acidosis risk',
-                side_effects: 'GI upset (Metformin), hypoglycemia (sulfonylurea), peripheral edema (TZD)',
-                adverse_effects: 'Lactic acidosis, heart failure, DKA',
-                treatment: {
-                    adult: { dose: 'Metformin 500mg', frequency: 'BD-TDS (max 2550mg/day)', route: 'Oral' },
-                    child: { dose: 'Not first-line in children', frequency: 'Refer to specialist', route: 'N/A' },
-                    pregnancy: { dose: 'Insulin is preferred', frequency: 'BD-TDS', route: 'SC injection' },
-                    neonate: { dose: 'N/A - Neonatal diabetes rare', frequency: 'N/A', route: 'N/A' },
-                    special: 'Elderly: Avoid hypoglycemia. Renal: Adjust dose per eGFR'
-                },
-                alternative: 'DPP-4 inhibitors, GLP-1 agonists, SGLT2 inhibitors',
-                reference: 'Tanzania STG 2024'
-            },
-            'HIV/AIDS (ART)': {
-                diagnosis: 'HIV antibody test (ELISA), CD4 count, VL test',
-                indications: 'CD4 <350 or any AIDS-defining illness',
-                signs_symptoms: 'Fever, lymphadenopathy, diarrhea, oral candidiasis, TB, PCP',
-                contraindications: 'Nevirapine: CD4 >250 women/400 men (teratogenic)',
-                side_effects: 'Lipodystrophy, GI upset, rash, peripheral neuropathy',
-                adverse_effects: 'Stevens-Johnson syndrome, immune reconstitution inflammatory syndrome (IRIS)',
-                treatment: {
-                    adult: { dose: 'TDF 300mg/3TC 300mg/DTG 50mg', frequency: 'Once daily', route: 'Oral' },
-                    child: { dose: 'Weight-based dosing', frequency: 'BD-TDS', route: 'Oral/liquid' },
-                    pregnancy: { dose: 'TDF/3TC/DTG preferred', frequency: 'Once daily', route: 'Oral' },
-                    neonate: { dose: 'Refer to specialist', frequency: 'PMTCT prophylaxis', route: 'Oral/IV' },
-                    special: 'TB coinfection: Rifampicin-based TB + adjusted ART'
-                },
-                alternative: 'ABC/3TC/DTG, EFV-based (if DTG contraindicated)',
-                reference: 'Tanzania STG 2024 - ART Guidelines'
-            },
             'UTI': {
                 diagnosis: 'Urine culture, Urinalysis (>5 WBC/hpf)',
                 indications: 'Dysuria + pyuria + culture positive',
@@ -239,40 +171,6 @@
                     special: 'Pyelonephritis: Fluoroquinolone or Cephalosporin'
                 },
                 alternative: 'Ciprofloxacin, Cephalexin',
-                reference: 'Tanzania STG 2024'
-            },
-            'Acute Diarrhea': {
-                diagnosis: 'Clinical + Stool culture if severe',
-                indications: '≥3 loose stools per day',
-                signs_symptoms: 'Loose/watery stools, abdominal cramping, dehydration signs',
-                contraindications: 'Antimotility: dysentery (blood in stool)',
-                side_effects: 'Minimal with ORS',
-                adverse_effects: 'Severe dehydration, electrolyte imbalance, sepsis',
-                treatment: {
-                    adult: { dose: 'ORS ad libitum', frequency: 'Continue until rehydrated', route: 'Oral' },
-                    child: { dose: 'ORS ad libitum', frequency: 'Continue + Zinc 10mg daily x 10-14 days', route: 'Oral' },
-                    pregnancy: { dose: 'ORS ad libitum', frequency: 'Zinc safe in pregnancy', route: 'Oral' },
-                    neonate: { dose: 'ORS small frequent feeds', frequency: 'Zinc 10mg daily', route: 'Oral' },
-                    special: 'Severe: IV fluids + Antibiotics if dysentery'
-                },
-                alternative: 'Probiotics, Zinc supplementation',
-                reference: 'Tanzania STG 2024'
-            },
-            'Acute Respiratory Infection': {
-                diagnosis: 'Clinical diagnosis (no antibiotics routine)',
-                indications: 'Cough, coryza, sore throat',
-                signs_symptoms: 'Cough, runny nose, sore throat, sneezing, mild fever',
-                contraindications: 'Avoid antibiotics unless bacterial suspected',
-                side_effects: 'Minimal - supportive care',
-                adverse_effects: 'Secondary bacterial infection',
-                treatment: {
-                    adult: { dose: 'Paracetamol 500-1000mg', frequency: '4-6 hourly (max 4g/day)', route: 'Oral' },
-                    child: { dose: '15mg/kg', frequency: '4-6 hourly', route: 'Oral/liquid' },
-                    pregnancy: { dose: 'Paracetamol 500mg', frequency: '4-6 hourly', route: 'Oral' },
-                    neonate: { dose: 'Paracetamol 10-15mg/kg', frequency: '4-6 hourly', route: 'Oral/rectal' },
-                    special: 'Supportive: fluids, rest, humidifier'
-                },
-                alternative: 'Ibuprofen if not contraindicated',
                 reference: 'Tanzania STG 2024'
             }
         };
@@ -410,7 +308,6 @@
 
             const addMedicalHistory = async (patientId, record) => {
                 const historyRecord = {
-                    id: `hist_${Date.now()}`,
                     patientId,
                     date: new Date().toISOString(),
                     diagnosis: record.diagnosis,
@@ -419,8 +316,13 @@
                     allergies: record.allergies,
                     notes: record.notes
                 };
-                await window.offlineDB.put('medicalHistory', historyRecord);
-                await loadFromOfflineDB();
+
+                if (window.db && isOnline) {
+                    await window.db.collection("medicalHistory").add(historyRecord);
+                } else {
+                    await window.offlineDB.put('medicalHistory', { id: `hist_${Date.now()}`, ...historyRecord });
+                    await loadFromOfflineDB();
+                }
                 alert("Medical history added!");
             };
 
@@ -462,7 +364,7 @@
                                         {name: 'INVENTORY', icon: '📦', view: 'STOO', access: 'TECHNICIAN'},
                                         {name: 'CLIENTS', icon: '👥', view: 'PATIENTS'},
                                         {name: 'STG', icon: '📖', view: 'STG'},
-                                        {name: 'FINANCE', icon: '💰', view: 'FINANCE', access: 'MANAGER'},
+                                        {name: 'FINANCE & SALES', icon: '💰', view: 'FINANCE', access: 'MANAGER'},
                                         {name: 'STAFF', icon: '👤', view: 'USERS', access: 'MANAGER'},
                                     ].map(item => !item.access || hasAccess(item.access) ? (
                                         <button key={item.view} onClick={()=>setView(item.view)} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase ${view===item.view?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>
@@ -486,7 +388,7 @@
                                 {hasAccess('TECHNICIAN') && <option value="STOO">Inventory</option>}
                                 <option value="PATIENTS">Clients</option>
                                 <option value="STG">STG</option>
-                                {hasAccess('MANAGER') && <option value="FINANCE">Finance</option>}
+                                {hasAccess('MANAGER') && <option value="FINANCE">Finance & Sales</option>}
                                 {hasAccess('MANAGER') && <option value="USERS">Staff</option>}
                             </select>
                         )}
@@ -579,7 +481,7 @@
                             </div>
                         )}
 
-                        {/* STG WITH COMPREHENSIVE DATA */}
+                        {/* STG */}
                         {view === 'STG' && (
                             <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800 h-full overflow-y-auto">
                                 <h2 className="text-2xl md:text-3xl font-black mb-2 uppercase">Tanzania STG</h2>
@@ -620,14 +522,54 @@
                             </div>
                         )}
 
-                        {/* FINANCE */}
+                        {/* FINANCE & SALES HISTORY */}
                         {view === 'FINANCE' && (
-                            <div className="space-y-6 md:space-y-10 h-full overflow-y-auto">
+                            <div className="space-y-6 md:space-y-10 h-full overflow-y-auto pb-10">
                                 <h2 className="text-2xl md:text-4xl font-black uppercase">Financial Ledger</h2>
                                 <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-4 md:gap-6`}>
                                     <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800 text-center"><p className="text-[9px] md:text-[10px] font-black uppercase mb-2">Expenses</p><p className="text-2xl md:text-4xl font-black text-rose-500">{data.expenses.reduce((a,b)=>a+b.amount,0).toLocaleString()} TZS</p></div>
                                     <div className="bg-white text-slate-900 p-6 md:p-10 rounded-[3.5rem] text-center"><p className="text-[9px] md:text-[10px] font-black uppercase mb-2">Net Profit</p><p className="text-2xl md:text-4xl font-black text-emerald-600">{(data.sales.reduce((a,b)=>a+b.profit,0)-data.expenses.reduce((a,b)=>a+b.amount,0)).toLocaleString()} TZS</p></div>
-                                    <div className="bg-emerald-600 p-6 md:p-10 rounded-[3.5rem] text-center"><p className="text-[9px] md:text-[10px] font-black uppercase mb-2">Target</p><p className="text-3xl md:text-4xl font-black">100% ✓</p></div>
+                                    <div className="bg-emerald-600 p-6 md:p-10 rounded-[3.5rem] text-center"><p className="text-[9px] md:text-[10px] font-black uppercase mb-2">Total Sales</p><p className="text-3xl md:text-4xl font-black">{data.sales.length} ✓</p></div>
+                                </div>
+
+                                {/* ADDED: SALES HISTORY TABLE */}
+                                <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800">
+                                    <h3 className="text-xl md:text-2xl font-black uppercase mb-6 text-blue-500">Sales History</h3>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-xs md:text-base">
+                                            <thead>
+                                                <tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4">
+                                                    <th className="pb-4 px-2 min-w-[120px]">Date</th>
+                                                    <th className="pb-4 px-2 min-w-[200px]">Items Sold</th>
+                                                    <th className="pb-4 px-2">Method</th>
+                                                    <th className="pb-4 px-2">Total (TZS)</th>
+                                                    <th className="pb-4 px-2">Staff</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {data.sales.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).map(sale => (
+                                                    <tr key={sale.id} className="border-b border-slate-800/50 hover:bg-black/50">
+                                                        <td className="py-4 px-2 text-slate-300">{new Date(sale.timestamp).toLocaleString()}</td>
+                                                        <td className="py-4 px-2 text-slate-400">
+                                                            {sale.items?.map(i => `${i.qty}x ${i.brandName}`).join(', ')}
+                                                        </td>
+                                                        <td className="py-4 px-2">
+                                                            <span className={`px-2 py-1 rounded text-[10px] font-black ${sale.method === 'CASH' ? 'bg-emerald-900 text-emerald-400' : sale.method === 'DEBT' ? 'bg-rose-900 text-rose-400' : 'bg-blue-900 text-blue-400'}`}>
+                                                                {sale.method}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-4 px-2 font-black text-emerald-400">{Number(sale.total).toLocaleString()}</td>
+                                                        <td className="py-4 px-2 text-slate-500">{sale.soldBy}</td>
+                                                    </tr>
+                                                ))}
+                                                {data.sales.length === 0 && (
+                                                    <tr>
+                                                        <td colSpan="5" className="text-center py-8 text-slate-500 font-bold uppercase">No sales recorded yet</td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -644,6 +586,149 @@
                                             <button onClick={()=>setEditing({type: 'USER', item: u})} className="px-4 md:px-6 py-2 bg-slate-900 text-blue-400 font-black text-[9px] md:text-[10px] rounded-lg hover:bg-blue-600">MANAGE</button>
                                         </div>
                                     ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* EDIT MODALS - FIXED TO SAVE DIRECTLY TO FIREBASE */}
+                        {editing && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh]">
+                                    <h3 className="text-2xl md:text-3xl font-black text-emerald-500 uppercase mb-6 md:mb-8">Modify Profile</h3>
+                                    
+                                    <form onSubmit={async (e) => {
+                                        e.preventDefault();
+                                        const payload = Object.fromEntries(new FormData(e.target));
+                                        try {
+                                            let collectionName = '';
+                                            let finalData = {};
+                                            
+                                            // Process the Form Data based on Type
+                                            if (editing.type === 'PRODUCT') {
+                                                collectionName = 'inventory';
+                                                finalData = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock) };
+                                            } 
+                                            else if (editing.type === 'PATIENT') {
+                                                collectionName = 'patients';
+                                                finalData = editing.item.id ? payload : { ...payload, creditBalance: 0 };
+                                            }
+                                            else if (editing.type === 'USER') {
+                                                collectionName = 'users';
+                                                finalData = editing.item.id ? payload : { ...payload, status: 'ACTIVE' };
+                                            }
+
+                                            // Push to Database correctly!
+                                            if (window.db && isOnline) {
+                                                if (editing.item.id) {
+                                                    await window.db.collection(collectionName).doc(editing.item.id).update(finalData);
+                                                } else {
+                                                    await window.db.collection(collectionName).add(finalData);
+                                                }
+                                            } else {
+                                                // Save offline locally if no internet
+                                                const newId = editing.item.id || `${collectionName.substring(0,3)}_${Date.now()}`;
+                                                await window.offlineDB.put(collectionName, { id: newId, ...finalData });
+                                                await loadFromOfflineDB();
+                                            }
+                                            
+                                            setEditing(null);
+                                            alert("Saved Successfully!");
+                                        } catch (err) { alert("Error: " + err.message); }
+                                    }} className="space-y-4">
+
+                                        {editing.type === 'PRODUCT' && (
+                                            <>
+                                                <input name="brandName" defaultValue={editing.item.brandName || ''} placeholder="Brand Name" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                <input name="price" type="number" defaultValue={editing.item.price || 0} placeholder="Sell Price" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                <input name="costPrice" type="number" defaultValue={editing.item.costPrice || 0} placeholder="Cost Price" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                <input name="stock" type="number" defaultValue={editing.item.stock || 0} placeholder="Stock" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                            </>
+                                        )}
+
+                                        {editing.type === 'PATIENT' && (
+                                            <>
+                                                <input name="name" defaultValue={editing.item.name || ''} placeholder="Full Name" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                <input name="age" type="number" defaultValue={editing.item.age || ''} placeholder="Age" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                <select name="sex" defaultValue={editing.item.sex || 'M'} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base">
+                                                    <option>M</option><option>F</option>
+                                                </select>
+                                                <input name="phone" defaultValue={editing.item.phone || ''} placeholder="Phone" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                <input name="address" defaultValue={editing.item.address || ''} placeholder="Address" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                            </>
+                                        )}
+
+                                        {editing.type === 'USER' && (
+                                            <>
+                                                <input name="username" defaultValue={editing.item.username || ''} placeholder="Username" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                <input name="pin" defaultValue={editing.item.pin || ''} placeholder="PIN (Password)" maxLength="4" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                <select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base">
+                                                    <option>MANAGER</option><option>PHARMACIST</option><option>TECHNICIAN</option><option>DISPENSER</option>
+                                                </select>
+                                            </>
+                                        )}
+
+                                        <div className="flex gap-3 md:gap-4 pt-6 md:pt-8">
+                                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-4 md:py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500 transition-all text-sm md:text-base">SAVE</button>
+                                            <button type="button" onClick={()=>setEditing(null)} className="flex-1 bg-black border border-slate-800 text-white py-4 md:py-5 rounded-[2rem] font-bold hover:border-slate-600 transition text-sm md:text-base">CANCEL</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* OTHER MODALS (STG, HISTORY, CHECKOUT)... */}
+                        
+                        {/* MEDICAL HISTORY MODAL */}
+                        {medicalHistoryModal && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh]">
+                                    <h3 className="text-2xl md:text-3xl font-black text-emerald-500 uppercase mb-4">Medical History: {medicalHistoryModal.name}</h3>
+                                    
+                                    <form onSubmit={(e) => {
+                                        e.preventDefault();
+                                        const fd = new FormData(e.target);
+                                        addMedicalHistory(medicalHistoryModal.id, {
+                                            diagnosis: fd.get('diagnosis'),
+                                            treatment: fd.get('treatment'),
+                                            drugs: fd.get('drugs'),
+                                            allergies: fd.get('allergies'),
+                                            notes: fd.get('notes')
+                                        });
+                                        setMedicalHistoryModal(null);
+                                    }} className="space-y-4 mb-6">
+                                        <input name="diagnosis" placeholder="Diagnosis" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                        <input name="treatment" placeholder="Treatment Given" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                        <input name="drugs" placeholder="Drugs Prescribed" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                        <input name="allergies" placeholder="Known Allergies" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                        <textarea name="notes" placeholder="Additional Notes" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                        <button type="submit" className="w-full bg-emerald-600 text-white py-3 md:py-4 rounded-2xl font-black shadow-lg hover:bg-emerald-500 transition-all text-sm md:text-base">ADD RECORD</button>
+                                    </form>
+
+                                    <div className="space-y-3">
+                                        <p className="font-black text-slate-500 text-xs uppercase">Recent Records</p>
+                                        {data.medicalHistory.filter(h => h.patientId === medicalHistoryModal.id).map(h => (
+                                            <div key={h.id} className="bg-black p-3 md:p-4 rounded-2xl border border-slate-800 text-xs md:text-sm">
+                                                <p className="font-black text-emerald-400">{h.diagnosis}</p>
+                                                <p className="text-slate-400">{new Date(h.date).toLocaleDateString()}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <button onClick={()=>setMedicalHistoryModal(null)} className="w-full mt-6 text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white">CLOSE</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* CHECKOUT MODAL */}
+                        {checkoutModal && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-sm p-6 md:p-10 rounded-[3.5rem] shadow-2xl text-center">
+                                    <h3 className="text-2xl md:text-3xl font-black text-emerald-500 italic mb-4">Finalize Bill</h3>
+                                    <div className="space-y-3 md:space-y-4 mb-6 md:mb-10">
+                                        <button onClick={()=>{finalizeSale('CASH'); setCheckoutModal(false);}} className="w-full py-4 md:py-5 bg-emerald-600 text-white rounded-3xl font-black shadow-xl hover:bg-emerald-500 transition-all text-sm md:text-base">💵 CASH</button>
+                                        <button onClick={()=>{finalizeSale('MOBILE'); setCheckoutModal(false);}} className="w-full py-4 md:py-5 bg-blue-600 text-white rounded-3xl font-black shadow-xl hover:bg-blue-500 transition-all text-sm md:text-base">📱 MOBILE</button>
+                                    </div>
+                                    <button onClick={()=>setCheckoutModal(false)} className="text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white">CANCEL</button>
                                 </div>
                             </div>
                         )}
@@ -729,127 +814,7 @@
                                 </div>
                             </div>
                         )}
-
-                        {/* MEDICAL HISTORY MODAL */}
-                        {medicalHistoryModal && (
-                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
-                                <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh]">
-                                    <h3 className="text-2xl md:text-3xl font-black text-emerald-500 uppercase mb-4">Medical History: {medicalHistoryModal.name}</h3>
-                                    
-                                    <form onSubmit={(e) => {
-                                        e.preventDefault();
-                                        const fd = new FormData(e.target);
-                                        addMedicalHistory(medicalHistoryModal.id, {
-                                            diagnosis: fd.get('diagnosis'),
-                                            treatment: fd.get('treatment'),
-                                            drugs: fd.get('drugs'),
-                                            allergies: fd.get('allergies'),
-                                            notes: fd.get('notes')
-                                        });
-                                        setMedicalHistoryModal(null);
-                                    }} className="space-y-4 mb-6">
-                                        <input name="diagnosis" placeholder="Diagnosis" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                        <input name="treatment" placeholder="Treatment Given" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                        <input name="drugs" placeholder="Drugs Prescribed" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                        <input name="allergies" placeholder="Known Allergies" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                        <textarea name="notes" placeholder="Additional Notes" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                        <button type="submit" className="w-full bg-emerald-600 text-white py-3 md:py-4 rounded-2xl font-black shadow-lg hover:bg-emerald-500 transition-all text-sm md:text-base">ADD RECORD</button>
-                                    </form>
-
-                                    <div className="space-y-3">
-                                        <p className="font-black text-slate-500 text-xs uppercase">Recent Records</p>
-                                        {data.medicalHistory.filter(h => h.patientId === medicalHistoryModal.id).map(h => (
-                                            <div key={h.id} className="bg-black p-3 md:p-4 rounded-2xl border border-slate-800 text-xs md:text-sm">
-                                                <p className="font-black text-emerald-400">{h.diagnosis}</p>
-                                                <p className="text-slate-400">{new Date(h.date).toLocaleDateString()}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    <button onClick={()=>setMedicalHistoryModal(null)} className="w-full mt-6 text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white">CLOSE</button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* EDIT MODALS */}
-                        {editing && (
-                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
-                                <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh]">
-                                    <h3 className="text-2xl md:text-3xl font-black text-emerald-500 uppercase mb-6 md:mb-8">Modify Profile</h3>
-                                    
-                                    <form onSubmit={async (e) => {
-                                        e.preventDefault();
-                                        const payload = Object.fromEntries(new FormData(e.target));
-                                        try {
-                                            if (editing.type === 'PRODUCT') {
-                                                const pData = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock) };
-                                                await window.offlineDB.put('inventory', editing.item.id ? {id: editing.item.id, ...pData} : { id: `prod_${Date.now()}`, ...pData });
-                                            } 
-                                            else if (editing.type === 'PATIENT') {
-                                                await window.offlineDB.put('patients', editing.item.id ? {id: editing.item.id, ...payload} : { id: `pat_${Date.now()}`, ...payload, creditBalance: 0 });
-                                            }
-                                            else if (editing.type === 'USER') {
-                                                await window.offlineDB.put('users', editing.item.id ? {id: editing.item.id, ...payload} : { id: `usr_${Date.now()}`, ...payload, status: 'ACTIVE' });
-                                            }
-                                            await loadFromOfflineDB();
-                                            setEditing(null);
-                                            alert("Saved!");
-                                        } catch (err) { alert("Error: " + err.message); }
-                                    }} className="space-y-4">
-
-                                        {editing.type === 'PRODUCT' && (
-                                            <>
-                                                <input name="brandName" defaultValue={editing.item.brandName || ''} placeholder="Brand Name" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="price" type="number" defaultValue={editing.item.price || 0} placeholder="Sell Price" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="costPrice" type="number" defaultValue={editing.item.costPrice || 0} placeholder="Cost Price" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="stock" type="number" defaultValue={editing.item.stock || 0} placeholder="Stock" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                            </>
-                                        )}
-
-                                        {editing.type === 'PATIENT' && (
-                                            <>
-                                                <input name="name" defaultValue={editing.item.name || ''} placeholder="Full Name" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="age" type="number" defaultValue={editing.item.age || ''} placeholder="Age" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <select name="sex" defaultValue={editing.item.sex || 'M'} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base">
-                                                    <option>M</option><option>F</option>
-                                                </select>
-                                                <input name="phone" defaultValue={editing.item.phone || ''} placeholder="Phone" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="address" defaultValue={editing.item.address || ''} placeholder="Address" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                            </>
-                                        )}
-
-                                        {editing.type === 'USER' && (
-                                            <>
-                                                <input name="username" defaultValue={editing.item.username || ''} placeholder="Username" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="pin" defaultValue={editing.item.pin || ''} placeholder="PIN" maxLength="4" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base">
-                                                    <option>MANAGER</option><option>PHARMACIST</option><option>TECHNICIAN</option><option>DISPENSER</option>
-                                                </select>
-                                            </>
-                                        )}
-
-                                        <div className="flex gap-3 md:gap-4 pt-6 md:pt-8">
-                                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-4 md:py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500 transition-all text-sm md:text-base">SAVE</button>
-                                            <button type="button" onClick={()=>setEditing(null)} className="flex-1 bg-black border border-slate-800 text-white py-4 md:py-5 rounded-[2rem] font-bold hover:border-slate-600 transition text-sm md:text-base">CANCEL</button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* CHECKOUT MODAL */}
-                        {checkoutModal && (
-                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
-                                <div className="bg-slate-900 border border-slate-800 w-full max-w-sm p-6 md:p-10 rounded-[3.5rem] shadow-2xl text-center">
-                                    <h3 className="text-2xl md:text-3xl font-black text-emerald-500 italic mb-4">Finalize Bill</h3>
-                                    <div className="space-y-3 md:space-y-4 mb-6 md:mb-10">
-                                        <button onClick={()=>{finalizeSale('CASH'); setCheckoutModal(false);}} className="w-full py-4 md:py-5 bg-emerald-600 text-white rounded-3xl font-black shadow-xl hover:bg-emerald-500 transition-all text-sm md:text-base">💵 CASH</button>
-                                        <button onClick={()=>{finalizeSale('MOBILE'); setCheckoutModal(false);}} className="w-full py-4 md:py-5 bg-blue-600 text-white rounded-3xl font-black shadow-xl hover:bg-blue-500 transition-all text-sm md:text-base">📱 MOBILE</button>
-                                    </div>
-                                    <button onClick={()=>setCheckoutModal(false)} className="text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white">CANCEL</button>
-                                </div>
-                            </div>
-                        )}
+                        
                     </main>
                 </div>
             );
