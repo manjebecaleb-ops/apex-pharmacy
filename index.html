@@ -1,3 +1,5 @@
+--- START OF FILE ai_studio_code (76).html ---
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -33,7 +35,6 @@
         .offline-badge { position: fixed; top-4; right-4; background: #dc2626; padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: bold; z-index: 40; }
         .sync-badge { position: fixed; top-4; right-4; background: #10b981; padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: bold; z-index: 40; animation: pulse 2s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .stg-section { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-left: 4px solid #10b981; }
         .patient-history { max-height: 200px; overflow-y: auto; }
         @media (max-width: 768px) { 
             .sidebar-hidden { display: none; } 
@@ -53,7 +54,7 @@
         window.offlineDB = {
             init: async function() {
                 return new Promise((resolve) => {
-                    const request = indexedDB.open('ApexPharmacy', 1);
+                    const request = indexedDB.open('ApexPharmacy', 2);
                     request.onsuccess = () => { this.db = request.result; resolve(this.db); };
                     request.onupgradeneeded = (e) => {
                         const db = e.target.result;
@@ -109,160 +110,20 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        const TANZANIA_STG = {
-            'Uncomplicated Malaria': {
-                diagnosis: 'Confirmed by microscopy or mRDT regardless of whether fever is present.',
-                indications: 'Fever, headache, joint pains, malaise, vomiting, diarrhoea',
-                signs_symptoms: 'Body ache, poor appetite, pallor, enlarged spleen',
-                contraindications: 'Use Dihydroartemisinin-piperaquine if ALu fails or is contraindicated.',
-                side_effects: 'Nausea, vomiting, abdominal pain',
-                adverse_effects: 'Treatment failure if parasite antigens persist',
-                treatment: {
-                    adult: { dose: 'Artemether+Lumefantrine (ALu) 20mg+120mg: 4 tablets', frequency: 'Twice daily for 3 days', route: 'Oral' },
-                    child: { dose: 'ALu based on weight (e.g. 5-14kg: 1 tablet, 15-24kg: 2 tablets)', frequency: 'Twice daily for 3 days', route: 'Oral' },
-                    pregnancy: { dose: 'ALu recommended in all trimesters', frequency: 'Twice daily for 3 days', route: 'Oral' },
-                    neonate: { dose: 'Parental Artesunate is recommended for neonates', frequency: 'N/A', route: 'IV/IM' },
-                    special: 'Ensure compulsory testing before treatment.'
-                },
-                alternative: 'Dihydroartemisinin-piperaquine (FDC)',
-                reference: 'Tanzania STG 2021 (Chapter 5.2.1)'
-            },
-            'Severe Malaria': {
-                diagnosis: 'Asexual parasitaemia with vital organ dysfunction.',
-                indications: 'Prostration, impaired consciousness, convulsions, respiratory distress, jaundice.',
-                signs_symptoms: 'Circulatory collapse/shock, bleeding tendency/DIC, inability to drink/feed.',
-                contraindications: 'Avoid oral meds if patient is comatose or vomiting.',
-                side_effects: 'Delayed hemolytic anaemia with IV artesunate.',
-                adverse_effects: 'Hypoglycemia, renal failure.',
-                treatment: {
-                    adult: { dose: 'Artesunate 2.4 mg/kg', frequency: '0, 12, 24 hours then daily', route: 'IV/IM' },
-                    child: { dose: '<20kg: 3mg/kg; >20kg: 2.4mg/kg', frequency: '0, 12, 24 hours', route: 'IV/IM' },
-                    pregnancy: { dose: 'Artesunate 2.4 mg/kg', frequency: 'All trimesters', route: 'IV/IM' },
-                    neonate: { dose: 'Parental Artesunate', frequency: 'Daily', route: 'IV/IM' },
-                    special: 'Follow up with a full 3-day course of ALu once patient can tolerate oral meds.'
-                },
-                alternative: 'Injectable Artemether 3.2mg/kg loading, then 1.6mg/kg',
-                reference: 'Tanzania STG 2021 (Chapter 5.2.2)'
-            },
-            'Cholera': {
-                diagnosis: 'Liquid stool or rectal swab for Vibrio cholerae culture or PCR.',
-                indications: 'Sudden onset of painless watery diarrhoea, vomiting, severe dehydration.',
-                signs_symptoms: 'Profuse watery stool (rice-water), muscular cramps, leading to hypovolemic shock.',
-                contraindications: 'Doxycycline contraindicated in pregnancy.',
-                side_effects: 'GI upset, nausea',
-                adverse_effects: 'Hyper-metabolic Acidosis if 0.9% sodium chloride is used aggressively',
-                treatment: {
-                    adult: { dose: 'Doxycycline 300 mg stat OR Ciprofloxacin 1g stat', frequency: 'Stat', route: 'Oral' },
-                    child: { dose: 'Erythromycin syrup 12.5mg/kg', frequency: '6 hourly for 5 days', route: 'Oral' },
-                    pregnancy: { dose: 'Erythromycin 500mg', frequency: '8 hourly for 7 days', route: 'Oral' },
-                    neonate: { dose: 'Refer to specialist', frequency: 'N/A', route: 'N/A' },
-                    special: 'Aggressive rehydration with IV Ringer Lactate or ORS + Zinc 20mg daily for children.'
-                },
-                alternative: 'Azithromycin 500mg once a day for 7 days',
-                reference: 'Tanzania STG 2021 (Chapter 4.1.1)'
-            },
-            'Community Acquired Pneumonia': {
-                diagnosis: 'Chest X-ray, Sputum culture, Blood culture (severe)',
-                indications: 'Fever, cough, tachypnea, chest pain',
-                signs_symptoms: 'Cough dry or productive, dyspnea, pleuritic chest pain, crepitations/rales',
-                contraindications: 'Severe renal impairment (adjust dosing)',
-                side_effects: 'GI upset, rash',
-                adverse_effects: 'Anaphylaxis',
-                treatment: {
-                    adult: { dose: 'Erythromycin 500mg OR Ampicillin+Cloxacillin 500-1000mg', frequency: '8 hourly for 5-7 days', route: 'Oral' },
-                    child: { dose: 'Amoxicillin 25mg/kg', frequency: '8 hourly for 5 days', route: 'Oral' },
-                    pregnancy: { dose: 'Erythromycin 500mg', frequency: '8 hourly', route: 'Oral' },
-                    neonate: { dose: 'Benzyl Penicillin 50,000 units/kg', frequency: '6 hourly', route: 'IV/IM' },
-                    special: 'Severe: Ceftriaxone + Sulbactam 1.5g IV 12-hourly + Metronidazole'
-                },
-                alternative: 'Doxycycline 100mg 12-hourly or Azithromycin 500mg stat',
-                reference: 'Tanzania STG 2021 (Chapter 9.1.1.2)'
-            },
-            'Asthma (Acute Attack)': {
-                diagnosis: 'Spirometry with reversibility test, PEFR measurement',
-                indications: 'Wheeze, shortness of breath, chest tightness, prolonged exhalation',
-                signs_symptoms: 'Tachypnea, tachycardia, diffuse musical wheezes, use of accessory muscles',
-                contraindications: 'Avoid non-selective β-blockers, NSAIDs may trigger attacks',
-                side_effects: 'Tachycardia, tremors (Salbutamol)',
-                adverse_effects: 'Hypokalemia with high dose salbutamol',
-                treatment: {
-                    adult: { dose: 'Salbutamol nebulization 5mg OR Inhaler 4-10 puffs', frequency: 'Every 20 mins for 1st hour', route: 'Inhalation' },
-                    child: { dose: 'Salbutamol nebulization 2.5mg', frequency: 'Every 20 mins for 1st hour', route: 'Inhalation' },
-                    pregnancy: { dose: 'Salbutamol as above', frequency: 'PRN', route: 'Inhalation' },
-                    neonate: { dose: 'Refer to specialist', frequency: 'N/A', route: 'N/A' },
-                    special: 'Add Prednisolone 40mg (Adults) or 1-2mg/kg (Children) for 5-7 days'
-                },
-                alternative: 'Ipratropium bromide (inhalation) 0.25-0.5mg 6-8 hourly',
-                reference: 'Tanzania STG 2021 (Chapter 9.2.1)'
-            },
-            'Peptic Ulcer Disease (PUD)': {
-                diagnosis: 'Endoscopic evidence, Positive stool antigen test for H. pylori, Urease breath test',
-                indications: 'Burning epigastric abdominal pain relived by antacids',
-                signs_symptoms: 'Anorexia, early satiety, bloating, hematemesis or melena stools',
-                contraindications: 'Avoid NSAIDs',
-                side_effects: 'Headache, GI upset',
-                adverse_effects: 'Bleeding, perforation if untreated',
-                treatment: {
-                    adult: { dose: 'Omeprazole 20mg OR Pantoprazole 40mg', frequency: '24 hourly for 8 weeks', route: 'Oral' },
-                    child: { dose: 'Refer to specialist', frequency: 'N/A', route: 'N/A' },
-                    pregnancy: { dose: 'Omeprazole 20mg', frequency: '24 hourly', route: 'Oral' },
-                    neonate: { dose: 'N/A', frequency: 'N/A', route: 'N/A' },
-                    special: 'If H. Pylori positive (Triple Therapy): Omeprazole 20mg + Amoxicillin 1g + Metronidazole 400mg'
-                },
-                alternative: 'Lansoprazole 30mg or Esomeprazole 20mg',
-                reference: 'Tanzania STG 2021 (Chapter 10.2.1.2)'
-            },
-            'Hypertension': {
-                diagnosis: 'BP >= 140/90 mmHg on 3 separate occasions.',
-                indications: 'Usually asymptomatic. Screened routinely.',
-                signs_symptoms: 'Headache, palpitations, epistaxis in severe cases.',
-                contraindications: 'ACE-I/ARBs contraindicated in pregnancy.',
-                side_effects: 'Cough (ACE-I), pedal edema (CCBs), hypokalemia (Thiazides).',
-                adverse_effects: 'Stroke, Myocardial Infarction, Renal Failure if uncontrolled.',
-                treatment: {
-                    adult: { dose: 'Amlodipine 5-10mg OR Enalapril 10-20mg', frequency: 'Once daily (24 hourly)', route: 'Oral' },
-                    child: { dose: 'Refer to specialist', frequency: 'N/A', route: 'N/A' },
-                    pregnancy: { dose: 'Methyldopa 250-500mg 8 hourly OR Nifedipine 20mg 12 hourly', frequency: 'Daily', route: 'Oral' },
-                    neonate: { dose: 'N/A', frequency: 'N/A', route: 'N/A' },
-                    special: 'Target BP < 140/90. Combine ACE-I + CCB or Thiazide if monotherapy fails.'
-                },
-                alternative: 'Losartan 50mg daily or Bendrofluazide 5mg daily.',
-                reference: 'Tanzania STG 2021 (Chapter 20.5)'
-            },
-            'Urinary Tract Infection (UTI)': {
-                diagnosis: 'Urinalysis (Nitrites +, Leukocyte esterase +), Urine Culture.',
-                indications: 'Dysuria, frequency, urgency, suprapubic pain.',
-                signs_symptoms: 'Fever, flank pain (if pyelonephritis), hematuria.',
-                contraindications: 'Nitrofurantoin contraindicated if G6PD deficiency.',
-                side_effects: 'Nausea, brown urine (Nitrofurantoin).',
-                adverse_effects: 'Urosepsis if untreated.',
-                treatment: {
-                    adult: { dose: 'Nitrofurantoin 100mg', frequency: '12 hourly for 5 days', route: 'Oral' },
-                    child: { dose: 'Nitrofurantoin 50mg', frequency: '12 hourly for 5 days', route: 'Oral' },
-                    pregnancy: { dose: 'Nitrofurantoin 100mg OR Amoxicillin+Clavulanic 625mg', frequency: '12 hourly for 5 days', route: 'Oral' },
-                    neonate: { dose: 'Refer to specialist', frequency: 'N/A', route: 'N/A' },
-                    special: 'If complicated (Pyelonephritis): Ciprofloxacin 500mg 12 hourly for 10 days.'
-                },
-                alternative: 'Ciprofloxacin 500mg 12 hourly for 7 days (Non-pregnant adults).',
-                reference: 'Tanzania STG 2021 (Chapter 21.10)'
-            }
-        };
-
         const App = () => {
             const [view, setView] = useState('LOGIN');
+            const [viewHistory, setViewHistory] = useState([]);
             const [user, setUser] = useState(null);
             const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
             const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [] });
             const [cart, setCart] = useState([]);
             const [search, setSearch] = useState("");
-            const [stgSearch, setStgSearch] = useState(""); 
             const [isOnline, setIsOnline] = useState(navigator.onLine);
             
             const [editing, setEditing] = useState(null); 
             const [checkoutModal, setCheckoutModal] = useState(false);
             const [amountTendered, setAmountTendered] = useState(0);
             const [checkoutPatient, setCheckoutPatient] = useState('');
-            const [stgModal, setStgModal] = useState(null);
             const [medicalHistoryModal, setMedicalHistoryModal] = useState(null);
 
             useEffect(() => {
@@ -322,13 +183,31 @@
                 return roles[user?.role] >= roles[level];
             };
 
+            const handleSetView = (newView) => {
+                if (view !== newView) {
+                    setViewHistory(prev => [...prev, view]);
+                    setView(newView);
+                    setSearch("");
+                }
+            };
+
+            const handleGoBack = () => {
+                if (viewHistory.length > 0) {
+                    const prev = [...viewHistory];
+                    const lastView = prev.pop();
+                    setViewHistory(prev);
+                    setView(lastView);
+                    setSearch("");
+                }
+            };
+
             const handleLogin = async () => {
                 const u = document.getElementById('u_box')?.value?.toLowerCase()?.trim();
                 const p = document.getElementById('p_box')?.value?.trim();
                 if (!u || !p || p.length !== 4 || isNaN(p)) return alert("Invalid credentials format");
                 try {
                     if (window.db && isOnline) {
-                        const snap = await window.db.collection("users").where("username", "==", u).where("pin", "==", p).get();
+                        const snap = await window.db.collection("users").where("username", "==", u).where("pin", "==", String(p)).get();
                         if (!snap.empty) { 
                             const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
                             if (uData.status !== 'ACTIVE') return alert("Account INACTIVE");
@@ -336,7 +215,7 @@
                         } else alert("Invalid Credentials");
                     } else {
                         const users = await window.offlineDB.getAll('users');
-                        const found = users.find(usr => usr.username === u && usr.pin === p && usr.status === 'ACTIVE');
+                        const found = users.find(usr => usr.username === u && String(usr.pin) === String(p) && usr.status === 'ACTIVE');
                         if (found) { setUser(found); setView('DASHBOARD'); }
                         else alert("Invalid Credentials");
                     }
@@ -344,21 +223,21 @@
             };
 
             const handleLogout = () => {
-                if (confirm("Logout?")) { setUser(null); setView('LOGIN'); window.location.reload(); }
+                if (confirm("Logout?")) { setUser(null); setViewHistory([]); setView('LOGIN'); window.location.reload(); }
             };
 
-            const handleDeletePersonnel = async (id) => {
+            const handleDeletePersonnel = async (userItem) => {
                 if (!hasAccess('MANAGER')) return alert("Access Denied: Admins only.");
+                if (userItem.username.toLowerCase() === 'admin') return alert("Cannot delete the master admin account.");
                 if(!confirm("⚠️ WARNING: Are you sure you want to completely permanently delete this personnel? This action cannot be undone.")) return;
                 try {
                     if (window.db && isOnline) {
-                        await window.db.collection('users').doc(id).delete();
+                        await window.db.collection('users').doc(userItem.id).delete();
                     } else {
-                        await window.offlineDB.delete('users', id);
+                        await window.offlineDB.delete('users', userItem.id);
                         await loadFromOfflineDB();
                     }
                     setEditing(null);
-                    alert("Personnel deleted successfully.");
                 } catch (err) { alert("Error deleting personnel: " + err.message); }
             };
 
@@ -373,7 +252,6 @@
                         await loadFromOfflineDB();
                     }
                     setEditing(null);
-                    alert("Item deleted successfully.");
                 } catch (err) { alert("Error deleting item: " + err.message); }
             };
 
@@ -422,7 +300,19 @@
 
                 const total = cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0);
                 const totalCost = cart.reduce((s,i)=>s+(i.costPrice*i.qty), 0);
-                const saleData = { total, profit: total - totalCost, timestamp: new Date().toISOString(), soldBy: user.username, method, items: cart, patientId: checkoutPatient || null };
+                const changeAmount = (method === 'CASH' && amountTendered > total) ? (amountTendered - total) : 0;
+                
+                const saleData = { 
+                    total, 
+                    profit: total - totalCost, 
+                    amountTendered: method === 'CASH' ? amountTendered : total,
+                    changeGiven: changeAmount,
+                    timestamp: new Date().toISOString(), 
+                    soldBy: user.username, 
+                    method, 
+                    items: cart, 
+                    patientId: checkoutPatient || null 
+                };
                 
                 try {
                     if (window.db && isOnline) {
@@ -446,7 +336,7 @@
                         }
                         await loadFromOfflineDB();
                     }
-                    setCart([]); setCheckoutModal(false); alert("Sale Processed!");
+                    setCart([]); setCheckoutModal(false);
                 } catch(e) { alert("Error completing sale: " + e.message); }
             };
 
@@ -468,7 +358,15 @@
                     await window.offlineDB.put('medicalHistory', { id: `hist_${Date.now()}`, ...historyRecord });
                     await loadFromOfflineDB();
                 }
-                alert("Medical history added!");
+                setMedicalHistoryModal(null);
+            };
+
+            const exportToExcel = (exportData, filename) => {
+                if(exportData.length === 0) return alert("No data to export");
+                const ws = XLSX.utils.json_to_sheet(exportData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Data");
+                XLSX.writeFile(wb, `${filename}_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
             };
 
             const getFinanceMetrics = useMemo(() => {
@@ -579,21 +477,6 @@
                 return () => { if (window.financeChartInstance) window.financeChartInstance.destroy(); };
             }, [view, data.sales]);
 
-            const filteredSTG = Object.entries(TANZANIA_STG).filter(([disease, guide]) => {
-                if (!stgSearch) return true;
-                const term = stgSearch.toLowerCase();
-                if (disease.toLowerCase().includes(term)) return true;
-                const searchInObj = (obj) => {
-                    for (let key in obj) {
-                        const val = obj[key];
-                        if (typeof val === 'string' && val.toLowerCase().includes(term)) return true;
-                        if (typeof val === 'object' && searchInObj(val)) return true;
-                    }
-                    return false;
-                };
-                return searchInObj(guide);
-            });
-
             if (!user) {
                 return (
                     <div className="h-screen flex items-center justify-center bg-black p-4">
@@ -628,11 +511,11 @@
                                         {name: 'POS', icon: '🛒', view: 'POS'},
                                         {name: 'INVENTORY', icon: '📦', view: 'STOO', access: 'TECHNICIAN'},
                                         {name: 'CLIENTS', icon: '👥', view: 'PATIENTS'},
-                                        {name: 'STG', icon: '📖', view: 'STG'},
                                         {name: 'FINANCE & SALES', icon: '💰', view: 'FINANCE', access: 'MANAGER'},
+                                        {name: 'REPORTS & EXPORT', icon: '📈', view: 'REPORTS', access: 'MANAGER'},
                                         {name: 'STAFF', icon: '👤', view: 'USERS', access: 'MANAGER'},
                                     ].map(item => !item.access || hasAccess(item.access) ? (
-                                        <button key={item.view} onClick={()=>setView(item.view)} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase ${view===item.view?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>
+                                        <button key={item.view} onClick={()=>handleSetView(item.view)} className={`w-full text-left p-4 rounded-3xl transition-all font-black text-[10px] uppercase ${view===item.view?'active-tab':'text-slate-400 hover:bg-slate-900'}`}>
                                             {item.icon} {item.name}
                                         </button>
                                     ) : null)}
@@ -647,20 +530,27 @@
                             </>
                         )}
                         {isMobile && (
-                            <select onChange={(e) => setView(e.target.value)} value={view} className="bg-slate-800 text-white rounded-lg p-2 text-sm font-bold border border-slate-700">
+                            <select onChange={(e) => handleSetView(e.target.value)} value={view} className="bg-slate-800 text-white rounded-lg p-2 text-sm font-bold border border-slate-700">
                                 <option value="DASHBOARD">Dashboard</option>
                                 <option value="POS">POS</option>
                                 {hasAccess('TECHNICIAN') && <option value="STOO">Inventory</option>}
                                 <option value="PATIENTS">Clients</option>
-                                <option value="STG">STG</option>
-                                {hasAccess('MANAGER') && <option value="FINANCE">Finance & Sales</option>}
+                                {hasAccess('MANAGER') && <option value="FINANCE">Finance</option>}
+                                {hasAccess('MANAGER') && <option value="REPORTS">Reports</option>}
                                 {hasAccess('MANAGER') && <option value="USERS">Staff</option>}
                             </select>
                         )}
                     </aside>
 
-                    <main className={`flex-1 ${isMobile ? 'p-4' : 'p-8 md:p-10'} overflow-auto no-scrollbar relative`}>
+                    <main className={`flex-1 ${isMobile ? 'p-4' : 'p-8 md:p-10'} overflow-auto no-scrollbar relative flex flex-col`}>
                         
+                        {/* GLOBAL BACK BUTTON */}
+                        {viewHistory.length > 0 && view !== 'DASHBOARD' && (
+                            <button onClick={handleGoBack} className="self-start mb-6 text-slate-400 hover:text-white transition-all font-black text-xs uppercase flex items-center gap-2 bg-slate-900 px-4 py-2 rounded-xl border border-slate-800">
+                                <span className="text-emerald-500">←</span> RETURN BACK
+                            </button>
+                        )}
+
                         {view === 'DASHBOARD' && (
                             <div className="animate-in fade-in duration-700">
                                 <h2 className="text-2xl md:text-4xl font-black tracking-tighter mb-6 md:mb-10">Director's Overview</h2>
@@ -683,15 +573,38 @@
 
                         {view === 'POS' && (
                             <div className={`flex ${isMobile ? 'flex-col' : 'flex-row'} gap-4 md:gap-8 h-full`}>
-                                <div className="flex-1 space-y-4 md:space-y-6">
-                                    <input onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Inventory..." className="w-full p-4 md:p-6 bg-slate-900 border border-slate-800 rounded-[2.5rem] font-bold outline-none focus:border-emerald-600 text-sm md:text-base" />
-                                    <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-3'} gap-3 md:gap-4`}>
-                                        {data.inventory.filter(p => (p.brandName||'').toLowerCase().includes(search.toLowerCase())).map(p => (
-                                            <div key={p.id} onClick={()=>addToCart(p)} className={`bg-slate-900 border border-slate-800 p-4 md:p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer transition-all active:scale-95 ${p.stock<=0 ? 'opacity-50 grayscale' : ''}`}>
-                                                <h4 className="font-black text-sm md:text-lg mb-1">{p.brandName}</h4>
-                                                <p className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase mb-3 md:mb-6">{p.strength}</p>
-                                                <div className="flex justify-between items-end">
-                                                    <p className="text-lg md:text-2xl font-black text-emerald-400">{Number(p.price).toLocaleString()} <span className="text-xs text-slate-500">TZS</span></p>
+                                <div className="flex-1 space-y-4 md:space-y-6 flex flex-col h-full">
+                                    <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search by Brand, Generic, Category..." className="w-full p-4 md:p-6 bg-slate-900 border border-slate-800 rounded-[2.5rem] font-bold outline-none focus:border-emerald-600 text-sm md:text-base shrink-0" />
+                                    
+                                    {search && (
+                                        <div className="flex items-center justify-between bg-emerald-900/20 p-4 rounded-2xl border border-emerald-900/50 shrink-0">
+                                            <p className="text-emerald-400 font-bold text-xs">Filtering by: <span className="text-white uppercase">"{search}"</span></p>
+                                            <button onClick={()=>setSearch("")} className="text-slate-400 hover:text-white font-black text-xs">CLEAR FILTER ✖</button>
+                                        </div>
+                                    )}
+
+                                    <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-3'} gap-3 md:gap-4 overflow-y-auto no-scrollbar pb-10`}>
+                                        {data.inventory.filter(p => {
+                                            const term = search.toLowerCase();
+                                            return (p.brandName||'').toLowerCase().includes(term) || 
+                                                   (p.genericName||'').toLowerCase().includes(term) || 
+                                                   (p.category||'').toLowerCase().includes(term) || 
+                                                   (p.subcategory||'').toLowerCase().includes(term);
+                                        }).map(p => (
+                                            <div key={p.id} onClick={()=>addToCart(p)} className={`bg-slate-900 border border-slate-800 p-4 md:p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer transition-all active:scale-95 flex flex-col justify-between ${p.stock<=0 ? 'opacity-50 grayscale' : ''}`}>
+                                                <div>
+                                                    <h4 className="font-black text-sm md:text-lg mb-1 leading-tight">{p.brandName}</h4>
+                                                    <p className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase mb-2">{p.genericName || 'No Generic'} • {p.strength}</p>
+                                                    
+                                                    {/* CATEGORY QUICK LINKS */}
+                                                    <div className="flex flex-wrap gap-1 mb-4">
+                                                        {p.category && <span onClick={(e) => { e.stopPropagation(); setSearch(p.category); }} className="bg-slate-800 text-blue-400 text-[8px] md:text-[9px] px-2 py-1 rounded font-black hover:bg-blue-600 hover:text-white transition">🏷️ {p.category}</span>}
+                                                        {p.subcategory && <span onClick={(e) => { e.stopPropagation(); setSearch(p.subcategory); }} className="bg-slate-800 text-purple-400 text-[8px] md:text-[9px] px-2 py-1 rounded font-black hover:bg-purple-600 hover:text-white transition">🧬 {p.subcategory}</span>}
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex justify-between items-end mt-2 border-t border-slate-800 pt-3">
+                                                    <p className="text-lg md:text-2xl font-black text-emerald-400">{Number(p.price).toLocaleString()} <span className="text-[10px] text-slate-500">TZS</span></p>
                                                     <p className={`text-[9px] md:text-[10px] font-black px-2 py-1 rounded-lg ${p.stock < 10 ? 'bg-rose-900 text-rose-300':'bg-slate-800 text-slate-400'}`}>{p.stock}</p>
                                                 </div>
                                             </div>
@@ -699,22 +612,24 @@
                                     </div>
                                 </div>
                                 {!isMobile && (
-                                    <div className="w-96 bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-2xl h-fit border-t-8 border-emerald-600 sticky top-0 flex flex-col shrink-0">
-                                        <h3 className="font-black text-2xl tracking-tighter uppercase mb-8">Cart</h3>
-                                        <div className="space-y-4 mb-8 overflow-auto max-h-[40vh] no-scrollbar px-1">
+                                    <div className="w-96 bg-white text-slate-900 p-8 rounded-[3.5rem] shadow-2xl h-[calc(100vh-6rem)] border-t-8 border-emerald-600 sticky top-0 flex flex-col shrink-0">
+                                        <h3 className="font-black text-2xl tracking-tighter uppercase mb-8 shrink-0">Cart</h3>
+                                        <div className="flex-1 space-y-4 mb-8 overflow-y-auto no-scrollbar px-1">
                                             {cart.length === 0 && <p className="text-center text-slate-300 font-bold text-xs uppercase py-10">Empty</p>}
                                             {cart.map(i => (
                                                 <div key={i.id} className="flex justify-between items-center border-b border-slate-100 pb-4">
-                                                    <div className="flex-1">
-                                                        <p className="text-sm uppercase font-bold">{i.brandName}</p>
+                                                    <div className="flex-1 pr-2">
+                                                        <p className="text-sm uppercase font-bold leading-tight">{i.brandName}</p>
                                                         <input type="number" value={i.currentPrice} onChange={(e)=>updateCartItem(i.id, 'currentPrice', e.target.value)} className="w-20 bg-slate-200 text-slate-800 px-2 py-1 rounded text-xs font-bold mt-1 outline-none" />
                                                     </div>
-                                                    <input type="number" value={i.qty} onChange={(e)=>updateCartItem(i.id, 'qty', e.target.value)} className="w-16 p-2 bg-slate-50 rounded-xl text-slate-900 font-black text-center outline-none border border-slate-200" />
+                                                    <input type="number" value={i.qty} onChange={(e)=>updateCartItem(i.id, 'qty', e.target.value)} className="w-14 p-2 bg-slate-50 rounded-xl text-slate-900 font-black text-center outline-none border border-slate-200" />
                                                 </div>
                                             ))}
                                         </div>
-                                        <div className="flex justify-between font-black text-2xl md:text-3xl mb-8 text-emerald-600"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0).toLocaleString()}</span></div>
-                                        <button onClick={openCheckoutModal} className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black shadow-lg hover:bg-black transition-all">CHECKOUT</button>
+                                        <div className="shrink-0 border-t-2 border-slate-100 pt-6">
+                                            <div className="flex justify-between font-black text-2xl md:text-3xl mb-8 text-emerald-600"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0).toLocaleString()}</span></div>
+                                            <button onClick={openCheckoutModal} className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black shadow-lg hover:bg-black transition-all">CHECKOUT</button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -724,9 +639,7 @@
                             <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800 h-full overflow-auto">
                                 <div className="flex justify-between items-center mb-6 md:mb-10">
                                     <h2 className="text-2xl md:text-3xl font-black text-blue-500 uppercase">Client Registry</h2>
-                                    {hasAccess('MANAGER') && (
-                                        <button onClick={() => setEditing({ type: 'PATIENT', item: {} })} className="bg-blue-600 text-white px-4 md:px-8 py-2 md:py-3 rounded-2xl font-black shadow-lg text-xs md:text-sm">+ CLIENT</button>
-                                    )}
+                                    <button onClick={() => setEditing({ type: 'PATIENT', item: {} })} className="bg-blue-600 text-white px-4 md:px-8 py-2 md:py-3 rounded-2xl font-black shadow-lg text-xs md:text-sm hover:bg-blue-500 transition">+ ADD CLIENT</button>
                                 </div>
                                 <input onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Clients..." className="w-full p-4 mb-6 bg-black border border-slate-800 rounded-2xl font-bold outline-none focus:border-blue-500 text-sm md:text-base text-white" />
                                 <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4 md:gap-6`}>
@@ -735,10 +648,12 @@
                                             <div>
                                                 <div className="flex justify-between items-start">
                                                     <h4 className="font-black text-lg md:text-xl text-white uppercase">{pt.name}</h4>
-                                                    {(pt.creditBalance > 0) && <span className="bg-rose-900 text-rose-300 text-[9px] font-black px-2 py-1 rounded">DEBT: {Number(pt.creditBalance).toLocaleString()}</span>}
+                                                    {(pt.creditBalance > 0) && <span className="bg-rose-900 text-rose-300 text-[9px] font-black px-2 py-1 rounded shadow-md">DEBT: {Number(pt.creditBalance).toLocaleString()}</span>}
                                                 </div>
-                                                <p className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase mt-2">{pt.sex || '-'} • {pt.age || '-'} YRS</p>
-                                                <p className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase mt-1">📞 {pt.phone}</p>
+                                                <p className={`text-[9px] md:text-[10px] font-bold uppercase mt-2 px-2 py-1 rounded inline-block ${pt.clientType === 'WHOLESALE' ? 'bg-purple-900/50 text-purple-400' : 'bg-slate-800 text-slate-400'}`}>
+                                                    {pt.clientType === 'WHOLESALE' ? '📦 Wholesale / Reseller' : '🏥 Retail Patient'}
+                                                </p>
+                                                <p className="text-[10px] text-slate-500 font-bold uppercase mt-2">{pt.sex || '-'} • {pt.age || '-'} YRS • 📞 {pt.phone}</p>
                                             </div>
                                             <div className="mt-6 flex gap-3">
                                                 <button onClick={(e)=>{ e.preventDefault(); setMedicalHistoryModal(pt); }} className="flex-1 bg-slate-800 py-2 rounded-xl text-[9px] md:text-[10px] text-blue-400 uppercase font-black hover:bg-slate-700 transition">📋 TIMELINE</button>
@@ -752,40 +667,12 @@
                             </div>
                         )}
 
-                        {view === 'STG' && (
-                            <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800 h-full flex flex-col">
-                                <div className="flex-none mb-6 md:mb-8">
-                                    <h2 className="text-2xl md:text-3xl font-black mb-2 uppercase text-emerald-500">Tanzania STG</h2>
-                                    <p className="text-slate-500 text-xs md:text-sm mb-6">Ministry of Health - Essential Medicines & Treatment Guidelines</p>
-                                    <input type="text" placeholder="🔍 Search any disease, symptom, drug name, or condition..." value={stgSearch} onChange={(e) => setStgSearch(e.target.value)} className="w-full p-4 md:p-5 bg-black border border-slate-700 rounded-[2rem] text-white outline-none focus:border-emerald-500 transition-all font-bold text-sm md:text-base shadow-inner" />
-                                </div>
-                                <div className="flex-1 overflow-y-auto no-scrollbar pr-2">
-                                    <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4 md:gap-6`}>
-                                        {filteredSTG.map(([disease, guide]) => (
-                                            <div key={disease} onClick={()=>setStgModal({disease, ...guide})} className="p-4 md:p-6 stg-section rounded-[2.5rem] cursor-pointer hover:border hover:border-emerald-500 transition-all shadow-xl">
-                                                <h4 className="text-emerald-400 font-black text-sm md:text-lg uppercase mb-2">{disease}</h4>
-                                                <p className="text-[9px] md:text-[10px] text-slate-400 font-black uppercase mb-1">Key Signs & Symptoms</p>
-                                                <p className="text-xs md:text-sm text-slate-300 line-clamp-2">{guide.signs_symptoms}</p>
-                                                <button className="text-emerald-500 text-[10px] font-black mt-4 bg-emerald-950/30 px-3 py-1 rounded-lg">READ FULL PROTOCOL →</button>
-                                            </div>
-                                        ))}
-                                        {filteredSTG.length === 0 && (
-                                            <div className="col-span-full flex flex-col items-center justify-center py-20 opacity-50">
-                                                <p className="text-4xl mb-4">🩺</p>
-                                                <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">No guidelines found matching your search</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
                         {view === 'STOO' && (
                             <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800 h-full overflow-y-auto">
                                 <div className="flex justify-between items-center mb-6 md:mb-10">
                                     <h2 className="text-2xl md:text-3xl font-black text-emerald-500 uppercase">Inventory Vault</h2>
                                     {hasAccess('MANAGER') && (
-                                        <button onClick={() => setEditing({ type: 'PRODUCT', item: {} })} className="bg-emerald-600 text-white px-4 md:px-8 py-2 md:py-3 rounded-2xl font-black text-xs md:text-sm">+ NEW ITEM</button>
+                                        <button onClick={() => setEditing({ type: 'PRODUCT', item: {} })} className="bg-emerald-600 text-white px-4 md:px-8 py-2 md:py-3 rounded-2xl font-black text-xs md:text-sm hover:bg-emerald-500 transition">+ NEW ITEM</button>
                                     )}
                                 </div>
 
@@ -808,10 +695,20 @@
 
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left text-xs md:text-base">
-                                        <thead><tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4 px-2">Product</th><th className="px-2">Stock</th><th className="px-2">Cost</th><th className="px-2">Sell Price</th>{hasAccess('MANAGER') && <th className="px-2"></th>}</tr></thead>
-                                        <tbody>{data.inventory.filter(p=>(p.brandName||'').toLowerCase().includes(search.toLowerCase())).map(p => (
+                                        <thead><tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4 px-2">Brand Name</th><th className="pb-4 px-2">Generic/Details</th><th className="px-2">Stock</th><th className="px-2">Cost</th><th className="px-2">Sell Price</th>{hasAccess('MANAGER') && <th className="px-2"></th>}</tr></thead>
+                                        <tbody>{data.inventory.filter(p=>{
+                                            const term = search.toLowerCase();
+                                            return (p.brandName||'').toLowerCase().includes(term) || (p.genericName||'').toLowerCase().includes(term) || (p.category||'').toLowerCase().includes(term);
+                                        }).map(p => (
                                             <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50">
-                                                <td className="py-4 md:py-6 px-2"><p className="font-black text-white text-sm md:text-base">{p.brandName}</p><p className="text-[10px] text-slate-500 font-bold">{p.strength}</p></td>
+                                                <td className="py-4 md:py-6 px-2">
+                                                    <p className="font-black text-white text-sm md:text-base">{p.brandName}</p>
+                                                    <p className="text-[9px] text-slate-500 font-bold uppercase mt-1">{p.strength}</p>
+                                                </td>
+                                                <td className="py-4 px-2">
+                                                    <p className="text-blue-400 font-bold text-xs">{p.genericName || 'N/A'}</p>
+                                                    <p className="text-[9px] text-slate-500 font-black mt-1 uppercase">{p.category} {p.subcategory ? `> ${p.subcategory}` : ''}</p>
+                                                </td>
                                                 <td className={`px-2 text-sm md:text-base font-black ${p.stock <= 0 ? 'text-rose-600' : p.stock < 10 ? 'text-rose-400' : 'text-slate-300'}`}>{p.stock}</td>
                                                 <td className="px-2 text-slate-400 text-sm md:text-base">{Number(p.costPrice).toLocaleString()}</td>
                                                 <td className="px-2 text-emerald-400 font-black text-sm md:text-base">{Number(p.price).toLocaleString()}</td>
@@ -841,17 +738,17 @@
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-                                    <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-slate-800 text-center">
+                                    <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-slate-800 text-center shadow-lg">
                                         <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">🏆 Best Month Sales</p>
                                         <p className="text-xl font-black text-white">{getFinanceMetrics.bestMonth.label}</p>
                                         <p className="text-sm text-emerald-400 font-bold">{getFinanceMetrics.bestMonth.revenue.toLocaleString()} TZS</p>
                                     </div>
-                                    <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-slate-800 text-center">
+                                    <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-slate-800 text-center shadow-lg">
                                         <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">⭐ Best Week Sales</p>
                                         <p className="text-xl font-black text-white">{getFinanceMetrics.bestWeek.label}</p>
                                         <p className="text-sm text-emerald-400 font-bold">{getFinanceMetrics.bestWeek.revenue.toLocaleString()} TZS</p>
                                     </div>
-                                    <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-slate-800 text-center">
+                                    <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-slate-800 text-center shadow-lg">
                                         <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">🥇 Top Personnel</p>
                                         <p className="text-xl font-black text-white uppercase">{getFinanceMetrics.bestStaff.name}</p>
                                         <p className="text-sm text-emerald-400 font-bold">{getFinanceMetrics.bestStaff.revenue.toLocaleString()} TZS</p>
@@ -922,7 +819,7 @@
                                         <table className="w-full text-left text-xs md:text-base">
                                             <thead className="sticky top-0 bg-slate-900 z-10">
                                                 <tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4">
-                                                    <th className="pb-4 px-2 min-w-[120px]">Date</th><th className="pb-4 px-2 min-w-[200px]">Items Sold</th><th className="pb-4 px-2">Method</th><th className="pb-4 px-2">Total (TZS)</th><th className="pb-4 px-2">Staff</th>
+                                                    <th className="pb-4 px-2 min-w-[120px]">Date</th><th className="pb-4 px-2 min-w-[200px]">Items Sold</th><th className="pb-4 px-2">Method</th><th className="pb-4 px-2">Total (TZS)</th><th className="pb-4 px-2">Change (TZS)</th><th className="pb-4 px-2">Staff</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -932,6 +829,7 @@
                                                         <td className="py-4 px-2 text-slate-400">{sale.items?.map(i => `${i.qty}x ${i.brandName}`).join(', ')}</td>
                                                         <td className="py-4 px-2"><span className={`px-2 py-1 rounded text-[10px] font-black ${sale.method === 'CASH' ? 'bg-emerald-900 text-emerald-400' : sale.method === 'DEBT' ? 'bg-rose-900 text-rose-400' : 'bg-blue-900 text-blue-400'}`}>{sale.method}</span></td>
                                                         <td className="py-4 px-2 font-black text-emerald-400">{Number(sale.total).toLocaleString()}</td>
+                                                        <td className="py-4 px-2 font-black text-blue-300">{Number(sale.changeGiven || 0).toLocaleString()}</td>
                                                         <td className="py-4 px-2 text-slate-500 uppercase font-bold">{sale.soldBy}</td>
                                                     </tr>
                                                 ))}
@@ -947,6 +845,47 @@
                                         </button>
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {/* EXPORT AND REPORTS SECTION */}
+                        {view === 'REPORTS' && (
+                            <div className="space-y-6 md:space-y-10 h-full overflow-y-auto pb-10">
+                                <h2 className="text-2xl md:text-4xl font-black uppercase mb-8">Data Exports & Reports</h2>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="bg-slate-900 p-8 rounded-[3.5rem] border border-slate-800 shadow-xl flex flex-col justify-between">
+                                        <div>
+                                            <h3 className="font-black text-xl text-emerald-500 mb-2">Sales Records</h3>
+                                            <p className="text-slate-400 text-sm mb-6">Complete historical log of all sales, items sold, revenue, staff involved, and profit margins.</p>
+                                        </div>
+                                        <button onClick={()=>exportToExcel(data.sales, 'APEX_Sales_Report')} className="bg-emerald-600 text-white font-black py-4 rounded-2xl hover:bg-emerald-500 transition-all shadow-lg w-full">📥 DOWNLOAD EXCEL</button>
+                                    </div>
+
+                                    <div className="bg-slate-900 p-8 rounded-[3.5rem] border border-slate-800 shadow-xl flex flex-col justify-between">
+                                        <div>
+                                            <h3 className="font-black text-xl text-blue-500 mb-2">Inventory System</h3>
+                                            <p className="text-slate-400 text-sm mb-6">Current stock levels, pricing, cost, generic names, categories and total inventory value.</p>
+                                        </div>
+                                        <button onClick={()=>exportToExcel(data.inventory, 'APEX_Inventory_Report')} className="bg-blue-600 text-white font-black py-4 rounded-2xl hover:bg-blue-500 transition-all shadow-lg w-full">📥 DOWNLOAD EXCEL</button>
+                                    </div>
+
+                                    <div className="bg-slate-900 p-8 rounded-[3.5rem] border border-slate-800 shadow-xl flex flex-col justify-between">
+                                        <div>
+                                            <h3 className="font-black text-xl text-purple-500 mb-2">Client Registry</h3>
+                                            <p className="text-slate-400 text-sm mb-6">Full list of registered patients, wholesale customers, contact details, and current debt balances.</p>
+                                        </div>
+                                        <button onClick={()=>exportToExcel(data.patients, 'APEX_Clients_Report')} className="bg-purple-600 text-white font-black py-4 rounded-2xl hover:bg-purple-500 transition-all shadow-lg w-full">📥 DOWNLOAD EXCEL</button>
+                                    </div>
+
+                                    <div className="bg-slate-900 p-8 rounded-[3.5rem] border border-slate-800 shadow-xl flex flex-col justify-between">
+                                        <div>
+                                            <h3 className="font-black text-xl text-rose-500 mb-2">Expense Logs</h3>
+                                            <p className="text-slate-400 text-sm mb-6">Tracked operational expenses, utility bills, inventory restock expenditures, and systemic losses.</p>
+                                        </div>
+                                        <button onClick={()=>exportToExcel(data.expenses, 'APEX_Expenses_Report')} className="bg-rose-600 text-white font-black py-4 rounded-2xl hover:bg-rose-500 transition-all shadow-lg w-full">📥 DOWNLOAD EXCEL</button>
+                                    </div>
+                                </div>
                             </div>
                         )}
 
@@ -989,7 +928,7 @@
                                             } 
                                             else if (editing.type === 'PATIENT') {
                                                 collectionName = 'patients';
-                                                finalData = editing.item.id ? payload : { ...payload, creditBalance: 0 };
+                                                finalData = editing.item.id ? payload : { ...payload, creditBalance: editing.item.creditBalance || 0 };
                                             }
                                             else if (editing.type === 'USER') {
                                                 collectionName = 'users';
@@ -1012,18 +951,24 @@
                                                 await loadFromOfflineDB();
                                             }
                                             
-                                            setEditing(null);
-                                            alert("Saved Successfully!");
+                                            setEditing(null); // Dialog strictly closes after successful save.
                                         } catch (err) { alert("Error: " + err.message); }
                                     }} className="space-y-4">
 
                                         {editing.type === 'PRODUCT' && (
                                             <>
-                                                <input name="brandName" defaultValue={editing.item.brandName || ''} placeholder="Brand/Drug Name" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="strength" defaultValue={editing.item.strength || ''} placeholder="Strength/Unit (e.g. 500mg)" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="price" type="number" defaultValue={editing.item.price || ''} placeholder="Sell Price (TZS)" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="costPrice" type="number" defaultValue={editing.item.costPrice || ''} placeholder="Cost Price (TZS)" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="stock" type="number" defaultValue={editing.item.stock || ''} placeholder="Stock Quantity" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                <input name="brandName" defaultValue={editing.item.brandName || ''} placeholder="Brand/Drug Name *" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
+                                                <input name="genericName" defaultValue={editing.item.genericName || ''} placeholder="Generic Name" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
+                                                <input name="strength" defaultValue={editing.item.strength || ''} placeholder="Strength/Unit (e.g. 500mg)" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <input name="category" defaultValue={editing.item.category || ''} placeholder="Category (e.g. Antibiotic)" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
+                                                    <input name="subcategory" defaultValue={editing.item.subcategory || ''} placeholder="Subcategory (e.g. Penicillin)" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <input name="price" type="number" defaultValue={editing.item.price || ''} placeholder="Sell Price (TZS) *" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
+                                                    <input name="costPrice" type="number" defaultValue={editing.item.costPrice || ''} placeholder="Cost Price (TZS) *" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
+                                                </div>
+                                                <input name="stock" type="number" defaultValue={editing.item.stock || ''} placeholder="Stock Quantity *" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
                                                 {editing.item.id && (
                                                     <div className="pt-2">
                                                         <button type="button" onClick={() => handleDeleteProduct(editing.item.id)} className="w-full bg-rose-600/20 text-rose-500 border border-rose-600/50 py-3 rounded-xl font-bold hover:bg-rose-600 hover:text-white transition-all text-xs md:text-sm uppercase tracking-widest">
@@ -1036,12 +981,21 @@
 
                                         {editing.type === 'PATIENT' && (
                                             <>
-                                                <input name="name" defaultValue={editing.item.name || ''} placeholder="Full Name" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="age" type="number" defaultValue={editing.item.age || ''} placeholder="Age" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <select name="sex" defaultValue={editing.item.sex || 'M'} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base">
-                                                    <option>M</option><option>F</option>
+                                                <input name="name" defaultValue={editing.item.name || ''} placeholder="Full Name or Business Name" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                
+                                                <select name="clientType" defaultValue={editing.item.clientType || 'RETAIL'} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-emerald-400 font-bold text-sm md:text-base">
+                                                    <option value="RETAIL">Retail Patient</option>
+                                                    <option value="WHOLESALE">Wholesale / Reseller (Bulk)</option>
                                                 </select>
+
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <input name="age" type="number" defaultValue={editing.item.age || ''} placeholder="Age" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                    <select name="sex" defaultValue={editing.item.sex || 'M'} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base">
+                                                        <option>M</option><option>F</option><option value="N/A">N/A (Business)</option>
+                                                    </select>
+                                                </div>
                                                 <input name="phone" defaultValue={editing.item.phone || ''} placeholder="Phone Number" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                <input name="address" defaultValue={editing.item.address || ''} placeholder="Location / Address" className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
                                             </>
                                         )}
 
@@ -1052,12 +1006,15 @@
                                                 <select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base">
                                                     <option>MANAGER</option><option>PHARMACIST</option><option>TECHNICIAN</option><option>DISPENSER</option>
                                                 </select>
-                                                {editing.item.id && (
+                                                {editing.item.id && editing.item.username.toLowerCase() !== 'admin' && (
                                                     <div className="pt-2">
-                                                        <button type="button" onClick={() => handleDeletePersonnel(editing.item.id)} className="w-full bg-rose-600/20 text-rose-500 border border-rose-600/50 py-3 rounded-xl font-bold hover:bg-rose-600 hover:text-white transition-all text-xs md:text-sm uppercase tracking-widest">
+                                                        <button type="button" onClick={() => handleDeletePersonnel(editing.item)} className="w-full bg-rose-600/20 text-rose-500 border border-rose-600/50 py-3 rounded-xl font-bold hover:bg-rose-600 hover:text-white transition-all text-xs md:text-sm uppercase tracking-widest">
                                                             🗑️ Delete Personnel
                                                         </button>
                                                     </div>
+                                                )}
+                                                {editing.item.username?.toLowerCase() === 'admin' && (
+                                                    <p className="text-rose-500 font-bold text-xs uppercase text-center">Root Admin Protection Active</p>
                                                 )}
                                             </>
                                         )}
@@ -1070,7 +1027,7 @@
                                         )}
 
                                         <div className="flex gap-3 md:gap-4 pt-6 md:pt-8">
-                                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-4 md:py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500 transition-all text-sm md:text-base">SAVE</button>
+                                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-4 md:py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500 transition-all text-sm md:text-base">SAVE ENTRY</button>
                                             <button type="button" onClick={()=>setEditing(null)} className="flex-1 bg-black border border-slate-800 text-white py-4 md:py-5 rounded-[2rem] font-bold hover:border-slate-600 transition text-sm md:text-base">CANCEL</button>
                                         </div>
                                     </form>
@@ -1093,7 +1050,6 @@
                                                 diagnosis: fd.get('diagnosis'), treatment: fd.get('treatment'),
                                                 drugs: fd.get('drugs'), allergies: fd.get('allergies'), notes: fd.get('notes')
                                             });
-                                            e.target.reset();
                                         }} className="space-y-4 mb-6 shrink-0 bg-black p-4 rounded-3xl border border-slate-800">
                                             <p className="font-black text-slate-500 text-xs uppercase mb-2">New Entry</p>
                                             <input name="diagnosis" placeholder="Diagnosis / Condition" required className="w-full p-3 bg-slate-900 rounded-xl outline-none border border-slate-700 text-white font-bold text-sm" />
@@ -1168,38 +1124,6 @@
                                     </div>
 
                                     <button onClick={()=>setCheckoutModal(false)} className="text-slate-500 font-bold text-[10px] uppercase tracking-widest hover:text-white text-center w-full py-2">CANCEL</button>
-                                </div>
-                            </div>
-                        )}
-
-                        {stgModal && (
-                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
-                                <div className="bg-slate-900 border border-slate-800 w-full max-w-3xl p-6 md:p-10 rounded-[4rem] shadow-2xl overflow-y-auto max-h-[90vh]">
-                                    <div className="flex justify-between items-start mb-6 md:mb-8">
-                                        <h3 className="text-2xl md:text-3xl font-black text-emerald-500 uppercase">{stgModal.disease}</h3>
-                                        <button onClick={()=>setStgModal(null)} className="text-2xl md:text-3xl text-slate-500 hover:text-white font-black">×</button>
-                                    </div>
-                                    
-                                    <div className="space-y-4 md:space-y-6">
-                                        <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-emerald-400 uppercase mb-2 text-xs md:text-sm">Diagnosis</p><p className="text-sm md:text-base text-slate-300">{stgModal.diagnosis}</p></div>
-                                        <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-blue-400 uppercase mb-2 text-xs md:text-sm">Signs & Symptoms</p><p className="text-sm md:text-base text-slate-300">{stgModal.signs_symptoms}</p></div>
-                                        <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-emerald-400 uppercase mb-2 text-xs md:text-sm">Indications</p><p className="text-sm md:text-base text-slate-300">{stgModal.indications}</p></div>
-                                        <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-rose-400 uppercase mb-2 text-xs md:text-sm">Contraindications</p><p className="text-sm md:text-base text-slate-300">{stgModal.contraindications}</p></div>
-                                        <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-yellow-400 uppercase mb-2 text-xs md:text-sm">Side Effects</p><p className="text-sm md:text-base text-slate-300">{stgModal.side_effects}</p></div>
-                                        <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-red-400 uppercase mb-2 text-xs md:text-sm">Adverse Effects</p><p className="text-sm md:text-base text-slate-300">{stgModal.adverse_effects}</p></div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-blue-400 uppercase mb-2 text-xs md:text-sm">Adult Treatment</p><p className="text-xs md:text-sm text-slate-300"><strong>Dose:</strong> {stgModal.treatment.adult.dose}</p><p className="text-xs md:text-sm text-slate-300"><strong>Frequency:</strong> {stgModal.treatment.adult.frequency}</p></div>
-                                            <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-emerald-400 uppercase mb-2 text-xs md:text-sm">Child Treatment</p><p className="text-xs md:text-sm text-slate-300"><strong>Dose:</strong> {stgModal.treatment.child.dose}</p><p className="text-xs md:text-sm text-slate-300"><strong>Frequency:</strong> {stgModal.treatment.child.frequency}</p></div>
-                                            <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-pink-400 uppercase mb-2 text-xs md:text-sm">Pregnancy</p><p className="text-xs md:text-sm text-slate-300"><strong>Dose:</strong> {stgModal.treatment.pregnancy.dose}</p><p className="text-xs md:text-sm text-slate-300"><strong>Frequency:</strong> {stgModal.treatment.pregnancy.frequency}</p></div>
-                                            <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-purple-400 uppercase mb-2 text-xs md:text-sm">Neonate</p><p className="text-xs md:text-sm text-slate-300"><strong>Dose:</strong> {stgModal.treatment.neonate.dose}</p><p className="text-xs md:text-sm text-slate-300"><strong>Frequency:</strong> {stgModal.treatment.neonate.frequency}</p></div>
-                                        </div>
-
-                                        <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-indigo-400 uppercase mb-2 text-xs md:text-sm">Special Groups</p><p className="text-sm md:text-base text-slate-300">{stgModal.treatment.special}</p></div>
-                                        <div className="stg-section p-4 md:p-6 rounded-2xl"><p className="font-black text-teal-400 uppercase mb-2 text-xs md:text-sm">Alternative Treatment</p><p className="text-sm md:text-base text-slate-300">{stgModal.alternative}</p></div>
-                                    </div>
-
-                                    <button onClick={()=>setStgModal(null)} className="w-full mt-6 md:mt-8 text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-white transition">CLOSE</button>
                                 </div>
                             </div>
                         )}
