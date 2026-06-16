@@ -52,7 +52,7 @@
         window.offlineDB = {
             init: async function() {
                 return new Promise((resolve) => {
-                    const request = indexedDB.open('ApexPharmacy', 2);
+                    const request = indexedDB.open('ApexPharmacy', 3);
                     request.onsuccess = () => { this.db = request.result; resolve(this.db); };
                     request.onupgradeneeded = (e) => {
                         const db = e.target.result;
@@ -91,12 +91,12 @@
     <script>
         try {
             firebase.initializeApp({
-                apiKey: "AIzaSyAAazqZ1XnzpQ6A_cCHyQEsgXxq5jVVLXE",
-                authDomain: "apex-pharmacy-a69b5.firebaseapp.com",
-                projectId: "apex-pharmacy-a69b5",
-                storageBucket: "apex-pharmacy-a69b5.firebasestorage.app",
-                messagingSenderId: "28559683699",
-                appId: "1:28559683699:web:1cc3f16a98a32463657a06"
+                apiKey: "AIzaSyDOFibCiMfYeVP4A6p6En9Jlml10eATGio",
+                authDomain: "apex-management-system-93a9e.firebaseapp.com",
+                projectId: "apex-management-system-93a9e",
+                storageBucket: "apex-management-system-93a9e.firebasestorage.app",
+                messagingSenderId: "514939996572",
+                appId: "1:514939996572:web:3ecbe1fd7003d024bd6059"
             });
             window.db = firebase.firestore();
             firebase.firestore().enablePersistence().catch(err => console.log('Offline persistence:', err.code));
@@ -123,6 +123,11 @@
             const [amountTendered, setAmountTendered] = useState(0);
             const [checkoutPatient, setCheckoutPatient] = useState('');
             const [medicalHistoryModal, setMedicalHistoryModal] = useState(null);
+
+            // Report States
+            const [reportPeriod, setReportPeriod] = useState('DAILY');
+            const [reportTab, setReportTab] = useState('SALES');
+            const [reportSearch, setReportSearch] = useState('');
 
             useEffect(() => {
                 const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -276,6 +281,8 @@
 
             const addToCart = (p) => {
                 if (p.stock <= 0) return alert("Item out of stock!");
+                if (p.expiryDate && new Date(p.expiryDate) < new Date()) return alert("⚠️ Error: Cannot sell an expired item!");
+                
                 setCart(prev => {
                     const ex = prev.find(i => i.id === p.id);
                     if (ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
@@ -373,6 +380,7 @@
                 XLSX.writeFile(wb, `${filename}_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
             };
 
+            // Global Metrics for Finance View
             const getFinanceMetrics = useMemo(() => {
                 const monthlyData = {};
                 const weeklyData = {};
@@ -422,6 +430,56 @@
 
                 return { monthlyData, bestMonth, bestWeek, bestStaff };
             }, [data.sales, data.expenses]);
+
+            // Filtered Metrics exclusively for the Reports Dashboard
+            const filteredReportData = useMemo(() => {
+                const now = new Date();
+                let startDate = new Date();
+                
+                if (reportPeriod === 'DAILY') {
+                    startDate.setHours(0,0,0,0);
+                } else if (reportPeriod === 'WEEKLY') {
+                    startDate.setDate(startDate.getDate() - 7);
+                    startDate.setHours(0,0,0,0);
+                } else if (reportPeriod === 'MONTHLY') {
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                }
+
+                const sLower = reportSearch.toLowerCase();
+
+                const rSales = data.sales.filter(s => {
+                    if (new Date(s.timestamp) < startDate) return false;
+                    if (!sLower) return true;
+                    return (s.soldBy || '').toLowerCase().includes(sLower) ||
+                           (s.method || '').toLowerCase().includes(sLower) ||
+                           (s.items || []).some(i => (i.brandName || '').toLowerCase().includes(sLower));
+                });
+
+                const rExpenses = data.expenses.filter(e => {
+                    if (new Date(e.timestamp || Date.now()) < startDate) return false;
+                    if (!sLower) return true;
+                    return (e.description || '').toLowerCase().includes(sLower);
+                });
+
+                const rExpired = data.inventory.filter(i => {
+                    if (!i.expiryDate) return false;
+                    if (new Date(i.expiryDate) >= now) return false;
+                    if (!sLower) return true;
+                    return (i.brandName || '').toLowerCase().includes(sLower) ||
+                           (i.genericName || '').toLowerCase().includes(sLower) ||
+                           (i.category || '').toLowerCase().includes(sLower);
+                });
+
+                return {
+                    sales: rSales,
+                    expenses: rExpenses,
+                    expired: rExpired,
+                    totalSales: rSales.reduce((a, b) => a + b.total, 0),
+                    totalProfit: rSales.reduce((a, b) => a + b.profit, 0),
+                    totalLosses: rExpenses.reduce((a, b) => a + Number(b.amount), 0),
+                    expiredCost: rExpired.reduce((a, b) => a + (Number(b.costPrice) * Number(b.stock)), 0)
+                };
+            }, [data, reportPeriod, reportSearch]);
 
             const getItemProfitability = () => {
                 const itemStats = {};
@@ -594,10 +652,15 @@
                                                    (p.genericName||'').toLowerCase().includes(term) || 
                                                    (p.category||'').toLowerCase().includes(term) || 
                                                    (p.subcategory||'').toLowerCase().includes(term);
-                                        }).map(p => (
-                                            <div key={p.id} onClick={()=>addToCart(p)} className={`bg-slate-900 border border-slate-800 p-4 md:p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer transition-all active:scale-95 flex flex-col justify-between ${p.stock<=0 ? 'opacity-50 grayscale' : ''}`}>
+                                        }).map(p => {
+                                            const isExpired = p.expiryDate && new Date(p.expiryDate) < new Date();
+                                            return (
+                                            <div key={p.id} onClick={()=>addToCart(p)} className={`bg-slate-900 border border-slate-800 p-4 md:p-6 rounded-[2.5rem] hover:border-emerald-500 cursor-pointer transition-all active:scale-95 flex flex-col justify-between ${p.stock<=0 || isExpired ? 'opacity-50 grayscale' : ''}`}>
                                                 <div>
-                                                    <h4 className="font-black text-sm md:text-lg mb-1 leading-tight">{p.brandName}</h4>
+                                                    <div className="flex justify-between items-start mb-1">
+                                                        <h4 className="font-black text-sm md:text-lg leading-tight">{p.brandName}</h4>
+                                                        {isExpired && <span className="bg-rose-900 text-rose-300 text-[8px] font-black px-2 py-1 rounded">EXPIRED</span>}
+                                                    </div>
                                                     <p className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase mb-2">{p.genericName || 'No Generic'} • {p.strength}</p>
                                                     
                                                     {/* CATEGORY QUICK LINKS */}
@@ -612,7 +675,7 @@
                                                     <p className={`text-[9px] md:text-[10px] font-black px-2 py-1 rounded-lg ${p.stock < 10 ? 'bg-rose-900 text-rose-300':'bg-slate-800 text-slate-400'}`}>{p.stock}</p>
                                                 </div>
                                             </div>
-                                        ))}
+                                        )})}
                                     </div>
                                 </div>
                                 {!isMobile && (
@@ -647,7 +710,7 @@
                                         <button onClick={() => setEditing({ type: 'PATIENT', item: {} })} className="bg-blue-600 text-white px-4 md:px-8 py-2 md:py-3 rounded-2xl font-black shadow-lg text-xs md:text-sm hover:bg-blue-500 transition">+ ADD CLIENT</button>
                                     )}
                                 </div>
-                                <input onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Clients..." className="w-full p-4 mb-6 bg-black border border-slate-800 rounded-2xl font-bold outline-none focus:border-blue-500 text-sm md:text-base text-white" />
+                                <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Clients..." className="w-full p-4 mb-6 bg-black border border-slate-800 rounded-2xl font-bold outline-none focus:border-blue-500 text-sm md:text-base text-white" />
                                 <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4 md:gap-6`}>
                                     {data.patients.filter(pt => (pt.name||'').toLowerCase().includes(search.toLowerCase())).map(pt => (
                                         <div key={pt.id} className="p-6 md:p-8 bg-black rounded-[3rem] border border-slate-800 hover:border-blue-500 transition-all flex flex-col justify-between">
@@ -697,15 +760,17 @@
                                     </div>
                                 </div>
 
-                                <input onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Inventory..." className="w-full p-4 mb-6 bg-black border border-slate-800 rounded-2xl font-bold outline-none focus:border-emerald-500 text-sm md:text-base text-white" />
+                                <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Inventory..." className="w-full p-4 mb-6 bg-black border border-slate-800 rounded-2xl font-bold outline-none focus:border-emerald-500 text-sm md:text-base text-white" />
 
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left text-xs md:text-base">
-                                        <thead><tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4 px-2">Brand Name</th><th className="pb-4 px-2">Generic/Details</th><th className="px-2">Stock</th><th className="px-2">Cost</th><th className="px-2">Sell Price</th>{hasAccess('MANAGER') && <th className="px-2"></th>}</tr></thead>
+                                        <thead><tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4 px-2">Brand Name</th><th className="pb-4 px-2">Generic/Details</th><th className="px-2">Stock</th><th className="px-2">Expiry</th><th className="px-2">Cost</th><th className="px-2">Sell Price</th>{hasAccess('MANAGER') && <th className="px-2"></th>}</tr></thead>
                                         <tbody>{data.inventory.filter(p=>{
                                             const term = search.toLowerCase();
                                             return (p.brandName||'').toLowerCase().includes(term) || (p.genericName||'').toLowerCase().includes(term) || (p.category||'').toLowerCase().includes(term);
-                                        }).map(p => (
+                                        }).map(p => {
+                                            const isExpired = p.expiryDate && new Date(p.expiryDate) < new Date();
+                                            return (
                                             <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50">
                                                 <td className="py-4 md:py-6 px-2">
                                                     <p className="font-black text-white text-sm md:text-base">{p.brandName}</p>
@@ -716,13 +781,14 @@
                                                     <p className="text-[9px] text-slate-500 font-black mt-1 uppercase">{p.category} {p.subcategory ? `> ${p.subcategory}` : ''}</p>
                                                 </td>
                                                 <td className={`px-2 text-sm md:text-base font-black ${p.stock <= 0 ? 'text-rose-600' : p.stock < 10 ? 'text-rose-400' : 'text-slate-300'}`}>{p.stock}</td>
+                                                <td className={`px-2 text-xs font-black ${isExpired ? 'text-rose-500' : 'text-slate-500'}`}>{p.expiryDate || 'N/A'} {isExpired && '⚠️'}</td>
                                                 <td className="px-2 text-slate-400 text-sm md:text-base">{Number(p.costPrice).toLocaleString()}</td>
                                                 <td className="px-2 text-emerald-400 font-black text-sm md:text-base">{Number(p.price).toLocaleString()}</td>
                                                 {hasAccess('MANAGER') && (
                                                     <td className="px-2"><button onClick={(e)=>{ setEditing({type: 'PRODUCT', item: p}); }} className="bg-slate-800 px-3 py-1 rounded text-blue-400 text-[10px] md:text-xs font-black hover:bg-slate-700 transition">EDIT</button></td>
                                                 )}
                                             </tr>
-                                        ))}</tbody>
+                                        )})}</tbody>
                                     </table>
                                 </div>
                             </div>
@@ -731,7 +797,7 @@
                         {view === 'FINANCE' && (
                             <div className="space-y-6 md:space-y-10 h-full overflow-y-auto pb-10">
                                 <div className="flex justify-between items-center">
-                                    <h2 className="text-2xl md:text-4xl font-black uppercase">Financial Ledger</h2>
+                                    <h2 className="text-2xl md:text-4xl font-black uppercase">Financial Overview</h2>
                                     {hasAccess('MANAGER') && (
                                         <button onClick={() => setEditing({ type: 'EXPENSE', item: {} })} className="bg-rose-600 text-white px-4 md:px-8 py-2 md:py-3 rounded-2xl font-black text-xs md:text-sm shadow-lg hover:bg-rose-500 transition">+ LOG EXPENSE</button>
                                     )}
@@ -765,133 +831,131 @@
                                     <h3 className="text-xl md:text-2xl font-black uppercase mb-6 text-emerald-500">7-Day Revenue & Profit Trend</h3>
                                     <div className="w-full h-64 md:h-80"><canvas id="financeChart"></canvas></div>
                                 </div>
-
-                                <div className="bg-slate-900 p-6 md:p-8 rounded-[3.5rem] border border-slate-800 mt-6">
-                                    <h3 className="text-xl md:text-2xl font-black uppercase mb-6 text-indigo-400">Monthly Trend Ledger</h3>
-                                    <div className="overflow-x-auto max-h-96">
-                                        <table className="w-full text-left text-xs md:text-base">
-                                            <thead className="sticky top-0 bg-slate-900 z-10">
-                                                <tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4">
-                                                    <th className="pb-4 px-2">Month</th><th className="pb-4 px-2">Revenue</th><th className="pb-4 px-2">Loss (Expenses)</th><th className="pb-4 px-2">Net Profit</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {Object.keys(getFinanceMetrics.monthlyData).sort().reverse().map(month => (
-                                                    <tr key={month} className="border-b border-slate-800/50 hover:bg-black/50">
-                                                        <td className="py-4 px-2 font-black text-white">{month}</td>
-                                                        <td className="py-4 px-2 text-blue-400">{getFinanceMetrics.monthlyData[month].revenue.toLocaleString()}</td>
-                                                        <td className="py-4 px-2 text-rose-400">{getFinanceMetrics.monthlyData[month].loss.toLocaleString()}</td>
-                                                        <td className={`py-4 px-2 font-black ${(getFinanceMetrics.monthlyData[month].profit - getFinanceMetrics.monthlyData[month].loss) >= 0 ? 'text-emerald-400' : 'text-rose-500'}`}>
-                                                            {((getFinanceMetrics.monthlyData[month].profit - getFinanceMetrics.monthlyData[month].loss) > 0 ? '+' : '')}
-                                                            {(getFinanceMetrics.monthlyData[month].profit - getFinanceMetrics.monthlyData[month].loss).toLocaleString()}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                                {Object.keys(getFinanceMetrics.monthlyData).length === 0 && <tr><td colSpan="4" className="text-center py-8 text-slate-500 font-bold uppercase">No records found</td></tr>}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-
-                                <div className="bg-slate-900 p-6 md:p-8 rounded-[3.5rem] border border-slate-800">
-                                    <h3 className="text-xl md:text-2xl font-black uppercase mb-6 text-purple-500">Item Performance Ledger</h3>
-                                    <div className="overflow-x-auto max-h-96">
-                                        <table className="w-full text-left text-xs md:text-base">
-                                            <thead className="sticky top-0 bg-slate-900 z-10">
-                                                <tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4">
-                                                    <th className="pb-4 px-2 min-w-[150px]">Product</th><th className="pb-4 px-2">Units Sold</th><th className="pb-4 px-2">Revenue (TZS)</th><th className="pb-4 px-2">Cost (TZS)</th><th className="pb-4 px-2">Net Profit/Loss</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {getItemProfitability().map((stat, idx) => (
-                                                    <tr key={idx} className="border-b border-slate-800/50 hover:bg-black/50">
-                                                        <td className="py-4 px-2 font-black text-white">{stat.name}</td>
-                                                        <td className="py-4 px-2 text-slate-300">{stat.qty}</td>
-                                                        <td className="py-4 px-2 text-blue-400">{stat.revenue.toLocaleString()}</td>
-                                                        <td className="py-4 px-2 text-rose-400">{stat.cost.toLocaleString()}</td>
-                                                        <td className={`py-4 px-2 font-black ${stat.profit >= 0 ? 'text-emerald-400' : 'text-rose-500'}`}>
-                                                            {stat.profit > 0 ? '+' : ''}{stat.profit.toLocaleString()}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-
-                                <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800">
-                                    <h3 className="text-xl md:text-2xl font-black uppercase mb-6 text-blue-500">Sales History</h3>
-                                    <div className="overflow-x-auto max-h-96">
-                                        <table className="w-full text-left text-xs md:text-base">
-                                            <thead className="sticky top-0 bg-slate-900 z-10">
-                                                <tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4">
-                                                    <th className="pb-4 px-2 min-w-[120px]">Date</th><th className="pb-4 px-2 min-w-[200px]">Items Sold</th><th className="pb-4 px-2">Method</th><th className="pb-4 px-2">Total (TZS)</th><th className="pb-4 px-2">Change (TZS)</th><th className="pb-4 px-2">Staff</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {data.sales.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).map(sale => (
-                                                    <tr key={sale.id} className="border-b border-slate-800/50 hover:bg-black/50">
-                                                        <td className="py-4 px-2 text-slate-300">{new Date(sale.timestamp).toLocaleString()}</td>
-                                                        <td className="py-4 px-2 text-slate-400">{sale.items?.map(i => `${i.qty}x ${i.brandName}`).join(', ')}</td>
-                                                        <td className="py-4 px-2"><span className={`px-2 py-1 rounded text-[10px] font-black ${sale.method === 'CASH' ? 'bg-emerald-900 text-emerald-400' : sale.method === 'DEBT' ? 'bg-rose-900 text-rose-400' : 'bg-blue-900 text-blue-400'}`}>{sale.method}</span></td>
-                                                        <td className="py-4 px-2 font-black text-emerald-400">{Number(sale.total).toLocaleString()}</td>
-                                                        <td className="py-4 px-2 font-black text-blue-300">{Number(sale.changeGiven || 0).toLocaleString()}</td>
-                                                        <td className="py-4 px-2 text-slate-500 uppercase font-bold">{sale.soldBy}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                                
-                                {hasAccess('MANAGER') && (
-                                    <div className="mt-10 flex justify-end">
-                                        <button onClick={handleDeleteAllFinance} className="bg-rose-950/40 text-rose-500 border border-rose-900 px-6 py-4 rounded-3xl font-black text-xs uppercase hover:bg-rose-600 hover:text-white transition-all tracking-widest shadow-lg">
-                                            ⚠️ Clear All Financial Records
-                                        </button>
-                                    </div>
-                                )}
                             </div>
                         )}
 
-                        {/* EXPORT AND REPORTS SECTION */}
+                        {/* EXPORT AND REPORTS SECTION WITH SEARCH & FILTERING */}
                         {view === 'REPORTS' && (
                             <div className="space-y-6 md:space-y-10 h-full overflow-y-auto pb-10">
-                                <h2 className="text-2xl md:text-4xl font-black uppercase mb-8">Data Exports & Reports</h2>
                                 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="bg-slate-900 p-8 rounded-[3.5rem] border border-slate-800 shadow-xl flex flex-col justify-between">
-                                        <div>
-                                            <h3 className="font-black text-xl text-emerald-500 mb-2">Sales Records</h3>
-                                            <p className="text-slate-400 text-sm mb-6">Complete historical log of all sales, items sold, revenue, staff involved, and profit margins.</p>
-                                        </div>
-                                        <button onClick={()=>exportToExcel(data.sales, 'APEX_Sales_Report')} className="bg-emerald-600 text-white font-black py-4 rounded-2xl hover:bg-emerald-500 transition-all shadow-lg w-full">📥 DOWNLOAD EXCEL</button>
-                                    </div>
-
-                                    <div className="bg-slate-900 p-8 rounded-[3.5rem] border border-slate-800 shadow-xl flex flex-col justify-between">
-                                        <div>
-                                            <h3 className="font-black text-xl text-blue-500 mb-2">Inventory System</h3>
-                                            <p className="text-slate-400 text-sm mb-6">Current stock levels, pricing, cost, generic names, categories and total inventory value.</p>
-                                        </div>
-                                        <button onClick={()=>exportToExcel(data.inventory, 'APEX_Inventory_Report')} className="bg-blue-600 text-white font-black py-4 rounded-2xl hover:bg-blue-500 transition-all shadow-lg w-full">📥 DOWNLOAD EXCEL</button>
-                                    </div>
-
-                                    <div className="bg-slate-900 p-8 rounded-[3.5rem] border border-slate-800 shadow-xl flex flex-col justify-between">
-                                        <div>
-                                            <h3 className="font-black text-xl text-purple-500 mb-2">Client Registry</h3>
-                                            <p className="text-slate-400 text-sm mb-6">Full list of registered patients, wholesale customers, contact details, and current debt balances.</p>
-                                        </div>
-                                        <button onClick={()=>exportToExcel(data.patients, 'APEX_Clients_Report')} className="bg-purple-600 text-white font-black py-4 rounded-2xl hover:bg-purple-500 transition-all shadow-lg w-full">📥 DOWNLOAD EXCEL</button>
-                                    </div>
-
-                                    <div className="bg-slate-900 p-8 rounded-[3.5rem] border border-slate-800 shadow-xl flex flex-col justify-between">
-                                        <div>
-                                            <h3 className="font-black text-xl text-rose-500 mb-2">Expense Logs</h3>
-                                            <p className="text-slate-400 text-sm mb-6">Tracked operational expenses, utility bills, inventory restock expenditures, and systemic losses.</p>
-                                        </div>
-                                        <button onClick={()=>exportToExcel(data.expenses, 'APEX_Expenses_Report')} className="bg-rose-600 text-white font-black py-4 rounded-2xl hover:bg-rose-500 transition-all shadow-lg w-full">📥 DOWNLOAD EXCEL</button>
+                                {/* Header & Period Selector */}
+                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                    <h2 className="text-2xl md:text-4xl font-black uppercase">Live Analytics</h2>
+                                    <div className="flex bg-black rounded-2xl p-1 border border-slate-800">
+                                        {['DAILY', 'WEEKLY', 'MONTHLY'].map(p => (
+                                            <button key={p} onClick={()=>setReportPeriod(p)} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${reportPeriod===p ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>{p}</button>
+                                        ))}
                                     </div>
                                 </div>
+
+                                {/* Report Search */}
+                                <input value={reportSearch} onChange={(e)=>setReportSearch(e.target.value)} placeholder={`🔍 Search ${reportPeriod} reports by staff, item, description...`} className="w-full p-4 bg-slate-900 border border-slate-800 rounded-2xl font-bold outline-none focus:border-blue-500 text-sm md:text-base text-white" />
+
+                                {/* Selected Period Metrics */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div className="bg-slate-900 p-6 rounded-[2rem] border-t-4 border-emerald-500 shadow-xl">
+                                        <p className="text-slate-500 text-[10px] font-black uppercase mb-1">Sales ({reportPeriod})</p>
+                                        <p className="text-xl md:text-2xl font-black text-white">{filteredReportData.totalSales.toLocaleString()} <span className="text-[10px] text-emerald-500">TZS</span></p>
+                                    </div>
+                                    <div className="bg-slate-900 p-6 rounded-[2rem] border-t-4 border-blue-500 shadow-xl">
+                                        <p className="text-slate-500 text-[10px] font-black uppercase mb-1">Profit ({reportPeriod})</p>
+                                        <p className="text-xl md:text-2xl font-black text-white">{filteredReportData.totalProfit.toLocaleString()} <span className="text-[10px] text-blue-500">TZS</span></p>
+                                    </div>
+                                    <div className="bg-slate-900 p-6 rounded-[2rem] border-t-4 border-rose-500 shadow-xl">
+                                        <p className="text-slate-500 text-[10px] font-black uppercase mb-1">Losses ({reportPeriod})</p>
+                                        <p className="text-xl md:text-2xl font-black text-white">{filteredReportData.totalLosses.toLocaleString()} <span className="text-[10px] text-rose-500">TZS</span></p>
+                                    </div>
+                                    <div className="bg-slate-900 p-6 rounded-[2rem] border-t-4 border-purple-500 shadow-xl">
+                                        <p className="text-slate-500 text-[10px] font-black uppercase mb-1">Expired Cost</p>
+                                        <p className="text-xl md:text-2xl font-black text-white">{filteredReportData.expiredCost.toLocaleString()} <span className="text-[10px] text-purple-500">TZS</span></p>
+                                    </div>
+                                </div>
+
+                                {/* Report Tab Selection */}
+                                <div className="flex border-b border-slate-800 gap-4 md:gap-8 mt-6">
+                                    <button onClick={()=>setReportTab('SALES')} className={`pb-3 font-black text-xs md:text-sm uppercase tracking-widest ${reportTab==='SALES' ? 'text-emerald-500 border-b-2 border-emerald-500' : 'text-slate-500 hover:text-white'}`}>Sales & Profit Log</button>
+                                    <button onClick={()=>setReportTab('LOSSES')} className={`pb-3 font-black text-xs md:text-sm uppercase tracking-widest ${reportTab==='LOSSES' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-slate-500 hover:text-white'}`}>Losses / Expenses</button>
+                                    <button onClick={()=>setReportTab('EXPIRED')} className={`pb-3 font-black text-xs md:text-sm uppercase tracking-widest ${reportTab==='EXPIRED' ? 'text-purple-500 border-b-2 border-purple-500' : 'text-slate-500 hover:text-white'}`}>Expired Drugs</button>
+                                </div>
+
+                                {/* Dynamic Table & Export per Tab */}
+                                <div className="bg-black p-6 rounded-[2.5rem] border border-slate-800">
+                                    <div className="flex justify-end mb-4">
+                                        {reportTab === 'SALES' && <button onClick={()=>exportToExcel(filteredReportData.sales, `APEX_${reportPeriod}_Sales`)} className="bg-emerald-900/30 text-emerald-400 text-[10px] font-black px-4 py-2 rounded-xl hover:bg-emerald-600 hover:text-white transition">📥 EXPORT THIS VIEW</button>}
+                                        {reportTab === 'LOSSES' && <button onClick={()=>exportToExcel(filteredReportData.expenses, `APEX_${reportPeriod}_Losses`)} className="bg-rose-900/30 text-rose-400 text-[10px] font-black px-4 py-2 rounded-xl hover:bg-rose-600 hover:text-white transition">📥 EXPORT THIS VIEW</button>}
+                                        {reportTab === 'EXPIRED' && <button onClick={()=>exportToExcel(filteredReportData.expired, `APEX_Expired_Drugs`)} className="bg-purple-900/30 text-purple-400 text-[10px] font-black px-4 py-2 rounded-xl hover:bg-purple-600 hover:text-white transition">📥 EXPORT THIS VIEW</button>}
+                                    </div>
+
+                                    <div className="overflow-x-auto max-h-96 no-scrollbar">
+                                        <table className="w-full text-left text-xs md:text-base">
+                                            
+                                            {reportTab === 'SALES' && (
+                                                <>
+                                                    <thead className="sticky top-0 bg-black z-10"><tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4 px-2">Date</th><th className="pb-4 px-2">Items</th><th className="pb-4 px-2">Staff</th><th className="pb-4 px-2">Method</th><th className="pb-4 px-2">Revenue</th><th className="pb-4 px-2">Profit</th></tr></thead>
+                                                    <tbody>
+                                                        {filteredReportData.sales.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp)).map(s => (
+                                                            <tr key={s.id} className="border-b border-slate-800/50 hover:bg-slate-900">
+                                                                <td className="py-4 px-2 text-slate-300">{new Date(s.timestamp).toLocaleDateString()}</td>
+                                                                <td className="py-4 px-2 text-slate-400">{s.items?.map(i => `${i.qty}x ${i.brandName}`).join(', ')}</td>
+                                                                <td className="py-4 px-2 text-white font-bold uppercase">{s.soldBy}</td>
+                                                                <td className="py-4 px-2"><span className="bg-slate-800 px-2 py-1 rounded text-[9px] font-black">{s.method}</span></td>
+                                                                <td className="py-4 px-2 font-black text-emerald-400">{Number(s.total).toLocaleString()}</td>
+                                                                <td className="py-4 px-2 font-black text-blue-400">+{Number(s.profit).toLocaleString()}</td>
+                                                            </tr>
+                                                        ))}
+                                                        {filteredReportData.sales.length === 0 && <tr><td colSpan="6" className="text-center py-8 text-slate-600 font-bold uppercase tracking-widest">No Sales Found</td></tr>}
+                                                    </tbody>
+                                                </>
+                                            )}
+
+                                            {reportTab === 'LOSSES' && (
+                                                <>
+                                                    <thead className="sticky top-0 bg-black z-10"><tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4 px-2">Date</th><th className="pb-4 px-2">Description</th><th className="pb-4 px-2">Amount Lost/Spent</th></tr></thead>
+                                                    <tbody>
+                                                        {filteredReportData.expenses.sort((a,b)=>new Date(b.timestamp || b.date)-new Date(a.timestamp || a.date)).map(e => (
+                                                            <tr key={e.id} className="border-b border-slate-800/50 hover:bg-slate-900">
+                                                                <td className="py-4 px-2 text-slate-300">{new Date(e.timestamp || e.date).toLocaleDateString()}</td>
+                                                                <td className="py-4 px-2 text-white font-bold">{e.description}</td>
+                                                                <td className="py-4 px-2 font-black text-rose-500">{Number(e.amount).toLocaleString()} TZS</td>
+                                                            </tr>
+                                                        ))}
+                                                        {filteredReportData.expenses.length === 0 && <tr><td colSpan="3" className="text-center py-8 text-slate-600 font-bold uppercase tracking-widest">No Losses Found</td></tr>}
+                                                    </tbody>
+                                                </>
+                                            )}
+
+                                            {reportTab === 'EXPIRED' && (
+                                                <>
+                                                    <thead className="sticky top-0 bg-black z-10"><tr className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase border-b border-slate-800 pb-4"><th className="pb-4 px-2">Item</th><th className="pb-4 px-2">Expiry Date</th><th className="pb-4 px-2">Stock Wasted</th><th className="pb-4 px-2">Loss Value (Cost)</th></tr></thead>
+                                                    <tbody>
+                                                        {filteredReportData.expired.map(i => (
+                                                            <tr key={i.id} className="border-b border-slate-800/50 hover:bg-slate-900">
+                                                                <td className="py-4 px-2 text-white font-bold">{i.brandName} <span className="text-slate-500 text-[10px] block">{i.genericName}</span></td>
+                                                                <td className="py-4 px-2 font-black text-rose-500">{new Date(i.expiryDate).toLocaleDateString()}</td>
+                                                                <td className="py-4 px-2 text-slate-400 font-bold">{i.stock}</td>
+                                                                <td className="py-4 px-2 font-black text-purple-400">{(Number(i.stock) * Number(i.costPrice)).toLocaleString()} TZS</td>
+                                                            </tr>
+                                                        ))}
+                                                        {filteredReportData.expired.length === 0 && <tr><td colSpan="4" className="text-center py-8 text-slate-600 font-bold uppercase tracking-widest">No Expired Drugs Found</td></tr>}
+                                                    </tbody>
+                                                </>
+                                            )}
+
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* Full Master Exports */}
+                                <div className="pt-10 border-t border-slate-800">
+                                    <h3 className="text-sm font-black uppercase mb-4 text-slate-500 tracking-widest">MASTER SYSTEM DUMPS</h3>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        <button onClick={()=>exportToExcel(data.sales, 'APEX_Master_Sales')} className="bg-slate-900 border border-slate-800 text-slate-300 font-bold text-[10px] md:text-xs py-3 rounded-xl hover:bg-slate-800 hover:text-white transition">📥 ALL SALES</button>
+                                        <button onClick={()=>exportToExcel(data.inventory, 'APEX_Master_Inventory')} className="bg-slate-900 border border-slate-800 text-slate-300 font-bold text-[10px] md:text-xs py-3 rounded-xl hover:bg-slate-800 hover:text-white transition">📥 ALL INVENTORY</button>
+                                        <button onClick={()=>exportToExcel(data.patients, 'APEX_Master_Clients')} className="bg-slate-900 border border-slate-800 text-slate-300 font-bold text-[10px] md:text-xs py-3 rounded-xl hover:bg-slate-800 hover:text-white transition">📥 ALL CLIENTS</button>
+                                        <button onClick={()=>exportToExcel(data.expenses, 'APEX_Master_Expenses')} className="bg-slate-900 border border-slate-800 text-slate-300 font-bold text-[10px] md:text-xs py-3 rounded-xl hover:bg-slate-800 hover:text-white transition">📥 ALL EXPENSES</button>
+                                    </div>
+                                </div>
+
                             </div>
                         )}
 
@@ -980,7 +1044,13 @@
                                                     <input name="price" type="number" defaultValue={editing.item.price || ''} placeholder="Sell Price (TZS) *" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
                                                     <input name="costPrice" type="number" defaultValue={editing.item.costPrice || ''} placeholder="Cost Price (TZS) *" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
                                                 </div>
-                                                <input name="stock" type="number" defaultValue={editing.item.stock || ''} placeholder="Stock Quantity *" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <input name="stock" type="number" defaultValue={editing.item.stock || ''} placeholder="Stock Quantity *" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
+                                                    <div className="relative">
+                                                        <span className="absolute -top-2 left-3 bg-slate-900 text-[9px] text-slate-500 font-bold px-1 uppercase tracking-widest rounded">Expiry Date</span>
+                                                        <input name="expiryDate" type="date" defaultValue={editing.item.expiryDate || ''} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base focus:border-emerald-500" />
+                                                    </div>
+                                                </div>
                                                 {editing.item.id && (
                                                     <div className="pt-2">
                                                         <button type="button" onClick={() => handleDeleteProduct(editing.item.id)} className="w-full bg-rose-600/20 text-rose-500 border border-rose-600/50 py-3 rounded-xl font-bold hover:bg-rose-600 hover:text-white transition-all text-xs md:text-sm uppercase tracking-widest">
@@ -1154,3 +1224,4 @@
     </script>
 </body>
 </html>
+
