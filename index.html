@@ -1,3 +1,5 @@
+--- START OF FILE ai_studio_code (76).html ---
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -228,6 +230,8 @@
                 if (!hasAccess('MANAGER')) return alert("Access Denied: Admins only.");
                 if (userItem.username.toLowerCase() === 'admin') return alert("Cannot delete the master admin account.");
                 if(!confirm("⚠️ WARNING: Are you sure you want to completely permanently delete this personnel? This action cannot be undone.")) return;
+                
+                setEditing(null); // INSTANT UI CLOSE
                 try {
                     if (window.db && isOnline) {
                         await window.db.collection('users').doc(userItem.id).delete();
@@ -235,13 +239,14 @@
                         await window.offlineDB.delete('users', userItem.id);
                         await loadFromOfflineDB();
                     }
-                    setEditing(null);
                 } catch (err) { alert("Error deleting personnel: " + err.message); }
             };
 
             const handleDeleteProduct = async (id) => {
                 if (!hasAccess('MANAGER')) return alert("Access Denied: Admins only.");
                 if(!confirm("⚠️ WARNING: Are you sure you want to completely delete this item and its details? This action cannot be undone.")) return;
+                
+                setEditing(null); // INSTANT UI CLOSE
                 try {
                     if (window.db && isOnline) {
                         await window.db.collection('inventory').doc(id).delete();
@@ -249,7 +254,6 @@
                         await window.offlineDB.delete('inventory', id);
                         await loadFromOfflineDB();
                     }
-                    setEditing(null);
                 } catch (err) { alert("Error deleting item: " + err.message); }
             };
 
@@ -269,7 +273,6 @@
                         for(let e of exps) await window.offlineDB.delete('expenses', e.id);
                         await loadFromOfflineDB();
                     }
-                    alert("All financial records deleted successfully.");
                 } catch(err) { alert("Error deleting finance records: " + err.message); }
             };
 
@@ -312,6 +315,10 @@
                     patientId: checkoutPatient || null 
                 };
                 
+                const currentCart = [...cart];
+                setCart([]); 
+                setCheckoutModal(false); // INSTANT UI CLOSE
+
                 try {
                     if (window.db && isOnline) {
                         await window.db.collection("sales").add(saleData);
@@ -319,7 +326,7 @@
                             const pt = data.patients.find(p => p.id === checkoutPatient);
                             if(pt) await window.db.collection("patients").doc(checkoutPatient).update({ creditBalance: (Number(pt.creditBalance) || 0) + total });
                         }
-                        for(const i of cart) {
+                        for(const i of currentCart) {
                             await window.db.collection("inventory").doc(i.id).update({ stock: i.stock - i.qty });
                         }
                     } else {
@@ -329,13 +336,15 @@
                             const pt = data.patients.find(p => p.id === checkoutPatient);
                             if(pt) await window.offlineDB.put('patients', { ...pt, creditBalance: (Number(pt.creditBalance) || 0) + total });
                         }
-                        for(const i of cart) {
+                        for(const i of currentCart) {
                             await window.offlineDB.put('inventory', { ...i, stock: i.stock - i.qty });
                         }
                         await loadFromOfflineDB();
                     }
-                    setCart([]); setCheckoutModal(false);
-                } catch(e) { alert("Error completing sale: " + e.message); }
+                } catch(e) { 
+                    alert("Error completing sale: " + e.message); 
+                    setCart(currentCart); // Revert UI if it fails
+                }
             };
 
             const addMedicalHistory = async (patientId, record) => {
@@ -356,7 +365,6 @@
                     await window.offlineDB.put('medicalHistory', { id: `hist_${Date.now()}`, ...historyRecord });
                     await loadFromOfflineDB();
                 }
-                setMedicalHistoryModal(null);
             };
 
             const exportToExcel = (exportData, filename) => {
@@ -637,7 +645,9 @@
                             <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border border-slate-800 h-full overflow-auto">
                                 <div className="flex justify-between items-center mb-6 md:mb-10">
                                     <h2 className="text-2xl md:text-3xl font-black text-blue-500 uppercase">Client Registry</h2>
-                                    <button onClick={() => setEditing({ type: 'PATIENT', item: {} })} className="bg-blue-600 text-white px-4 md:px-8 py-2 md:py-3 rounded-2xl font-black shadow-lg text-xs md:text-sm hover:bg-blue-500 transition">+ ADD CLIENT</button>
+                                    {hasAccess('MANAGER') && (
+                                        <button onClick={() => setEditing({ type: 'PATIENT', item: {} })} className="bg-blue-600 text-white px-4 md:px-8 py-2 md:py-3 rounded-2xl font-black shadow-lg text-xs md:text-sm hover:bg-blue-500 transition">+ ADD CLIENT</button>
+                                    )}
                                 </div>
                                 <input onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Clients..." className="w-full p-4 mb-6 bg-black border border-slate-800 rounded-2xl font-bold outline-none focus:border-blue-500 text-sm md:text-base text-white" />
                                 <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4 md:gap-6`}>
@@ -915,42 +925,48 @@
                                     <form onSubmit={async (e) => {
                                         e.preventDefault();
                                         if (!hasAccess('MANAGER')) return alert("Permission Denied: Only Admin can make changes.");
+                                        
                                         const payload = Object.fromEntries(new FormData(e.target));
+                                        const currentEdit = { ...editing }; 
+                                        
+                                        setEditing(null); // INSTANT UI CLOSE
+                                        
                                         try {
                                             let collectionName = '';
                                             let finalData = {};
                                             
-                                            if (editing.type === 'PRODUCT') {
+                                            if (currentEdit.type === 'PRODUCT') {
                                                 collectionName = 'inventory';
                                                 finalData = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock) };
                                             } 
-                                            else if (editing.type === 'PATIENT') {
+                                            else if (currentEdit.type === 'PATIENT') {
                                                 collectionName = 'patients';
-                                                finalData = editing.item.id ? payload : { ...payload, creditBalance: editing.item.creditBalance || 0 };
+                                                finalData = currentEdit.item.id ? payload : { ...payload, creditBalance: currentEdit.item.creditBalance || 0 };
                                             }
-                                            else if (editing.type === 'USER') {
+                                            else if (currentEdit.type === 'USER') {
                                                 collectionName = 'users';
-                                                finalData = editing.item.id ? payload : { ...payload, status: 'ACTIVE' };
+                                                finalData = currentEdit.item.id ? payload : { ...payload, status: 'ACTIVE' };
                                             }
-                                            else if (editing.type === 'EXPENSE') {
+                                            else if (currentEdit.type === 'EXPENSE') {
                                                 collectionName = 'expenses';
                                                 finalData = { ...payload, amount: Number(payload.amount), timestamp: new Date().toISOString() };
                                             }
 
                                             if (window.db && isOnline) {
-                                                if (editing.item.id) {
-                                                    await window.db.collection(collectionName).doc(editing.item.id).update(finalData);
+                                                if (currentEdit.item.id) {
+                                                    await window.db.collection(collectionName).doc(currentEdit.item.id).update(finalData);
                                                 } else {
                                                     await window.db.collection(collectionName).add(finalData);
                                                 }
                                             } else {
-                                                const newId = editing.item.id || `${collectionName.substring(0,3)}_${Date.now()}`;
+                                                const newId = currentEdit.item.id || `${collectionName.substring(0,3)}_${Date.now()}`;
                                                 await window.offlineDB.put(collectionName, { id: newId, ...finalData });
                                                 await loadFromOfflineDB();
                                             }
-                                            
-                                            setEditing(null); // Dialog strictly closes after successful save.
-                                        } catch (err) { alert("Error: " + err.message); }
+                                        } catch (err) { 
+                                            alert("Error: " + err.message); 
+                                            setEditing(currentEdit); // Re-open on fail
+                                        }
                                     }} className="space-y-4">
 
                                         {editing.type === 'PRODUCT' && (
@@ -1044,7 +1060,11 @@
                                             e.preventDefault();
                                             if (!hasAccess('MANAGER')) return alert("Access Denied: Admins only.");
                                             const fd = new FormData(e.target);
-                                            addMedicalHistory(medicalHistoryModal.id, {
+                                            
+                                            const currentPatientId = medicalHistoryModal.id;
+                                            setMedicalHistoryModal(null); // INSTANT UI CLOSE
+                                            
+                                            addMedicalHistory(currentPatientId, {
                                                 diagnosis: fd.get('diagnosis'), treatment: fd.get('treatment'),
                                                 drugs: fd.get('drugs'), allergies: fd.get('allergies'), notes: fd.get('notes')
                                             });
