@@ -16,7 +16,9 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
@@ -52,7 +54,7 @@
         window.offlineDB = {
             init: async function() {
                 return new Promise((resolve) => {
-                    const request = indexedDB.open('ApexPharmacy', 3);
+                    const request = indexedDB.open('ApexPharmacy', 4);
                     request.onsuccess = () => { this.db = request.result; resolve(this.db); };
                     request.onupgradeneeded = (e) => {
                         const db = e.target.result;
@@ -90,14 +92,15 @@
 
     <script>
         try {
-            firebase.initializeApp({
+            const firebaseConfig = {
                 apiKey: "AIzaSyDOFibCiMfYeVP4A6p6En9Jlml10eATGio",
                 authDomain: "apex-management-system-93a9e.firebaseapp.com",
                 projectId: "apex-management-system-93a9e",
                 storageBucket: "apex-management-system-93a9e.firebasestorage.app",
                 messagingSenderId: "514939996572",
                 appId: "1:514939996572:web:3ecbe1fd7003d024bd6059"
-            });
+            };
+            firebase.initializeApp(firebaseConfig);
             window.db = firebase.firestore();
             firebase.firestore().enablePersistence().catch(err => console.log('Offline persistence:', err.code));
         } catch (error) {
@@ -129,6 +132,47 @@
             const [reportTab, setReportTab] = useState('SALES');
             const [reportSearch, setReportSearch] = useState('');
 
+            // Auth State Listener
+            useEffect(() => {
+                if (!window.firebase) return;
+                const unsubscribe = firebase.auth().onAuthStateChanged(async (authUser) => {
+                    if (authUser) {
+                        try {
+                            if (window.db && isOnline) {
+                                const snap = await window.db.collection('users').where('email', '==', authUser.email).get();
+                                if (!snap.empty) {
+                                    const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                                    if (uData.status === 'ACTIVE') {
+                                        setUser(uData);
+                                        setView('DASHBOARD');
+                                    } else {
+                                        alert("Account disabled. Contact Administrator.");
+                                        firebase.auth().signOut();
+                                    }
+                                } else {
+                                    alert("User profile not found in database.");
+                                    firebase.auth().signOut();
+                                }
+                            } else {
+                                // Offline Auth Fallback mapping via IndexedDB
+                                const localUsers = await window.offlineDB.getAll('users');
+                                const found = localUsers.find(u => u.email === authUser.email && u.status === 'ACTIVE');
+                                if (found) {
+                                    setUser(found);
+                                    setView('DASHBOARD');
+                                }
+                            }
+                        } catch (err) {
+                            console.error("Auth routing failed:", err);
+                        }
+                    } else {
+                        setUser(null);
+                        setView('LOGIN');
+                    }
+                });
+                return () => unsubscribe();
+            }, [isOnline]);
+
             useEffect(() => {
                 const handleResize = () => setIsMobile(window.innerWidth < 768);
                 window.addEventListener('resize', handleResize);
@@ -146,6 +190,7 @@
                 };
             }, []);
 
+            // Data Syncing
             useEffect(() => {
                 if (!window.db) { loadFromOfflineDB(); return; }
                 const collections = ["inventory", "sales", "patients", "users", "expenses", "medicalHistory"];
@@ -170,17 +215,6 @@
                 setData(data_obj);
             };
 
-            useEffect(() => {
-                const init = async () => {
-                    if (!window.db) return;
-                    const snap = await window.db.collection("users").where("username", "==", "admin").get();
-                    if (snap.empty) {
-                        await window.db.collection("users").add({ username: "admin", pin: "1234", role: "MANAGER", status: "ACTIVE" });
-                    }
-                };
-                init();
-            }, []);
-
             const hasAccess = (level) => {
                 const roles = { 'MANAGER': 4, 'PHARMACIST': 3, 'TECHNICIAN': 2, 'ASSISTANT': 1, 'DISPENSER': 0 };
                 return roles[user?.role] >= roles[level];
@@ -204,34 +238,28 @@
                 }
             };
 
-            const handleLogin = async () => {
-                const u = document.getElementById('u_box')?.value?.toLowerCase()?.trim();
-                const p = document.getElementById('p_box')?.value?.trim();
-                if (!u || !p || p.length !== 4 || isNaN(p)) return alert("Invalid credentials format");
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('email_box')?.value?.trim();
+                const password = document.getElementById('p_box')?.value;
+                if (!email || !password) return alert("Missing credentials");
                 try {
-                    if (window.db && isOnline) {
-                        const snap = await window.db.collection("users").where("username", "==", u).where("pin", "==", String(p)).get();
-                        if (!snap.empty) { 
-                            const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
-                            if (uData.status !== 'ACTIVE') return alert("Account INACTIVE");
-                            setUser(uData); setView('DASHBOARD');
-                        } else alert("Invalid Credentials");
-                    } else {
-                        const users = await window.offlineDB.getAll('users');
-                        const found = users.find(usr => usr.username === u && String(usr.pin) === String(p) && usr.status === 'ACTIVE');
-                        if (found) { setUser(found); setView('DASHBOARD'); }
-                        else alert("Invalid Credentials");
-                    }
-                } catch (err) { alert("Auth Error: " + err.message); }
+                    await firebase.auth().signInWithEmailAndPassword(email, password);
+                } catch (err) { alert("Authentication Failed: " + err.message); }
             };
 
-            const handleLogout = () => {
-                if (confirm("Logout?")) { setUser(null); setViewHistory([]); setView('LOGIN'); window.location.reload(); }
+            const handleLogout = async () => {
+                if (confirm("Logout from system?")) { 
+                    await firebase.auth().signOut();
+                    setUser(null); 
+                    setViewHistory([]); 
+                    setView('LOGIN'); 
+                }
             };
 
             const handleDeletePersonnel = async (userItem) => {
                 if (!hasAccess('MANAGER')) return alert("Access Denied: Admins only.");
-                if (userItem.username.toLowerCase() === 'admin') return alert("Cannot delete the master admin account.");
+                if (userItem.email.toLowerCase() === 'manjebecaleb@gmail.com') return alert("Cannot delete the master admin account.");
                 if(!confirm("⚠️ WARNING: Are you sure you want to completely permanently delete this personnel? This action cannot be undone.")) return;
                 
                 setEditing(null); // INSTANT UI CLOSE
@@ -314,7 +342,7 @@
                     amountTendered: method === 'CASH' ? amountTendered : total,
                     changeGiven: changeAmount,
                     timestamp: new Date().toISOString(), 
-                    soldBy: user.username, 
+                    soldBy: user.fullName || user.email, 
                     method, 
                     items: cart, 
                     patientId: checkoutPatient || null 
@@ -547,9 +575,11 @@
                             <h1 className="text-4xl md:text-5xl font-black text-emerald-500 mb-2 italic">APEX</h1>
                             <p className="text-slate-500 text-[9px] md:text-[10px] font-bold uppercase mb-2 tracking-[0.3em]">Private & Secure</p>
                             <p className="text-slate-600 text-[8px] md:text-[9px] mb-8">Tanzania Pharmacy System</p>
-                            <input id="u_box" placeholder="Username" className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm" />
-                            <input id="p_box" type="password" placeholder="PIN" className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold tracking-[0.5em]" maxLength="4" />
-                            <button onClick={handleLogin} className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-lg md:text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95">AUTHENTICATE</button>
+                            <form onSubmit={handleLogin} className="flex flex-col w-full">
+                                <input id="email_box" type="email" placeholder="Email Address" required className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white" />
+                                <input id="p_box" type="password" placeholder="Password" required className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm tracking-widest text-white" />
+                                <button type="submit" className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-lg md:text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95">AUTHENTICATE</button>
+                            </form>
                         </div>
                     </div>
                 );
@@ -584,8 +614,11 @@
                                 </nav>
                                 <div className="pt-6 border-t border-slate-800 mt-4">
                                     <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-8 h-8 bg-slate-800 text-emerald-500 rounded-full flex items-center justify-center font-black">{user.username[0].toUpperCase()}</div>
-                                        <div><p className="text-[10px] font-black uppercase text-emerald-500">{user.role}</p><p className="text-xs font-bold text-slate-300">{user.username}</p></div>
+                                        <div className="w-8 h-8 bg-slate-800 text-emerald-500 rounded-full flex items-center justify-center font-black">{(user.fullName || user.email)[0].toUpperCase()}</div>
+                                        <div className="overflow-hidden">
+                                            <p className="text-[10px] font-black uppercase text-emerald-500">{user.role}</p>
+                                            <p className="text-xs font-bold text-slate-300 truncate">{user.fullName || user.email}</p>
+                                        </div>
                                     </div>
                                     <button onClick={handleLogout} className="w-full text-left text-rose-500 font-bold text-[10px] uppercase tracking-widest p-2 rounded-lg transition hover:bg-rose-950/30">🚪 Logout</button>
                                 </div>
@@ -968,9 +1001,13 @@
                                 <div className="space-y-4">
                                     {data.users.map(u => (
                                         <div key={u.id} className="bg-black p-4 md:p-6 rounded-[2.5rem] border border-slate-800 flex justify-between items-center hover:border-emerald-500 transition-all">
-                                            <div><p className="font-black text-base md:text-xl text-white uppercase">{u.username}</p><p className="text-[9px] md:text-[10px] text-slate-600 font-black">{u.role}</p></div>
+                                            <div className="flex-1 overflow-hidden pr-2">
+                                                <p className="font-black text-base md:text-xl text-white uppercase truncate">{u.fullName || u.username}</p>
+                                                <p className="text-[9px] md:text-[10px] text-slate-400 font-bold truncate mt-1">📧 {u.email}</p>
+                                                <p className="text-[9px] md:text-[10px] text-emerald-500 font-black mt-1 uppercase">{u.role}</p>
+                                            </div>
                                             {hasAccess('MANAGER') && (
-                                                <button onClick={()=>setEditing({type: 'USER', item: u})} className="px-4 md:px-6 py-2 bg-slate-900 text-blue-400 font-black text-[9px] md:text-[10px] rounded-lg hover:bg-blue-600 hover:text-white transition">MANAGE</button>
+                                                <button onClick={()=>setEditing({type: 'USER', item: u})} className="shrink-0 px-4 md:px-6 py-2 bg-slate-900 text-blue-400 font-black text-[9px] md:text-[10px] rounded-lg hover:bg-blue-600 hover:text-white transition">MANAGE</button>
                                             )}
                                         </div>
                                     ))}
@@ -1007,7 +1044,18 @@
                                             }
                                             else if (currentEdit.type === 'USER') {
                                                 collectionName = 'users';
-                                                finalData = currentEdit.item.id ? payload : { ...payload, status: 'ACTIVE' };
+                                                finalData = { fullName: payload.fullName, email: payload.email, role: payload.role, status: 'ACTIVE' };
+                                                
+                                                if (!currentEdit.item.id && isOnline) {
+                                                    // New user - Create in Firebase Auth using REST API to prevent signing out current admin
+                                                    const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${firebaseConfig.apiKey}`, {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({ email: payload.email, password: payload.password, returnSecureToken: false })
+                                                    });
+                                                    const authData = await res.json();
+                                                    if (authData.error) throw new Error(authData.error.message);
+                                                }
                                             }
                                             else if (currentEdit.type === 'EXPENSE') {
                                                 collectionName = 'expenses';
@@ -1083,20 +1131,26 @@
 
                                         {editing.type === 'USER' && (
                                             <>
-                                                <input name="username" defaultValue={editing.item.username || ''} placeholder="Username" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <input name="pin" defaultValue={editing.item.pin || ''} placeholder="PIN (4 Digits)" maxLength="4" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
-                                                <select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base">
+                                                <input name="fullName" defaultValue={editing.item.fullName || ''} placeholder="Full Name" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base" />
+                                                <input name="email" type="email" defaultValue={editing.item.email || ''} placeholder="Email Address" required disabled={!!editing.item.id} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base disabled:opacity-50" />
+                                                
+                                                {!editing.item.id && (
+                                                    <input name="password" type="password" placeholder="Account Password" required className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-white font-bold text-sm md:text-base tracking-widest" />
+                                                )}
+
+                                                <select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-3 md:p-4 bg-black rounded-2xl outline-none border border-slate-700 text-emerald-400 font-bold text-sm md:text-base">
                                                     <option>MANAGER</option><option>PHARMACIST</option><option>TECHNICIAN</option><option>DISPENSER</option>
                                                 </select>
-                                                {editing.item.id && editing.item.username.toLowerCase() !== 'admin' && (
+
+                                                {editing.item.id && editing.item.email?.toLowerCase() !== 'manjebecaleb@gmail.com' && (
                                                     <div className="pt-2">
                                                         <button type="button" onClick={() => handleDeletePersonnel(editing.item)} className="w-full bg-rose-600/20 text-rose-500 border border-rose-600/50 py-3 rounded-xl font-bold hover:bg-rose-600 hover:text-white transition-all text-xs md:text-sm uppercase tracking-widest">
                                                             🗑️ Delete Personnel
                                                         </button>
                                                     </div>
                                                 )}
-                                                {editing.item.username?.toLowerCase() === 'admin' && (
-                                                    <p className="text-rose-500 font-bold text-xs uppercase text-center">Root Admin Protection Active</p>
+                                                {editing.item.email?.toLowerCase() === 'manjebecaleb@gmail.com' && (
+                                                    <p className="text-rose-500 font-bold text-xs uppercase text-center mt-4">Root Admin Protection Active</p>
                                                 )}
                                             </>
                                         )}
@@ -1224,4 +1278,3 @@
     </script>
 </body>
 </html>
-
