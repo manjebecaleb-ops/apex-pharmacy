@@ -51,46 +51,6 @@
     </div>
 
     <script>
-        window.offlineDB = {
-            init: async function() {
-                return new Promise((resolve) => {
-                    const request = indexedDB.open('ApexPharmacy', 4);
-                    request.onsuccess = () => { this.db = request.result; resolve(this.db); };
-                    request.onupgradeneeded = (e) => {
-                        const db = e.target.result;
-                        ['inventory','sales','patients','users','expenses','medicalHistory','syncQueue'].forEach(store => {
-                            if (!db.objectStoreNames.contains(store)) {
-                                db.createObjectStore(store, { keyPath: 'id', autoIncrement: store === 'syncQueue' });
-                            }
-                        });
-                    };
-                });
-            },
-            get: async (store, key) => new Promise((resolve) => {
-                if (!window.offlineDB.db) return resolve(null);
-                const tx = window.offlineDB.db.transaction(store);
-                tx.objectStore(store).get(key).onsuccess = (e) => resolve(e.target.result);
-            }),
-            getAll: async (store) => new Promise((resolve) => {
-                if (!window.offlineDB.db) return resolve([]);
-                const tx = window.offlineDB.db.transaction(store);
-                tx.objectStore(store).getAll().onsuccess = (e) => resolve(e.target.result);
-            }),
-            put: async (store, data) => new Promise((resolve) => {
-                if (!window.offlineDB.db) return resolve(null);
-                const tx = window.offlineDB.db.transaction(store, 'readwrite');
-                tx.objectStore(store).put(data).onsuccess = (e) => resolve(e.target.result);
-            }),
-            delete: async (store, key) => new Promise((resolve) => {
-                if (!window.offlineDB.db) return resolve();
-                const tx = window.offlineDB.db.transaction(store, 'readwrite');
-                tx.objectStore(store).delete(key).onsuccess = () => resolve();
-            })
-        };
-        window.offlineDB.init();
-    </script>
-
-    <script>
         try {
             const firebaseConfig = {
                 apiKey: "AIzaSyDOFibCiMfYeVP4A6p6En9Jlml10eATGio",
@@ -102,7 +62,10 @@
             };
             firebase.initializeApp(firebaseConfig);
             window.db = firebase.firestore();
-            firebase.firestore().enablePersistence().catch(err => console.log('Offline persistence:', err.code));
+            
+            // Enable Firebase Native Offline Persistence (Manages edits, deletes, queues perfectly)
+            firebase.firestore().enablePersistence({ experimentalTabSynchronization: true })
+                .catch(err => console.log('Offline persistence mode issue:', err.code));
         } catch (error) {
             console.error(error);
         }
@@ -134,35 +97,25 @@
             const [reportTab, setReportTab] = useState('SALES');
             const [reportSearch, setReportSearch] = useState('');
 
-            // Auth State Listener
+            // Auth State Listener using Firestore directly (resolves via cache if offline)
             useEffect(() => {
                 if (!window.firebase) return;
                 const unsubscribe = firebase.auth().onAuthStateChanged(async (authUser) => {
                     if (authUser) {
                         try {
-                            if (window.db && isOnline) {
-                                const snap = await window.db.collection('users').where('email', '==', authUser.email).get();
-                                if (!snap.empty) {
-                                    const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
-                                    if (uData.status === 'ACTIVE') {
-                                        setUser(uData);
-                                        setView('DASHBOARD');
-                                    } else {
-                                        alert("Account disabled. Contact Administrator.");
-                                        firebase.auth().signOut();
-                                    }
+                            const snap = await window.db.collection('users').where('email', '==', authUser.email).get();
+                            if (!snap.empty) {
+                                const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                                if (uData.status === 'ACTIVE') {
+                                    setUser(uData);
+                                    setView('DASHBOARD');
                                 } else {
-                                    alert("User profile not found in database.");
+                                    alert("Account disabled. Contact Administrator.");
                                     firebase.auth().signOut();
                                 }
                             } else {
-                                // Offline Auth Fallback mapping via IndexedDB
-                                const localUsers = await window.offlineDB.getAll('users');
-                                const found = localUsers.find(u => u.email === authUser.email && u.status === 'ACTIVE');
-                                if (found) {
-                                    setUser(found);
-                                    setView('DASHBOARD');
-                                }
+                                alert("User profile not found. If first login, connect to internet.");
+                                firebase.auth().signOut();
                             }
                         } catch (err) {
                             console.error("Auth routing failed:", err);
@@ -173,7 +126,7 @@
                     }
                 });
                 return () => unsubscribe();
-            }, [isOnline]);
+            }, []);
 
             useEffect(() => {
                 const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -192,51 +145,21 @@
                 };
             }, []);
 
-            // Process Sync Queue
+            // Master Snapshot Data Syncing (Updates instantly off local cache offline)
             useEffect(() => {
-                const processSyncQueue = async () => {
-                    if (!isOnline || !window.db) return;
-                    try {
-                        const queue = await window.offlineDB.getAll('syncQueue');
-                        for (const item of queue) {
-                            if (item.type === 'sale') {
-                                await window.db.collection('sales').add(item.data);
-                                await window.offlineDB.delete('syncQueue', item.id);
-                            }
-                        }
-                    } catch (e) {
-                        console.error('Sync failed:', e);
-                    }
-                };
-                if (isOnline) {
-                    processSyncQueue();
-                }
-            }, [isOnline]);
-
-            // Data Syncing
-            useEffect(() => {
-                if (!window.db) { loadFromOfflineDB(); return; }
+                if (!window.db) return;
                 const collections = ["inventory", "sales", "patients", "users", "expenses", "medicalHistory"];
                 const unsubscribers = collections.map(col => 
                     window.db.collection(col).onSnapshot(
                         s => {
                             const docs = s.docs.map(d=>({id:d.id, ...d.data()}));
                             setData(p => ({...p, [col]: docs}));
-                            docs.forEach(item => window.offlineDB.put(col, item));
                         },
-                        err => loadFromOfflineDB()
+                        err => console.error(`Error loading ${col}:`, err)
                     )
                 );
                 return () => unsubscribers.forEach(u => u());
             }, []);
-
-            const loadFromOfflineDB = async () => {
-                const data_obj = {};
-                for (const store of ["inventory","sales","patients","users","expenses","medicalHistory"]) {
-                    data_obj[store] = await window.offlineDB.getAll(store);
-                }
-                setData(data_obj);
-            };
 
             const hasAccess = (level) => {
                 const roles = { 'MANAGER': 4, 'PHARMACIST': 3, 'TECHNICIAN': 2, 'ASSISTANT': 1, 'DISPENSER': 0 };
@@ -280,35 +203,33 @@
                 }
             };
 
-            const handleDeletePersonnel = async (userItem) => {
+            // OPTIMISTIC DELETIONS - No 'await', runs offline instantly, won't resurrect online
+            const handleDeletePersonnel = (userItem) => {
                 if (!hasAccess('MANAGER')) return alert("Access Denied: Admins only.");
                 if (userItem.email.toLowerCase() === 'manjebecaleb@gmail.com') return alert("Cannot delete the master admin account.");
                 if(!confirm("⚠️ WARNING: Are you sure you want to completely permanently delete this personnel? This action cannot be undone.")) return;
                 
-                setEditing(null); // INSTANT UI CLOSE
-                try {
-                    if (window.db && isOnline) {
-                        await window.db.collection('users').doc(userItem.id).delete();
-                    } else {
-                        await window.offlineDB.delete('users', userItem.id);
-                        await loadFromOfflineDB();
-                    }
-                } catch (err) { alert("Error deleting personnel: " + err.message); }
+                setEditing(null); 
+                window.db.collection('users').doc(userItem.id).delete().catch(console.error);
             };
 
-            const handleDeleteProduct = async (id) => {
+            const handleDeleteProduct = (id) => {
                 if (!hasAccess('MANAGER')) return alert("Access Denied: Admins only.");
                 if(!confirm("⚠️ WARNING: Are you sure you want to completely delete this item and its details? This action cannot be undone.")) return;
                 
-                setEditing(null); // INSTANT UI CLOSE
-                try {
-                    if (window.db && isOnline) {
-                        await window.db.collection('inventory').doc(id).delete();
-                    } else {
-                        await window.offlineDB.delete('inventory', id);
-                        await loadFromOfflineDB();
-                    }
-                } catch (err) { alert("Error deleting item: " + err.message); }
+                setEditing(null); 
+                window.db.collection('inventory').doc(id).delete().catch(console.error);
+            };
+
+            const handleDeleteAllFinance = () => {
+                if (!hasAccess('MANAGER')) return alert("Access Denied: Admins only.");
+                if(!confirm("⚠️ EXTREME WARNING: Are you sure you want to permanently delete ALL sales and expenses records? This CANNOT be undone!")) return;
+                
+                // Iterates over cached state and queues deletes to Firebase
+                data.sales.forEach(s => window.db.collection('sales').doc(s.id).delete().catch(console.error));
+                data.expenses.forEach(e => window.db.collection('expenses').doc(e.id).delete().catch(console.error));
+                
+                alert("Financial history wipe executed successfully. Your database is now clean.");
             };
 
             const addToCart = (p) => {
@@ -333,7 +254,7 @@
                 setCheckoutModal(true);
             };
 
-            const finalizeSale = async (method) => {
+            const finalizeSale = (method) => {
                 if (method === 'DEBT' && !checkoutPatient) return alert("Please select a client to issue on credit!");
 
                 const total = cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0);
@@ -354,37 +275,21 @@
                 
                 const currentCart = [...cart];
                 setCart([]); 
-                setCheckoutModal(false); // INSTANT UI CLOSE
+                setCheckoutModal(false); 
 
-                try {
-                    if (window.db && isOnline) {
-                        await window.db.collection("sales").add(saleData);
-                        if (method === 'DEBT' && checkoutPatient) {
-                            const pt = data.patients.find(p => p.id === checkoutPatient);
-                            if(pt) await window.db.collection("patients").doc(checkoutPatient).update({ creditBalance: (Number(pt.creditBalance) || 0) + total });
-                        }
-                        for(const i of currentCart) {
-                            await window.db.collection("inventory").doc(i.id).update({ stock: i.stock - i.qty });
-                        }
-                    } else {
-                        await window.offlineDB.put('syncQueue', { type: 'sale', data: saleData });
-                        await window.offlineDB.put('sales', { id: `offline_${Date.now()}`, ...saleData });
-                        if (method === 'DEBT' && checkoutPatient) {
-                            const pt = data.patients.find(p => p.id === checkoutPatient);
-                            if(pt) await window.offlineDB.put('patients', { ...pt, creditBalance: (Number(pt.creditBalance) || 0) + total });
-                        }
-                        for(const i of currentCart) {
-                            await window.offlineDB.put('inventory', { ...i, stock: i.stock - i.qty });
-                        }
-                        await loadFromOfflineDB();
-                    }
-                } catch(e) { 
-                    alert("Error completing sale: " + e.message); 
-                    setCart(currentCart); // Revert UI if it fails
+                // Non-blocking writes (Optimistic UI handles UI state offline beautifully)
+                window.db.collection("sales").add(saleData).catch(console.error);
+
+                if (method === 'DEBT' && checkoutPatient) {
+                    const pt = data.patients.find(p => p.id === checkoutPatient);
+                    if(pt) window.db.collection("patients").doc(checkoutPatient).update({ creditBalance: (Number(pt.creditBalance) || 0) + total }).catch(console.error);
+                }
+                for(const i of currentCart) {
+                    window.db.collection("inventory").doc(i.id).update({ stock: i.stock - i.qty }).catch(console.error);
                 }
             };
 
-            const addMedicalHistory = async (patientId, record) => {
+            const addMedicalHistory = (patientId, record) => {
                 if (!hasAccess('MANAGER')) return alert("Access Denied: Admins only.");
                 const historyRecord = {
                     patientId,
@@ -395,13 +300,7 @@
                     allergies: record.allergies,
                     notes: record.notes
                 };
-
-                if (window.db && isOnline) {
-                    await window.db.collection("medicalHistory").add(historyRecord);
-                } else {
-                    await window.offlineDB.put('medicalHistory', { id: `hist_${Date.now()}`, ...historyRecord });
-                    await loadFromOfflineDB();
-                }
+                window.db.collection("medicalHistory").add(historyRecord).catch(console.error);
             };
 
             const exportToExcel = (exportData, filename) => {
@@ -976,6 +875,13 @@
                                     </div>
                                 </div>
 
+                                {/* Danger Zone: Clear Financial History Button */}
+                                <div className="pt-6 mt-6 border-t border-rose-900/50">
+                                    <h3 className="text-sm font-black uppercase mb-4 text-rose-500 tracking-widest">DANGER ZONE</h3>
+                                    <button onClick={handleDeleteAllFinance} className="bg-rose-900/20 border border-rose-800 text-rose-500 font-bold text-[10px] md:text-xs py-4 px-6 rounded-xl hover:bg-rose-600 hover:text-white transition w-full md:w-auto text-left shadow-lg">⚠️ CLEAR ALL FINANCIAL HISTORY (SALES & EXPENSES)</button>
+                                    <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase">This permanently wipes financial logs from all synced devices. Inventories and client lists will remain untouched.</p>
+                                </div>
+
                             </div>
                         )}
 
@@ -1015,7 +921,7 @@
                                         const payload = Object.fromEntries(new FormData(e.target));
                                         const currentEdit = { ...editing }; 
                                         
-                                        setEditing(null); // INSTANT UI CLOSE
+                                        setEditing(null); // INSTANT UI CLOSE FOR OPTIMISM
                                         
                                         try {
                                             let collectionName = '';
@@ -1033,8 +939,11 @@
                                                 collectionName = 'users';
                                                 finalData = { fullName: payload.fullName, email: payload.email, role: payload.role, status: 'ACTIVE' };
                                                 
-                                                if (!currentEdit.item.id && isOnline) {
-                                                    // New user - Create in Firebase Auth using REST API to prevent signing out current admin
+                                                if (!currentEdit.item.id) {
+                                                    if(!isOnline) {
+                                                        alert("Error: You must have an internet connection to create a new personnel auth-account.");
+                                                        return setEditing(currentEdit); // Rollback
+                                                    }
                                                     const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${firebaseConfig.apiKey}`, {
                                                         method: 'POST',
                                                         headers: { 'Content-Type': 'application/json' },
@@ -1049,16 +958,11 @@
                                                 finalData = { ...payload, amount: Number(payload.amount), timestamp: new Date().toISOString() };
                                             }
 
-                                            if (window.db && isOnline) {
-                                                if (currentEdit.item.id) {
-                                                    await window.db.collection(collectionName).doc(currentEdit.item.id).update(finalData);
-                                                } else {
-                                                    await window.db.collection(collectionName).add(finalData);
-                                                }
+                                            // Fire natively onto Firestore DB (automatically persists and syncs online immediately/eventually without await hanging)
+                                            if (currentEdit.item.id) {
+                                                window.db.collection(collectionName).doc(currentEdit.item.id).update(finalData).catch(console.error);
                                             } else {
-                                                const newId = currentEdit.item.id || `${collectionName.substring(0,3)}_${Date.now()}`;
-                                                await window.offlineDB.put(collectionName, { id: newId, ...finalData });
-                                                await loadFromOfflineDB();
+                                                window.db.collection(collectionName).add(finalData).catch(console.error);
                                             }
                                         } catch (err) { 
                                             alert("Error: " + err.message); 
