@@ -27,13 +27,13 @@
         }
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=400;600;800&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; background-color: #020617; color: white; margin: 0; padding: 0; }
         .active-tab { background: #10b981 !important; color: white !important; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .modal-overlay { background: rgba(2, 6, 23, 0.9); backdrop-filter: blur(10px); z-index: 50; }
-        .offline-badge { position: fixed; top-4; right-4; background: #dc2626; padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: bold; z-index: 40; }
-        .sync-badge { position: fixed; top-4; right-4; background: #10b981; padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: bold; z-index: 40; animation: pulse 2s infinite; }
+        .offline-badge { position: fixed; top: 1rem; right: 1rem; background: #dc2626; padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: bold; z-index: 40; }
+        .sync-badge { position: fixed; top: 1rem; right: 1rem; background: #10b981; padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: bold; z-index: 40; animation: pulse 2s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .patient-history { max-height: 200px; overflow-y: auto; }
         @media (max-width: 768px) { 
@@ -45,12 +45,4 @@
 <body>
     <div id="apex-root">
         <div style="height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#020617;">
-            <h1 style="font-size:4rem;font-weight:900;color:#10b981;font-style:italic;">APEX</h1>
-            <p id="boot-status" style="color:#64748b;font-weight:bold;margin-top:10px;">INITIALIZING VAULT...</p>
-        </div>
-    </div>
-
-    <script>
-        window.offlineDB = {
-            init: async function() {
-No response
+            <h1 styleNo response
