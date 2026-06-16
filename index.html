@@ -11,13 +11,14 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23020617' width='192' height='192'/><text x='50%' y='50%' font-size='80' font-weight='900' fill='%2310b981' text-anchor='middle' dominant-baseline='central'>A</text></svg>">
     <title>APEX | Sovereign Enterprise</title>
     
-    <!-- CDNs -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- CDNs with CrossOrigin for strict browser security policies -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Locked Chart.js to v3.9.1 to prevent v4 auto-registration crash -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -35,6 +36,805 @@
         .bg-offline { background: #dc2626; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
+</head>
+<body>
+    <div id="apex-root">
+        <!-- Initial Loading Screen -->
+        <div style="height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#020617;">
+            <h1 style="font-size:4rem;font-weight:900;color:#10b981;font-style:italic;margin:0;">APEX</h1>
+            <p style="color:#64748b;font-weight:bold;margin-top:10px;">INITIALIZING VAULT...</p>
+            <p id="error-text" style="color:#dc2626;font-size:12px;margin-top:20px;font-weight:bold;display:none;">
+                ⚠️ App taking too long to load. Ensure you have internet for the FIRST setup to download system files.
+            </p>
+        </div>
+    </div>
+
+    <!-- Error Fallback Timer -->
+    <script>
+        setTimeout(() => {
+            const el = document.getElementById('error-text');
+            if (el) el.style.display = 'block';
+        }, 6000);
+    </script>
+
+    <script>
+        // FIREBASE INITIALIZATION & NATIVE OFFLINE MODE
+        try {
+            firebase.initializeApp({
+                apiKey: "AIzaSyDOFibCiMfYeVP4A6p6En9Jlml10eATGio",
+                authDomain: "apex-management-system-93a9e.firebaseapp.com",
+                projectId: "apex-management-system-93a9e",
+                storageBucket: "apex-management-system-93a9e.firebasestorage.app",
+                messagingSenderId: "514939996572",
+                appId: "1:514939996572:web:3ecbe1fd7003d024bd6059"
+            });
+            window.db = firebase.firestore();
+            
+            // Activate offline cache. Try/catch prevents crash on unsupported browsers
+            window.db.enablePersistence().catch(err => {
+                console.warn('Firebase Offline Persistence Error:', err.code);
+            });
+        } catch (error) { 
+            console.error("Firebase Config Error:", error); 
+        }
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        const App = () => {
+            const chartRef = useRef(null);
+
+            const [view, setView] = useState('LOGIN');
+            const [viewHistory, setViewHistory] = useState([]);
+            const [user, setUser] = useState(null);
+            const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+            const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [] });
+            const [cart, setCart] = useState([]);
+            const [search, setSearch] = useState("");
+            const [isOnline, setIsOnline] = useState(navigator.onLine);
+            
+            const [editing, setEditing] = useState(null); 
+            const [checkoutModal, setCheckoutModal] = useState(false);
+            const [amountTendered, setAmountTendered] = useState(0);
+            const [checkoutPatient, setCheckoutPatient] = useState('');
+            const [medicalHistoryModal, setMedicalHistoryModal] = useState(null);
+
+            const [reportPeriod, setReportPeriod] = useState('DAILY');
+            const [reportTab, setReportTab] = useState('SALES');
+            const [reportSearch, setReportSearch] = useState('');
+
+            // Auth State Listener
+            useEffect(() => {
+                if (!window.firebase) return;
+                const unsubscribe = firebase.auth().onAuthStateChanged(async (authUser) => {
+                    if (authUser) {
+                        try {
+                            const snap = await window.db.collection('users').where('email', '==', authUser.email).get();
+                            if (!snap.empty) {
+                                const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                                if (uData.status === 'ACTIVE') {
+                                    setUser(uData);
+                                    setView('DASHBOARD');
+                                } else {
+                                    alert("Account disabled. Contact Administrator.");
+                                    firebase.auth().signOut();
+                                }
+                            }
+                        } catch (err) { console.error("Auth routing failed:", err); }
+                    } else {
+                        setUser(null);
+                        setView('LOGIN');
+                    }
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // Window Event Listeners
+            useEffect(() => {
+                const handleResize = () => setIsMobile(window.innerWidth < 768);
+                const handleOnline = () => setIsOnline(true);
+                const handleOffline = () => setIsOnline(false);
+                window.addEventListener('resize', handleResize);
+                window.addEventListener('online', handleOnline);
+                window.addEventListener('offline', handleOffline);
+                return () => {
+                    window.removeEventListener('resize', handleResize);
+                    window.removeEventListener('online', handleOnline);
+                    window.removeEventListener('offline', handleOffline);
+                };
+            }, []);
+
+            // Master Snapshot Data Syncing
+            useEffect(() => {
+                if (!window.db || !user) return;
+                const collections = ["inventory", "sales", "patients", "users", "expenses", "medicalHistory"];
+                const unsubscribers = collections.map(col => 
+                    window.db.collection(col).onSnapshot(
+                        s => setData(p => ({...p, [col]: s.docs.map(d=>({id:d.id, ...d.data()}))})),
+                        err => console.error(`Error loading ${col}:`, err)
+                    )
+                );
+                return () => unsubscribers.forEach(u => u());
+            }, [user]);
+
+            const hasAccess = (level) => {
+                const roles = { 'MANAGER': 4, 'PHARMACIST': 3, 'TECHNICIAN': 2, 'ASSISTANT': 1, 'DISPENSER': 0 };
+                return roles[user?.role] >= roles[level];
+            };
+
+            const handleSetView = (newView) => {
+                if (view !== newView) {
+                    setViewHistory(prev => [...prev, view]);
+                    setView(newView);
+                    setSearch("");
+                }
+            };
+
+            const handleGoBack = () => {
+                if (viewHistory.length > 0) {
+                    const prev = [...viewHistory];
+                    setView(prev.pop());
+                    setViewHistory(prev);
+                    setSearch("");
+                }
+            };
+
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                const email = e.target.email.value.trim();
+                const password = e.target.password.value;
+                try {
+                    await firebase.auth().signInWithEmailAndPassword(email, password);
+                } catch (err) { alert("Authentication Failed: " + err.message); }
+            };
+
+            const handleLogout = async () => {
+                if (confirm("Logout from system?")) {
+                    await firebase.auth().signOut();
+                    setUser(null);
+                }
+            };
+
+            // OPTIMISTIC DELETIONS
+            const handleDeletePersonnel = (userItem) => {
+                if (userItem.email.toLowerCase() === 'manjebecaleb@gmail.com') return alert("Cannot delete master admin.");
+                if(!confirm("⚠️ Delete this personnel permanently?")) return;
+                setEditing(null); 
+                window.db.collection('users').doc(userItem.id).delete();
+            };
+
+            const handleDeleteProduct = (id) => {
+                if(!confirm("⚠️ Delete this item completely?")) return;
+                setEditing(null); 
+                window.db.collection('inventory').doc(id).delete();
+            };
+
+            const handleDeleteAllFinance = () => {
+                if(!confirm("⚠️ EXTREME WARNING: Permanently delete ALL sales and expenses? This CANNOT be undone!")) return;
+                data.sales.forEach(s => window.db.collection('sales').doc(s.id).delete());
+                data.expenses.forEach(e => window.db.collection('expenses').doc(e.id).delete());
+                alert("Financial history wipe executed successfully.");
+            };
+
+            // CART & CHECKOUT LOGIC
+            const addToCart = (p) => {
+                if (p.stock <= 0) return alert("Item out of stock!");
+                if (p.expiryDate && new Date(p.expiryDate) < new Date()) return alert("⚠️ Cannot sell an expired item!");
+                setCart(prev => {
+                    const ex = prev.find(i => i.id === p.id);
+                    if (ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
+                    return [...prev, {...p, qty: 1, currentPrice: p.price}];
+                });
+            };
+
+            const updateCartItem = (id, field, val) => {
+                setCart(prev => prev.map(i => i.id === id ? {...i, [field]: Number(val) || 0} : i));
+            };
+
+            const openCheckoutModal = () => {
+                if(cart.length === 0) return alert("Cart is empty");
+                setAmountTendered('');
+                setCheckoutPatient('');
+                setCheckoutModal(true);
+            };
+
+            const finalizeSale = (method) => {
+                if (method === 'DEBT' && !checkoutPatient) return alert("Select a client to issue on credit!");
+                const total = cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0);
+                const totalCost = cart.reduce((s,i)=>s+(i.costPrice*i.qty), 0);
+                
+                const saleData = { 
+                    total, profit: total - totalCost, 
+                    amountTendered: method === 'CASH' ? amountTendered : total,
+                    changeGiven: (method === 'CASH' && amountTendered > total) ? (amountTendered - total) : 0,
+                    timestamp: new Date().toISOString(), soldBy: user.fullName || user.email, 
+                    method, items: cart, patientId: checkoutPatient || null 
+                };
+                
+                const currentCart = [...cart];
+                setCart([]); setCheckoutModal(false); 
+
+                window.db.collection("sales").add(saleData);
+                if (method === 'DEBT' && checkoutPatient) {
+                    const pt = data.patients.find(p => p.id === checkoutPatient);
+                    if(pt) window.db.collection("patients").doc(checkoutPatient).update({ creditBalance: (Number(pt.creditBalance) || 0) + total });
+                }
+                currentCart.forEach(i => window.db.collection("inventory").doc(i.id).update({ stock: i.stock - i.qty }));
+            };
+
+            const addMedicalHistory = (patientId, record) => {
+                window.db.collection("medicalHistory").add({
+                    patientId, date: new Date().toISOString(), ...record
+                });
+            };
+
+            const exportToExcel = (exportData, filename) => {
+                if(exportData.length === 0) return alert("No data to export");
+                const ws = XLSX.utils.json_to_sheet(exportData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Data");
+                XLSX.writeFile(wb, `${filename}_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
+            };
+
+            // METRICS CALCULATIONS
+            const inventoryTotalCost = data.inventory.reduce((a,b)=>a+(Number(b.costPrice)*Number(b.stock)), 0);
+            const inventoryTotalValue = data.inventory.reduce((a,b)=>a+(Number(b.price)*Number(b.stock)), 0);
+            const totalNetProfit = data.sales.reduce((a,b)=>a+Number(b.profit),0) - data.expenses.reduce((a,b)=>a+Number(b.amount),0);
+
+            const filteredReportData = useMemo(() => {
+                const now = new Date();
+                let start = new Date();
+                if (reportPeriod === 'DAILY') start.setHours(0,0,0,0);
+                else if (reportPeriod === 'WEEKLY') { start.setDate(start.getDate() - 7); start.setHours(0,0,0,0); }
+                else if (reportPeriod === 'MONTHLY') start = new Date(now.getFullYear(), now.getMonth(), 1);
+
+                const term = reportSearch.toLowerCase();
+                const rSales = data.sales.filter(s => new Date(s.timestamp) >= start && (!term || (s.soldBy||'').toLowerCase().includes(term) || s.items.some(i => (i.brandName||'').toLowerCase().includes(term))));
+                const rExpenses = data.expenses.filter(e => new Date(e.timestamp||Date.now()) >= start && (!term || (e.description||'').toLowerCase().includes(term)));
+                const rExpired = data.inventory.filter(i => i.expiryDate && new Date(i.expiryDate) < now && (!term || (i.brandName||'').toLowerCase().includes(term)));
+
+                return {
+                    sales: rSales, expenses: rExpenses, expired: rExpired,
+                    totalSales: rSales.reduce((a,b) => a + b.total, 0),
+                    totalProfit: rSales.reduce((a,b) => a + b.profit, 0),
+                    totalLosses: rExpenses.reduce((a,b) => a + Number(b.amount), 0),
+                    expiredCost: rExpired.reduce((a,b) => a + (Number(b.costPrice)*Number(b.stock)), 0)
+                };
+            }, [data, reportPeriod, reportSearch]);
+
+            // Chart Render
+            useEffect(() => {
+                if (view !== 'FINANCE' || !chartRef.current) return;
+                const last7Days = [...Array(7)].map((_, i) => {
+                    const d = new Date(); d.setDate(d.getDate() - i);
+                    return d.toLocaleDateString();
+                }).reverse();
+
+                const revs = last7Days.map(date => data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === date).reduce((sum, s) => sum + s.total, 0));
+                const profs = last7Days.map(date => data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === date).reduce((sum, s) => sum + s.profit, 0));
+
+                if (window.myChart) window.myChart.destroy();
+                window.myChart = new Chart(chartRef.current, {
+                    type: 'bar',
+                    data: { 
+                        labels: last7Days, 
+                        datasets: [
+                            { label: 'Revenue (TZS)', data: revs, backgroundColor: '#10b981' }, 
+                            { label: 'Profit (TZS)', data: profs, backgroundColor: '#3b82f6' }
+                        ] 
+                    },
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        scales: { 
+                            y: { grid: { color: '#1e293b' }, ticks:{color:'#64748b'} }, 
+                            x: { grid: { display: false }, ticks:{color:'#64748b'} } 
+                        }, 
+                        plugins: { legend: { labels: { color: '#cbd5e1' } } } 
+                    }
+                });
+                return () => { if (window.myChart) window.myChart.destroy(); };
+            }, [view, data.sales]);
+
+            // -- RENDER BLOCK --
+            if (!user) {
+                return (
+                    <div className="h-screen flex items-center justify-center bg-black p-4">
+                        <div className="status-badge bg-online">{isOnline ? '🔵 ONLINE' : '🔴 OFFLINE CACHE MODE'}</div>
+                        <div className="bg-slate-900 p-8 rounded-[4rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
+                            <h1 className="text-4xl font-black text-emerald-500 mb-2 italic">APEX</h1>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase mb-8 tracking-[0.3em]">Private & Secure</p>
+                            <form onSubmit={handleLogin} className="flex flex-col">
+                                <input name="email" type="email" placeholder="Email Address" required className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white" />
+                                <input name="password" type="password" placeholder="Password" required className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white" />
+                                <button type="submit" className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500">AUTHENTICATE</button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            const navigationItems = [
+                { name: 'DASHBOARD', icon: '📊', viewName: 'DASHBOARD' },
+                { name: 'POS', icon: '🛒', viewName: 'POS' },
+                { name: 'INVENTORY', icon: '📦', viewName: 'STOO', access: 'TECHNICIAN' },
+                { name: 'CLIENTS', icon: '👥', viewName: 'PATIENTS' },
+                { name: 'FINANCE & SALES', icon: '💰', viewName: 'FINANCE', access: 'MANAGER' },
+                { name: 'REPORTS', icon: '📈', viewName: 'REPORTS', access: 'MANAGER' },
+                { name: 'STAFF', icon: '👤', viewName: 'USERS', access: 'MANAGER' }
+            ];
+
+            return (
+                <div className={`flex h-screen overflow-hidden bg-slate-950 ${isMobile ? 'flex-col' : ''}`}>
+                    <div className={`status-badge ${isOnline ? 'bg-online text-white' : 'bg-offline text-white'}`}>
+                        {isOnline ? '🔵 ONLINE SYNCING' : '🔴 OFFLINE CACHE MODE'}
+                    </div>
+
+                    {/* SIDEBAR */}
+                    <aside className={`${isMobile ? 'w-full h-16 flex-row items-center justify-between' : 'w-72 flex-col'} bg-black border-r border-slate-800 p-4 md:p-8 flex shrink-0 overflow-y-auto`}>
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 md:w-10 h-8 md:h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black">A</div>
+                            {!isMobile && <h2 className="text-2xl font-black tracking-tighter italic">APEX</h2>}
+                        </div>
+                        
+                        {!isMobile ? (
+                            <>
+                                <nav className="flex-1 space-y-1 mt-10">
+                                    {navigationItems.map(item => {
+                                        if (item.access && !hasAccess(item.access)) return null;
+                                        return (
+                                            <button 
+                                                key={item.viewName} 
+                                                onClick={() => handleSetView(item.viewName)} 
+                                                className={`w-full text-left p-4 rounded-3xl font-black text-[10px] uppercase ${view === item.viewName ? 'active-tab' : 'text-slate-400 hover:bg-slate-900'}`}
+                                            >
+                                                {item.icon} {item.name}
+                                            </button>
+                                        );
+                                    })}
+                                </nav>
+                                <div className="pt-6 border-t border-slate-800 mt-4">
+                                    <div className="flex items-center gap-3 mb-4 overflow-hidden">
+                                        <div className="w-8 h-8 bg-slate-800 text-emerald-500 rounded-full flex items-center justify-center font-black">
+                                            {(user.fullName || user.email)[0].toUpperCase()}
+                                        </div>
+                                        <div className="truncate">
+                                            <p className="text-[10px] font-black text-emerald-500">{user.role}</p>
+                                            <p className="text-xs font-bold text-slate-300 truncate">{user.fullName || user.email}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={handleLogout} className="text-rose-500 font-bold text-[10px] uppercase p-2 w-full text-left hover:bg-rose-950/30 rounded">
+                                        🚪 Logout
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <select onChange={(e) => handleSetView(e.target.value)} value={view} className="bg-slate-800 text-white rounded-lg p-2 text-sm font-bold outline-none border-none">
+                                <option value="DASHBOARD">Dashboard</option>
+                                <option value="POS">POS</option>
+                                {hasAccess('TECHNICIAN') && <option value="STOO">Inventory</option>}
+                                <option value="PATIENTS">Clients</option>
+                                {hasAccess('MANAGER') && (
+                                    <>
+                                        <option value="FINANCE">Finance</option>
+                                        <option value="REPORTS">Reports</option>
+                                        <option value="USERS">Staff</option>
+                                    </>
+                                )}
+                            </select>
+                        )}
+                    </aside>
+
+                    <main className={`flex-1 ${isMobile ? 'p-4' : 'p-8 md:p-10'} overflow-auto no-scrollbar relative flex flex-col`}>
+                        {viewHistory.length > 0 && view !== 'DASHBOARD' && (
+                            <button onClick={handleGoBack} className="self-start mb-6 text-emerald-500 font-black text-xs bg-slate-900 px-4 py-2 rounded-xl">
+                                ← RETURN
+                            </button>
+                        )}
+
+                        {view === 'DASHBOARD' && (
+                            <div className="animate-in fade-in duration-700">
+                                <h2 className="text-2xl md:text-4xl font-black mb-6">Director's Overview</h2>
+                                <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-4`}>
+                                    <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border-l-8 border-emerald-500">
+                                        <p className="text-slate-500 text-[10px] font-black uppercase mb-2">Total Revenue</p>
+                                        <h3 className="text-2xl md:text-4xl font-black text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} <span className="text-sm text-slate-500">TZS</span></h3>
+                                    </div>
+                                    <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border-l-8 border-blue-500">
+                                        <p className="text-slate-500 text-[10px] font-black uppercase mb-2">Inventory Value</p>
+                                        <h3 className="text-2xl md:text-4xl font-black text-blue-400">{inventoryTotalValue.toLocaleString()} <span className="text-sm text-slate-500">TZS</span></h3>
+                                    </div>
+                                    <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border-l-8 border-rose-500">
+                                        <p className="text-slate-500 text-[10px] font-black uppercase mb-2">Client Debt</p>
+                                        <h3 className="text-2xl md:text-4xl font-black text-rose-400">{data.patients.reduce((a,b)=>a+(Number(b.creditBalance)||0),0).toLocaleString()} <span className="text-sm text-slate-500">TZS</span></h3>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'POS' && (
+                            <div className={`flex ${isMobile ? 'flex-col overflow-y-auto pb-10' : 'flex-row'} gap-4 md:gap-8 h-full`}>
+                                <div className={`flex-1 space-y-4 flex flex-col ${isMobile ? 'shrink-0' : 'h-full'}`}>
+                                    <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Items..." className="w-full p-4 bg-slate-900 rounded-[2.5rem] font-bold outline-none text-sm shrink-0 text-white" />
+                                    
+                                    <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-3'} gap-3 ${isMobile ? '' : 'overflow-y-auto'} no-scrollbar pb-10`}>
+                                        {data.inventory.filter(p => !search || (p.brandName || '').toLowerCase().includes(search.toLowerCase())).map(p => {
+                                            const isExp = p.expiryDate && new Date(p.expiryDate) < new Date();
+                                            return (
+                                            <div key={p.id} onClick={()=>addToCart(p)} className={`bg-slate-900 p-4 rounded-[2.5rem] cursor-pointer hover:border-emerald-500 border border-slate-800 flex flex-col justify-between ${p.stock<=0||isExp ? 'opacity-50 grayscale' : ''}`}>
+                                                <div>
+                                                    <h4 className="font-black text-sm">{p.brandName || 'Unnamed Item'} {isExp && '⚠️'}</h4>
+                                                    <p className="text-[9px] text-slate-500 font-bold uppercase">{p.genericName || 'No Generic'} • {p.strength}</p>
+                                                </div>
+                                                <div className="flex justify-between items-end mt-4 pt-3 border-t border-slate-800">
+                                                    <p className="text-lg font-black text-emerald-400">{Number(p.price).toLocaleString()}</p>
+                                                    <p className={`text-[10px] font-black px-2 py-1 rounded-lg ${p.stock < 10 ? 'bg-rose-900 text-rose-300' : 'bg-slate-800 text-slate-400'}`}>{p.stock}</p>
+                                                </div>
+                                            </div>
+                                        )})}
+                                    </div>
+                                </div>
+
+                                <div className={`${isMobile ? 'w-full bg-slate-900 text-white mt-2' : 'w-96 bg-white text-slate-900 h-[calc(100vh-6rem)] sticky top-0'} p-8 rounded-[3.5rem] border-t-8 border-emerald-600 flex flex-col shrink-0 shadow-2xl`}>
+                                    <h3 className="font-black text-2xl uppercase mb-6">Cart</h3>
+                                    <div className={`${isMobile ? 'max-h-64' : 'flex-1'} space-y-4 mb-6 overflow-y-auto no-scrollbar`}>
+                                        {cart.length === 0 && <p className="text-center font-bold text-xs uppercase text-slate-400 py-10">Empty</p>}
+                                        {cart.map(i => (
+                                            <div key={i.id} className={`flex justify-between border-b ${isMobile ? 'border-slate-800' : 'border-slate-100'} pb-3`}>
+                                                <div>
+                                                    <p className="text-sm font-bold uppercase">{i.brandName}</p>
+                                                    <input type="number" value={i.currentPrice} onChange={(e)=>updateCartItem(i.id, 'currentPrice', e.target.value)} className={`w-20 px-2 py-1 text-xs font-bold mt-1 rounded outline-none ${isMobile ? 'bg-slate-800 text-white' : 'bg-slate-200 text-black'}`} />
+                                                </div>
+                                                <input type="number" value={i.qty} onChange={(e)=>updateCartItem(i.id, 'qty', e.target.value)} className={`w-14 p-2 text-center font-black rounded-xl outline-none ${isMobile ? 'bg-slate-800 text-white' : 'bg-slate-50 text-black border'}`} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="pt-4 border-t border-slate-200">
+                                        <div className="flex justify-between font-black text-2xl text-emerald-600 mb-6">
+                                            <span>Total</span>
+                                            <span>{cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0).toLocaleString()}</span>
+                                        </div>
+                                        <button onClick={openCheckoutModal} className={`w-full py-5 rounded-[2rem] font-black text-white ${isMobile ? 'bg-emerald-600' : 'bg-slate-900'}`}>
+                                            CHECKOUT
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'STOO' && (
+                            <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] h-full overflow-y-auto">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-2xl font-black text-emerald-500 uppercase">Vault</h2>
+                                    {hasAccess('MANAGER') && (
+                                        <button onClick={() => setEditing({ type: 'PRODUCT', item: {} })} className="bg-emerald-600 text-white px-6 py-2 rounded-2xl font-black text-xs">
+                                            + NEW ITEM
+                                        </button>
+                                    )}
+                                </div>
+                                <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search..." className="w-full p-4 mb-6 bg-black rounded-2xl font-bold outline-none text-white" />
+                                
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs md:text-sm">
+                                        <thead>
+                                            <tr className="text-slate-500 font-bold uppercase border-b border-slate-800">
+                                                <th className="pb-3 px-2">Item</th>
+                                                <th className="px-2">Stock</th>
+                                                <th className="px-2">Sell Price</th>
+                                                {hasAccess('MANAGER') && <th className="px-2"></th>}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {data.inventory.filter(p => !search || (p.brandName || '').toLowerCase().includes(search.toLowerCase())).map(p => (
+                                                <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50">
+                                                    <td className="py-4 px-2 font-black text-white">
+                                                        {p.brandName || 'Unnamed'} 
+                                                        <span className="block text-[9px] text-slate-500">{p.category || 'No Category'}</span>
+                                                    </td>
+                                                    <td className={`px-2 font-black ${p.stock <= 0 ? 'text-rose-600' : 'text-slate-300'}`}>{p.stock}</td>
+                                                    <td className="px-2 text-emerald-400 font-black">{Number(p.price).toLocaleString()}</td>
+                                                    {hasAccess('MANAGER') && (
+                                                        <td className="px-2 text-right">
+                                                            <button onClick={() => setEditing({type: 'PRODUCT', item: p})} className="bg-slate-800 text-blue-400 text-[10px] px-3 py-1 rounded font-black">EDIT</button>
+                                                        </td>
+                                                    )}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'FINANCE' && (
+                            <div className="space-y-6 h-full overflow-y-auto pb-10">
+                                <div className="flex justify-between">
+                                    <h2 className="text-2xl font-black uppercase">Finance</h2>
+                                    {hasAccess('MANAGER') && (
+                                        <button onClick={() => setEditing({ type: 'EXPENSE', item: {} })} className="bg-rose-600 text-white px-6 py-2 rounded-2xl font-black text-xs">+ EXPENSE</button>
+                                    )}
+                                </div>
+                                <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-4`}>
+                                    <div className="bg-slate-900 p-6 rounded-[2rem] text-center">
+                                        <p className="text-[10px] font-black uppercase text-slate-500">Losses</p>
+                                        <p className="text-2xl font-black text-rose-500">{data.expenses.reduce((a,b)=>a+Number(b.amount),0).toLocaleString()} TZS</p>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-[2rem] text-center">
+                                        <p className="text-[10px] font-black uppercase text-slate-500">Net Profit</p>
+                                        <p className="text-2xl font-black text-emerald-600">{totalNetProfit.toLocaleString()} TZS</p>
+                                    </div>
+                                </div>
+                                <div className="bg-slate-900 p-6 rounded-[3.5rem]">
+                                    <h3 className="text-xl font-black uppercase mb-4 text-emerald-500">7-Day Trend</h3>
+                                    <div className="w-full h-64">
+                                        <canvas ref={chartRef}></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'REPORTS' && (
+                            <div className="space-y-6 h-full overflow-y-auto pb-10">
+                                <h2 className="text-2xl font-black uppercase">Analytics & Export</h2>
+                                <div className="flex gap-4 border-b border-slate-800">
+                                    <button onClick={()=>setReportTab('SALES')} className={`pb-3 font-black text-xs uppercase ${reportTab==='SALES' ? 'text-emerald-500 border-b-2 border-emerald-500' : 'text-slate-500'}`}>Sales</button>
+                                    <button onClick={()=>setReportTab('EXPIRED')} className={`pb-3 font-black text-xs uppercase ${reportTab==='EXPIRED' ? 'text-purple-500 border-b-2 border-purple-500' : 'text-slate-500'}`}>Expired</button>
+                                </div>
+                                <div className="bg-black p-6 rounded-[2.5rem] overflow-x-auto max-h-96">
+                                    <table className="w-full text-left text-xs">
+                                        {reportTab === 'SALES' && (
+                                            <tbody>
+                                                {filteredReportData.sales.map(s => (
+                                                    <tr key={s.id} className="border-b border-slate-800">
+                                                        <td className="py-3 text-slate-300">{new Date(s.timestamp).toLocaleDateString()}</td>
+                                                        <td className="py-3 text-white font-bold">{s.items?.map(i => `${i.qty}x ${i.brandName}`).join(', ')}</td>
+                                                        <td className="py-3 font-black text-emerald-400">{Number(s.total).toLocaleString()} TZS</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        )}
+                                        {reportTab === 'EXPIRED' && (
+                                            <tbody>
+                                                {filteredReportData.expired.map(i => (
+                                                    <tr key={i.id} className="border-b border-slate-800">
+                                                        <td className="py-3 text-white">{i.brandName}</td>
+                                                        <td className="py-3 text-rose-500 font-black">{i.stock} Wasted</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        )}
+                                    </table>
+                                </div>
+                                <div className="pt-6 border-t border-slate-800 grid grid-cols-2 gap-3">
+                                    <button onClick={()=>exportToExcel(data.sales, 'APEX_Sales')} className="bg-slate-900 text-slate-300 font-bold text-[10px] py-3 rounded-xl">📥 EXPORT SALES</button>
+                                    <button onClick={()=>exportToExcel(data.inventory, 'APEX_Inventory')} className="bg-slate-900 text-slate-300 font-bold text-[10px] py-3 rounded-xl">📥 EXPORT INVENTORY</button>
+                                </div>
+                                <div className="pt-6 mt-6 border-t border-rose-900/50">
+                                    <button onClick={handleDeleteAllFinance} className="bg-rose-900/20 text-rose-500 font-bold text-[10px] py-4 px-6 rounded-xl border border-rose-800 w-full text-left">
+                                        ⚠️ CLEAR ALL FINANCIAL HISTORY (SALES & EXPENSES)
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'PATIENTS' && (
+                            <div className="bg-slate-900 p-6 rounded-[3.5rem] h-full overflow-auto">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-2xl font-black text-blue-500 uppercase">Clients</h2>
+                                    {hasAccess('MANAGER') && (
+                                        <button onClick={() => setEditing({ type: 'PATIENT', item: {} })} className="bg-blue-600 text-white px-6 py-2 rounded-2xl font-black text-xs">+ ADD</button>
+                                    )}
+                                </div>
+                                <div className="space-y-4">
+                                    {data.patients.map(pt => (
+                                        <div key={pt.id} className="p-4 bg-black rounded-[2rem] border border-slate-800 flex justify-between items-center">
+                                            <div>
+                                                <h4 className="font-black text-white">{pt.name}</h4>
+                                                <p className="text-[10px] text-slate-500 font-bold">{pt.phone || 'No phone'}</p>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={()=>setMedicalHistoryModal(pt)} className="bg-slate-800 px-3 py-1 rounded text-blue-400 font-black text-[10px]">HISTORY</button>
+                                                <button onClick={()=>setEditing({type:'PATIENT', item: pt})} className="bg-slate-800 px-3 py-1 rounded text-slate-300 font-black text-[10px]">EDIT</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'USERS' && (
+                            <div className="bg-slate-900 p-6 rounded-[3.5rem] h-full overflow-auto">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-2xl font-black uppercase">Staff</h2>
+                                    {hasAccess('MANAGER') && (
+                                        <button onClick={() => setEditing({ type: 'USER', item: {} })} className="bg-emerald-600 text-white px-6 py-2 rounded-2xl font-black text-xs">+ ADD</button>
+                                    )}
+                                </div>
+                                <div className="space-y-4">
+                                    {data.users.map(u => (
+                                        <div key={u.id} className="bg-black p-4 rounded-[2rem] border border-slate-800 flex justify-between items-center">
+                                            <div>
+                                                <p className="font-black text-white uppercase">{u.fullName}</p>
+                                                <p className="text-[10px] text-emerald-500 font-black">{u.role}</p>
+                                            </div>
+                                            {hasAccess('MANAGER') && (
+                                                <button onClick={()=>setEditing({type: 'USER', item: u})} className="px-4 py-2 bg-slate-900 text-blue-400 font-black text-[10px] rounded-lg">EDIT</button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* UNIVERSAL MODAL / EDITING */}
+                        {editing && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-lg p-6 rounded-[3rem] shadow-2xl max-h-[90vh] overflow-y-auto">
+                                    <h3 className="text-2xl font-black text-emerald-500 uppercase mb-6">Modify Data</h3>
+                                    <form onSubmit={(e) => {
+                                        e.preventDefault();
+                                        const payload = Object.fromEntries(new FormData(e.target));
+                                        const { type, item } = editing; 
+                                        setEditing(null);
+                                        
+                                        let col = '';
+                                        let final = {};
+                                        
+                                        if (type === 'PRODUCT') { 
+                                            col = 'inventory'; 
+                                            final = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock) }; 
+                                        } 
+                                        else if (type === 'PATIENT') { 
+                                            col = 'patients'; 
+                                            final = item.id ? payload : { ...payload, creditBalance: 0 }; 
+                                        }
+                                        else if (type === 'EXPENSE') { 
+                                            col = 'expenses'; 
+                                            final = { ...payload, amount: Number(payload.amount), timestamp: new Date().toISOString() }; 
+                                        }
+                                        else if (type === 'USER') {
+                                            col = 'users'; 
+                                            final = { fullName: payload.fullName, email: payload.email, role: payload.role, status: 'ACTIVE' };
+                                            if (!item.id && isOnline) {
+                                                fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyDOFibCiMfYeVP4A6p6En9Jlml10eATGio`, { 
+                                                    method: 'POST', 
+                                                    body: JSON.stringify({ email: payload.email, password: payload.password, returnSecureToken: false }) 
+                                                });
+                                            }
+                                        }
+
+                                        // Optimistic execution
+                                        if (item.id) {
+                                            window.db.collection(col).doc(item.id).update(final);
+                                        } else {
+                                            window.db.collection(col).add(final);
+                                        }
+                                    }} className="space-y-4">
+                                        
+                                        {editing.type === 'PRODUCT' && (
+                                            <>
+                                                <input name="brandName" defaultValue={editing.item.brandName || ''} placeholder="Brand Name" required className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm" />
+                                                <input name="genericName" defaultValue={editing.item.genericName || ''} placeholder="Generic" className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm" />
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <input name="price" type="number" defaultValue={editing.item.price || ''} placeholder="Sell Price" required className="p-4 bg-black rounded-xl text-white font-bold" />
+                                                    <input name="costPrice" type="number" defaultValue={editing.item.costPrice || ''} placeholder="Cost" required className="p-4 bg-black rounded-xl text-white font-bold" />
+                                                </div>
+                                                <input name="stock" type="number" defaultValue={editing.item.stock || ''} placeholder="Stock" required className="w-full p-4 bg-black rounded-xl text-white font-bold" />
+                                                <input name="expiryDate" type="date" defaultValue={editing.item.expiryDate || ''} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm text-slate-400" />
+                                                {editing.item.id && (
+                                                    <button type="button" onClick={()=>handleDeleteProduct(editing.item.id)} className="w-full text-rose-500 font-bold text-xs py-2">🗑️ DELETE ITEM</button>
+                                                )}
+                                            </>
+                                        )}
+
+                                        {editing.type === 'PATIENT' && (
+                                            <>
+                                                <input name="name" defaultValue={editing.item.name || ''} placeholder="Name" required className="w-full p-4 bg-black rounded-xl text-white font-bold" />
+                                                <input name="phone" defaultValue={editing.item.phone || ''} placeholder="Phone" className="w-full p-4 bg-black rounded-xl text-white font-bold" />
+                                            </>
+                                        )}
+
+                                        {editing.type === 'EXPENSE' && (
+                                            <>
+                                                <input name="description" defaultValue={editing.item.description || ''} placeholder="Reason" required className="w-full p-4 bg-black rounded-xl text-white font-bold" />
+                                                <input name="amount" type="number" defaultValue={editing.item.amount || ''} placeholder="Amount (TZS)" required className="w-full p-4 bg-black rounded-xl text-white font-bold" />
+                                            </>
+                                        )}
+
+                                        {editing.type === 'USER' && (
+                                            <>
+                                                <input name="fullName" defaultValue={editing.item.fullName || ''} placeholder="Name" required className="w-full p-4 bg-black rounded-xl text-white font-bold" />
+                                                <input name="email" type="email" defaultValue={editing.item.email || ''} placeholder="Email" readOnly={!!editing.item.id} className="w-full p-4 bg-black rounded-xl text-white font-bold" />
+                                                {!editing.item.id && (
+                                                    <input name="password" type="password" placeholder="Password" required className="w-full p-4 bg-black rounded-xl text-white font-bold" />
+                                                )}
+                                                <select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-4 bg-black rounded-xl text-emerald-400 font-bold">
+                                                    <option>MANAGER</option>
+                                                    <option>TECHNICIAN</option>
+                                                    <option>DISPENSER</option>
+                                                </select>
+                                                {editing.item.id && (
+                                                    <button type="button" onClick={()=>handleDeletePersonnel(editing.item)} className="w-full text-rose-500 font-bold text-xs py-2">🗑️ DELETE STAFF</button>
+                                                )}
+                                            </>
+                                        )}
+
+                                        <div className="flex gap-3 pt-4">
+                                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-4 rounded-[2rem] font-black">SAVE</button>
+                                            <button type="button" onClick={()=>setEditing(null)} className="flex-1 bg-black text-white py-4 rounded-[2rem] font-bold">CANCEL</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* CHECKOUT MODAL */}
+                        {checkoutModal && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+                                <div className="bg-slate-900 w-full max-w-sm p-8 rounded-[3.5rem] shadow-2xl">
+                                    <h3 className="text-2xl font-black text-emerald-500 text-center mb-6">Checkout</h3>
+                                    <div className="bg-black p-5 rounded-2xl text-center mb-6">
+                                        <p className="text-slate-500 font-black text-[10px]">TOTAL DUE</p>
+                                        <p className="text-3xl font-black text-emerald-400">{cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0).toLocaleString()}</p>
+                                    </div>
+                                    <input type="number" value={amountTendered||''} onChange={(e)=>setAmountTendered(Number(e.target.value))} placeholder="Cash Tendered" className="w-full p-4 bg-black rounded-2xl text-center text-white font-bold mb-6 outline-none" />
+                                    <select value={checkoutPatient} onChange={(e)=>setCheckoutPatient(e.target.value)} className="w-full p-4 bg-black rounded-2xl text-white text-sm mb-6 outline-none">
+                                        <option value="">-- Credit Client (Optional) --</option>
+                                        {data.patients.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </select>
+                                    <div className="space-y-3 mb-6">
+                                        <button onClick={()=>finalizeSale('CASH')} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black">💵 CASH</button>
+                                        <button onClick={()=>finalizeSale('DEBT')} className="w-full py-4 bg-rose-600 text-white rounded-2xl font-black">📝 DEBT/CREDIT</button>
+                                    </div>
+                                    <button onClick={()=>setCheckoutModal(false)} className="w-full text-slate-500 font-bold text-xs">CANCEL</button>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* MEDICAL HISTORY MODAL */}
+                        {medicalHistoryModal && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+                                <div className="bg-slate-900 w-full max-w-lg p-6 rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh]">
+                                    <h3 className="text-xl font-black text-emerald-500 mb-4">{medicalHistoryModal.name} Timeline</h3>
+                                    
+                                    <form onSubmit={(e) => {
+                                        e.preventDefault(); 
+                                        const fd = new FormData(e.target); 
+                                        addMedicalHistory(medicalHistoryModal.id, {
+                                            diagnosis: fd.get('diagnosis'), 
+                                            treatment: fd.get('treatment')
+                                        }); 
+                                        setMedicalHistoryModal(null);
+                                    }} className="mb-6 space-y-3">
+                                        <input name="diagnosis" placeholder="Diagnosis" required className="w-full p-3 bg-black text-white text-sm rounded-xl outline-none" />
+                                        <input name="treatment" placeholder="Treatment" className="w-full p-3 bg-black text-white text-sm rounded-xl outline-none" />
+                                        <button className="w-full bg-emerald-600 text-white py-3 rounded-xl font-black">ADD RECORD</button>
+                                    </form>
+
+                                    <div className="flex-1 overflow-y-auto space-y-3">
+                                        {data.medicalHistory.filter(h=>h.patientId===medicalHistoryModal.id).map(h=>(
+                                            <div key={h.id} className="bg-black p-4 rounded-xl border-l-4 border-emerald-500">
+                                                <p className="font-bold text-emerald-400">{h.diagnosis}</p>
+                                                <p className="text-xs text-slate-400">{h.treatment}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button onClick={()=>setMedicalHistoryModal(null)} className="mt-4 bg-slate-800 text-white py-3 rounded-xl font-black">CLOSE</button>
+                                </div>
+                            </div>
+                        )}
+
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('apex-root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>    </style>
 </head>
 <body>
     <div id="apex-root">
