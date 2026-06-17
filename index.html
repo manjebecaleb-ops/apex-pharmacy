@@ -35,6 +35,14 @@
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         button, select { transition: transform 0.1s ease, background-color 0.2s ease; cursor: pointer; }
         button:active, select:active { transform: scale(0.97); }
+
+        /* THERMAL PRINTER RECEIPT STYLES */
+        @media print {
+            body * { visibility: hidden !important; }
+            #print-area, #print-area * { visibility: visible !important; }
+            #print-area { position: absolute; left: 0; top: 0; width: 80mm; padding: 10px; margin: 0; background: white; color: black; font-family: monospace; }
+            .no-print { display: none !important; }
+        }
     </style>
 </head>
 <body>
@@ -51,17 +59,11 @@
     <script>
         window.addEventListener('error', function(e) {
             const el = document.getElementById('error-text');
-            if(el) {
-                el.style.display = 'block';
-                el.innerText = 'SYSTEM CRASH LOG: ' + (e.message || "Network Blocked CDN Download. Connect to Wi-Fi.");
-            }
+            if(el) { el.style.display = 'block'; el.innerText = 'SYSTEM CRASH LOG: ' + (e.message || "Network Blocked CDN Download. Connect to Wi-Fi."); }
         });
         setTimeout(() => {
             const el = document.getElementById('error-text');
-            if (el && el.style.display === 'none') {
-                el.style.display = 'block';
-                el.innerText = "⚠️ Connection timed out. Ensure you have internet so the system can download core application files for the first boot.";
-            }
+            if (el && el.style.display === 'none') { el.style.display = 'block'; el.innerText = "⚠️ Connection timed out. Ensure you have internet so the system can download core application files for the first boot."; }
         }, 8000);
     </script>
 
@@ -96,8 +98,9 @@
                 const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [] });
                 const [cart, setCart] = useState([]);
                 const [search, setSearch] = useState("");
-                const [sortOption, setSortOption] = useState("DEFAULT"); // Main Inventory/POS Sorting
+                const [sortOption, setSortOption] = useState("DEFAULT");
                 const [isOnline, setIsOnline] = useState(navigator.onLine);
+                const [barcodeInput, setBarcodeInput] = useState('');
                 
                 const [editing, setEditing] = useState(null); 
                 const [editClientType, setEditClientType] = useState('PATIENT');
@@ -105,12 +108,13 @@
                 const [amountTendered, setAmountTendered] = useState(0);
                 const [checkoutPatient, setCheckoutPatient] = useState('');
                 const [medicalHistoryModal, setMedicalHistoryModal] = useState(null);
+                const [receiptData, setReceiptData] = useState(null); // Triggers Print Overlay
                 
                 // Finance Modals & Toggles
                 const [viewSalesVolume, setViewSalesVolume] = useState(false);
                 const [viewExpensesDetail, setViewExpensesDetail] = useState(false);
                 const [viewNetProfitDetail, setViewNetProfitDetail] = useState(false);
-                const [chartPeriod, setChartPeriod] = useState('7DAYS'); // '7DAYS' | 'MONTHLY'
+                const [chartPeriod, setChartPeriod] = useState('7DAYS'); 
 
                 const [reportPeriod, setReportPeriod] = useState('DAILY');
                 const [reportTab, setReportTab] = useState('SALES');
@@ -127,7 +131,6 @@
                                     const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
                                     if (uData.status === 'ACTIVE') {
                                         setUser(uData);
-                                        // Restrict Dashboard to Managers only
                                         if (uData.role === 'MANAGER') setView('DASHBOARD');
                                         else setView('POS');
                                     } else {
@@ -136,26 +139,19 @@
                                     }
                                 }
                             } catch (err) { console.error("Auth routing failed:", err); }
-                        } else {
-                            setUser(null);
-                            setView('LOGIN');
-                        }
+                        } else { setUser(null); setView('LOGIN'); }
                     });
                     return () => unsubscribe();
                 }, []);
 
-                useEffect(() => {
-                    if(editing?.type === 'PATIENT') setEditClientType(editing.item.clientType || 'PATIENT');
-                }, [editing]);
+                useEffect(() => { if(editing?.type === 'PATIENT') setEditClientType(editing.item.clientType || 'PATIENT'); }, [editing]);
 
                 // Window Event Listeners
                 useEffect(() => {
                     const handleResize = () => setIsMobile(window.innerWidth < 768);
                     const handleOnline = () => setIsOnline(true);
                     const handleOffline = () => setIsOnline(false);
-                    window.addEventListener('resize', handleResize);
-                    window.addEventListener('online', handleOnline);
-                    window.addEventListener('offline', handleOffline);
+                    window.addEventListener('resize', handleResize); window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
                     return () => { window.removeEventListener('resize', handleResize); window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
                 }, []);
 
@@ -164,10 +160,7 @@
                     if (typeof window.db === 'undefined' || !user) return;
                     const collections = ["inventory", "sales", "patients", "users", "expenses", "medicalHistory"];
                     const unsubscribers = collections.map(col => 
-                        window.db.collection(col).onSnapshot(
-                            s => setData(p => ({...p, [col]: s.docs.map(d=>({id:d.id, ...d.data()}))})),
-                            err => console.error(`Error loading ${col}:`, err)
-                        )
+                        window.db.collection(col).onSnapshot(s => setData(p => ({...p, [col]: s.docs.map(d=>({id:d.id, ...d.data()}))})), err => console.error(`Error loading ${col}:`, err))
                     );
                     return () => unsubscribers.forEach(u => u());
                 }, [user]);
@@ -178,21 +171,11 @@
                 };
 
                 const handleSetView = (newView) => {
-                    if (view !== newView) {
-                        setViewHistory(prev => [...prev, view]);
-                        setView(newView);
-                        setSearch("");
-                        setSortOption("DEFAULT");
-                    }
+                    if (view !== newView) { setViewHistory(prev => [...prev, view]); setView(newView); setSearch(""); setSortOption("DEFAULT"); setBarcodeInput(""); }
                 };
 
                 const handleGoBack = () => {
-                    if (viewHistory.length > 0) {
-                        const prev = [...viewHistory];
-                        setView(prev.pop());
-                        setViewHistory(prev);
-                        setSearch("");
-                    }
+                    if (viewHistory.length > 0) { const prev = [...viewHistory]; setView(prev.pop()); setViewHistory(prev); setSearch(""); }
                 };
 
                 const handleModalClickOutside = (e, closeFunc) => { if (e.target === e.currentTarget) closeFunc(); };
@@ -200,50 +183,30 @@
                 const handleLogin = async (e) => {
                     e.preventDefault();
                     if (typeof firebase === 'undefined') return alert("System core not loaded. Check internet connection.");
-                    const email = e.target.email.value.trim();
-                    const password = e.target.password.value;
+                    const email = e.target.email.value.trim(); const password = e.target.password.value;
                     if(!email || !password) return alert("Email and Password are required.");
-                    try {
-                        await firebase.auth().signInWithEmailAndPassword(email, password);
-                    } catch (err) { alert("Authentication Failed: " + err.message); }
+                    try { await firebase.auth().signInWithEmailAndPassword(email, password); } catch (err) { alert("Authentication Failed: " + err.message); }
                 };
 
-                const handleLogout = async () => {
-                    if (confirm("Logout from system?")) {
-                        await firebase.auth().signOut();
-                        setUser(null);
-                    }
-                };
+                const handleLogout = async () => { if (confirm("Logout from system?")) { await firebase.auth().signOut(); setUser(null); } };
 
                 // SECURITY: Admin Password Verification
                 const executeWithAdminPassword = async (actionFunc) => {
                     if(!isOnline) return alert("Action Denied: You must be online to verify Admin credentials for deletions.");
                     const pwd = prompt("SECURITY LOCK: Enter your Admin Password to confirm this sensitive action.");
                     if (!pwd) return;
-                    try {
-                        await firebase.auth().signInWithEmailAndPassword(user.email, pwd);
-                        actionFunc();
-                    } catch(e) {
-                        alert("Incorrect Password. Action Denied.");
-                    }
+                    try { await firebase.auth().signInWithEmailAndPassword(user.email, pwd); actionFunc(); } catch(e) { alert("Incorrect Password. Action Denied."); }
                 };
 
-                // OPTIMISTIC DELETIONS (Secured)
                 const handleDeletePersonnel = (userItem) => {
                     if (userItem.email.toLowerCase() === 'manjebecaleb@gmail.com') return alert("Cannot delete master admin.");
                     if(!confirm("⚠️ Delete this personnel permanently?")) return;
-                    executeWithAdminPassword(() => {
-                        setEditing(null); 
-                        window.db.collection('users').doc(userItem.id).delete();
-                    });
+                    executeWithAdminPassword(() => { setEditing(null); window.db.collection('users').doc(userItem.id).delete(); });
                 };
 
                 const handleDeleteProduct = (id) => {
                     if(!confirm("⚠️ Delete this item completely?")) return;
-                    executeWithAdminPassword(() => {
-                        setEditing(null); 
-                        window.db.collection('inventory').doc(id).delete();
-                    });
+                    executeWithAdminPassword(() => { setEditing(null); window.db.collection('inventory').doc(id).delete(); });
                 };
 
                 const handleDeleteAllFinance = () => {
@@ -255,25 +218,36 @@
                     });
                 };
 
-                // DEBT CLEARANCE
+                // WhatsApp Reminder Feature
+                const handleWhatsAppReminder = (pt) => {
+                    if(!pt.phone) return alert("Client has no phone number recorded.");
+                    const msg = `Hello ${pt.name},\n\nThis is a polite reminder from APEX Pharmacy. You currently have an outstanding balance of ${pt.creditBalance.toLocaleString()} TZS.\n\nPlease arrange for payment at your earliest convenience. Thank you for your business!`;
+                    const url = `https://wa.me/${pt.phone.replace(/[^0-9\+]/g, '')}?text=${encodeURIComponent(msg)}`;
+                    window.open(url, '_blank');
+                };
+
                 const handleClearDebt = (client) => {
                     const amount = prompt(`Enter cash amount paid by ${client.name} to clear debt.\nCurrent Debt: ${client.creditBalance.toLocaleString()} TZS`);
                     if(!amount || isNaN(amount) || Number(amount) <= 0) return;
                     const paid = Number(amount);
                     const newBalance = Math.max(0, (client.creditBalance || 0) - paid);
-                    
                     window.db.collection('patients').doc(client.id).update({ creditBalance: newBalance });
-                    
                     window.db.collection('sales').add({
-                        total: paid, profit: paid, amountTendered: paid, changeGiven: 0,
-                        timestamp: new Date().toISOString(), soldBy: user.fullName || user.email, 
-                        method: 'DEBT_PAYMENT', items: [{brandName: 'Debt Clearance Payment', qty: 1, currentPrice: paid, costPrice: 0}], 
-                        patientId: client.id
+                        total: paid, profit: paid, amountTendered: paid, changeGiven: 0, timestamp: new Date().toISOString(), soldBy: user.fullName || user.email, 
+                        method: 'DEBT_PAYMENT', items: [{brandName: 'Debt Clearance Payment', qty: 1, currentPrice: paid, costPrice: 0}], patientId: client.id
                     });
                     alert(`Successfully cleared ${paid.toLocaleString()} TZS from ${client.name}'s debt.`);
                 };
 
-                // CART & CHECKOUT LOGIC
+                // CART, BARCODE & CHECKOUT LOGIC
+                const handleBarcodeSubmit = (e) => {
+                    e.preventDefault();
+                    if(!barcodeInput.trim()) return;
+                    const item = data.inventory.find(i => i.barcode === barcodeInput.trim() || i.brandName.toLowerCase() === barcodeInput.trim().toLowerCase());
+                    if(item) addToCart(item); else alert("Item / Barcode not found in inventory!");
+                    setBarcodeInput('');
+                };
+
                 const addToCart = (p) => {
                     if (p.stock <= 0) return alert("Item out of stock!");
                     if (p.expiryDate && new Date(p.expiryDate) < new Date()) return alert("⚠️ Cannot sell an expired item!");
@@ -301,11 +275,10 @@
                     if (method === 'DEBT' && !checkoutPatient) return alert("Select a client to issue on credit!");
                     const total = cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0);
                     const totalCost = cart.reduce((s,i)=>s+(i.costPrice*i.qty), 0);
+                    const changeGiven = (method === 'CASH' && amountTendered > total) ? (amountTendered - total) : 0;
                     
                     const saleData = { 
-                        total, profit: total - totalCost, 
-                        amountTendered: method === 'CASH' ? amountTendered : total,
-                        changeGiven: (method === 'CASH' && amountTendered > total) ? (amountTendered - total) : 0,
+                        total, profit: total - totalCost, amountTendered: method === 'CASH' ? amountTendered : total, changeGiven,
                         timestamp: new Date().toISOString(), soldBy: user.fullName || user.email, 
                         method, items: cart, patientId: checkoutPatient || null 
                     };
@@ -319,11 +292,12 @@
                         if(pt) window.db.collection("patients").doc(checkoutPatient).update({ creditBalance: (Number(pt.creditBalance) || 0) + total });
                     }
                     currentCart.forEach(i => window.db.collection("inventory").doc(i.id).update({ stock: i.stock - i.qty }));
+
+                    // Trigger Auto-Receipt Mode
+                    setReceiptData(saleData);
                 };
 
-                const addMedicalHistory = (patientId, record) => {
-                    window.db.collection("medicalHistory").add({ patientId, date: new Date().toISOString(), ...record });
-                };
+                const addMedicalHistory = (patientId, record) => { window.db.collection("medicalHistory").add({ patientId, date: new Date().toISOString(), ...record }); };
 
                 const exportToExcel = (exportData, filename) => {
                     if (typeof XLSX === 'undefined') return alert("Excel library could not be loaded. Ensure you are online.");
@@ -334,33 +308,19 @@
                     XLSX.writeFile(wb, `${filename}_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
                 };
 
-                // DYNAMIC SORTING ENGINE FOR INVENTORY
+                // DYNAMIC SORTING ENGINE
                 const processedInventory = useMemo(() => {
                     let items = [...data.inventory];
-                    
-                    // 1. Filter by Search
                     if (search) {
                         const term = search.toLowerCase();
-                        items = items.filter(p => 
-                            (p.brandName || '').toLowerCase().includes(term) || 
-                            (p.genericName || '').toLowerCase().includes(term) || 
-                            (p.category || '').toLowerCase().includes(term) || 
-                            (p.subcategory || '').toLowerCase().includes(term)
-                        );
+                        items = items.filter(p => (p.brandName || '').toLowerCase().includes(term) || (p.genericName || '').toLowerCase().includes(term) || (p.category || '').toLowerCase().includes(term) || (p.subcategory || '').toLowerCase().includes(term) || (p.barcode || '') === term);
                     }
-
-                    // 2. Apply Dynamic Sorting
                     items.sort((a, b) => {
                         const isExpA = a.expiryDate && new Date(a.expiryDate) < new Date() ? 1 : 0;
                         const isExpB = b.expiryDate && new Date(b.expiryDate) < new Date() ? 1 : 0;
-                        const oosA = a.stock <= 0 ? 1 : 0;
-                        const oosB = b.stock <= 0 ? 1 : 0;
-
+                        const oosA = a.stock <= 0 ? 1 : 0; const oosB = b.stock <= 0 ? 1 : 0;
                         switch(sortOption) {
-                            case 'NEW':
-                                const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-                                const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-                                return dateB - dateA;
+                            case 'NEW': return (b.updatedAt ? new Date(b.updatedAt).getTime() : 0) - (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
                             case 'BRAND_ASC': return (a.brandName||'').localeCompare(b.brandName||'');
                             case 'BRAND_DESC': return (b.brandName||'').localeCompare(a.brandName||'');
                             case 'GENERIC_ASC': return (a.genericName||'').localeCompare(b.genericName||'');
@@ -368,15 +328,22 @@
                             case 'PRICE_DESC': return (Number(b.price)||0) - (Number(a.price)||0);
                             case 'EXPIRED': return isExpB - isExpA || (a.brandName||'').localeCompare(b.brandName||'');
                             case 'OOS': return oosB - oosA || (Number(a.stock)||0) - (Number(b.stock)||0);
-                            default: return 0; // Natural Order
+                            default: return 0;
                         }
                     });
-
                     return items;
                 }, [data.inventory, search, sortOption]);
 
+                // DASHBOARD ALERT SYSTEM
+                const systemAlerts = useMemo(() => {
+                    const now = new Date();
+                    const lowStock = data.inventory.filter(i => i.stock > 0 && i.stock <= 10).length;
+                    const outOfStock = data.inventory.filter(i => i.stock <= 0).length;
+                    const expired = data.inventory.filter(i => i.expiryDate && new Date(i.expiryDate) < now).length;
+                    return { lowStock, outOfStock, expired };
+                }, [data.inventory]);
+
                 // METRICS CALCULATIONS
-                const inventoryTotalCost = data.inventory.reduce((a,b)=>a+(Number(b.costPrice)*Number(b.stock)), 0);
                 const inventoryTotalValue = data.inventory.reduce((a,b)=>a+(Number(b.price)*Number(b.stock)), 0);
                 const totalNetProfit = data.sales.reduce((a,b)=>a+Number(b.profit),0) - data.expenses.reduce((a,b)=>a+Number(b.amount),0);
 
@@ -394,32 +361,25 @@
                 }, [data.sales]);
 
                 const filteredReportData = useMemo(() => {
-                    const now = new Date();
-                    let start = new Date();
+                    const now = new Date(); let start = new Date();
                     if (reportPeriod === 'DAILY') start.setHours(0,0,0,0);
                     else if (reportPeriod === 'WEEKLY') { start.setDate(start.getDate() - 7); start.setHours(0,0,0,0); }
                     else if (reportPeriod === 'MONTHLY') start = new Date(now.getFullYear(), now.getMonth(), 1);
-
                     const term = reportSearch.toLowerCase();
                     const rSales = data.sales.filter(s => new Date(s.timestamp) >= start && (!term || (s.soldBy||'').toLowerCase().includes(term) || s.items.some(i => (i.brandName||'').toLowerCase().includes(term))));
                     const rExpenses = data.expenses.filter(e => new Date(e.timestamp||Date.now()) >= start && (!term || (e.description||'').toLowerCase().includes(term)));
                     const rExpired = data.inventory.filter(i => i.expiryDate && new Date(i.expiryDate) < now && (!term || (i.brandName||'').toLowerCase().includes(term)));
-
                     return {
                         sales: rSales, expenses: rExpenses, expired: rExpired,
-                        totalSales: rSales.reduce((a,b) => a + b.total, 0),
-                        totalProfit: rSales.reduce((a,b) => a + b.profit, 0),
-                        totalLosses: rExpenses.reduce((a,b) => a + Number(b.amount), 0),
-                        expiredCost: rExpired.reduce((a,b) => a + (Number(b.costPrice)*Number(b.stock)), 0)
+                        totalSales: rSales.reduce((a,b) => a + b.total, 0), totalProfit: rSales.reduce((a,b) => a + b.profit, 0),
+                        totalLosses: rExpenses.reduce((a,b) => a + Number(b.amount), 0), expiredCost: rExpired.reduce((a,b) => a + (Number(b.costPrice)*Number(b.stock)), 0)
                     };
                 }, [data, reportPeriod, reportSearch]);
 
-                // Finance Dual-Graph Render (7-Day vs Monthly)
+                // Chart Render
                 useEffect(() => {
                     if (view !== 'FINANCE' || !chartRef.current || typeof Chart === 'undefined') return;
-
                     let labels = []; let revs = []; let profs = []; let losses = [];
-
                     if (chartPeriod === '7DAYS') {
                         labels = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toLocaleDateString(); }).reverse();
                         revs = labels.map(date => data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === date).reduce((sum, s) => sum + s.total, 0));
@@ -431,27 +391,11 @@
                         profs = labels.map(monthStr => data.sales.filter(s => new Date(s.timestamp).toLocaleString('default', { month: 'short', year: 'numeric' }) === monthStr).reduce((sum, s) => sum + s.profit, 0));
                         losses = labels.map(monthStr => data.expenses.filter(e => new Date(e.timestamp || e.date).toLocaleString('default', { month: 'short', year: 'numeric' }) === monthStr).reduce((sum, e) => sum + Number(e.amount), 0));
                     }
-
                     if (chartInstance.current) chartInstance.current.destroy();
-                    
                     chartInstance.current = new Chart(chartRef.current, {
-                        type: 'bar',
-                        data: { 
-                            labels: labels, 
-                            datasets: [
-                                { label: 'Revenue (TZS)', data: revs, backgroundColor: '#10b981', borderRadius: 4 }, 
-                                { label: 'Profit (TZS)', data: profs, backgroundColor: '#3b82f6', borderRadius: 4 },
-                                { label: 'Losses (TZS)', data: losses, backgroundColor: '#f43f5e', borderRadius: 4 }
-                            ] 
-                        },
-                        options: { 
-                            responsive: true, 
-                            maintainAspectRatio: false, 
-                            scales: { y: { grid: { color: '#1e293b' }, ticks:{color:'#64748b'} }, x: { grid: { display: false }, ticks:{color:'#64748b'} } }, 
-                            plugins: { legend: { labels: { color: '#cbd5e1' } } } 
-                        }
+                        type: 'bar', data: { labels: labels, datasets: [{ label: 'Revenue (TZS)', data: revs, backgroundColor: '#10b981', borderRadius: 4 }, { label: 'Profit (TZS)', data: profs, backgroundColor: '#3b82f6', borderRadius: 4 }, { label: 'Losses (TZS)', data: losses, backgroundColor: '#f43f5e', borderRadius: 4 }] },
+                        options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#1e293b' }, ticks:{color:'#64748b'} }, x: { grid: { display: false }, ticks:{color:'#64748b'} } }, plugins: { legend: { labels: { color: '#cbd5e1' } } } }
                     });
-
                     return () => { if (chartInstance.current) { chartInstance.current.destroy(); chartInstance.current = null; } };
                 }, [view, data.sales, data.expenses, chartPeriod]);
 
@@ -459,9 +403,7 @@
                 if (!user) {
                     return (
                         <div className="h-screen flex items-center justify-center bg-black p-4">
-                            <div className={`status-badge ${isOnline ? 'bg-online text-white' : 'bg-offline text-white'}`}>
-                                {isOnline ? '🔵 ONLINE' : '🔴 OFFLINE CACHE MODE'}
-                            </div>
+                            <div className={`status-badge ${isOnline ? 'bg-online text-white' : 'bg-offline text-white'}`}>{isOnline ? '🔵 ONLINE' : '🔴 OFFLINE CACHE MODE'}</div>
                             <div className="bg-slate-900 p-8 rounded-[4rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
                                 <h1 className="text-4xl font-black text-emerald-500 mb-2 italic">APEX</h1>
                                 <p className="text-slate-500 text-[10px] font-bold uppercase mb-8 tracking-[0.3em]">Private & Secure</p>
@@ -487,11 +429,46 @@
 
                 return (
                     <div className={`flex h-screen overflow-hidden bg-slate-950 ${isMobile ? 'flex-col' : ''}`}>
-                        <div className={`status-badge ${isOnline ? 'bg-online text-white' : 'bg-offline text-white'}`}>
-                            {isOnline ? '🔵 ONLINE SYNCING' : '🔴 OFFLINE CACHE MODE'}
-                        </div>
+                        <div className={`status-badge ${isOnline ? 'bg-online text-white' : 'bg-offline text-white'} no-print`}>{isOnline ? '🔵 ONLINE SYNCING' : '🔴 OFFLINE CACHE MODE'}</div>
 
-                        <aside className={`${isMobile ? 'w-full h-16 flex-row items-center justify-between z-10' : 'w-72 flex-col z-10'} bg-black border-r border-slate-800 p-4 md:p-8 flex shrink-0 overflow-y-auto shadow-2xl`}>
+                        {/* RECEIPT PRINT OVERLAY */}
+                        {receiptData && (
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center modal-overlay no-print" onClick={(e) => handleModalClickOutside(e, () => setReceiptData(null))}>
+                                <div className="bg-white text-black p-6 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col">
+                                    <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-black text-emerald-600 uppercase">Receipt Preview</h3></div>
+                                    
+                                    <div id="print-area" className="flex flex-col text-sm space-y-2 mb-6 text-black bg-white">
+                                        <h2 className="text-center font-black text-xl mb-1">APEX PHARMACY</h2>
+                                        <p className="text-center text-xs">Date: {new Date(receiptData.timestamp).toLocaleString()}</p>
+                                        <p className="text-center text-xs">Cashier: {receiptData.soldBy}</p>
+                                        <p className="text-center text-xs font-bold uppercase mt-1">Pay Method: {receiptData.method}</p>
+                                        
+                                        <div className="border-b-2 border-black border-dashed my-2"></div>
+                                        {receiptData.items.map(i => (
+                                            <div className="flex justify-between text-xs" key={i.id}>
+                                                <span className="truncate pr-2">{i.qty}x {i.brandName}</span>
+                                                <span className="shrink-0">{(i.qty * i.currentPrice).toLocaleString()}</span>
+                                            </div>
+                                        ))}
+                                        <div className="border-b-2 border-black border-dashed my-2"></div>
+                                        
+                                        <div className="flex justify-between font-black text-base"><span>TOTAL:</span><span>{receiptData.total.toLocaleString()} TZS</span></div>
+                                        <div className="flex justify-between text-xs mt-1"><span>Tendered:</span><span>{receiptData.amountTendered.toLocaleString()} TZS</span></div>
+                                        <div className="flex justify-between text-xs"><span>Change:</span><span>{receiptData.changeGiven.toLocaleString()} TZS</span></div>
+                                        
+                                        <div className="border-b-2 border-black border-dashed my-2"></div>
+                                        <p className="text-center text-xs font-bold mt-2">Thank you for your business!</p>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button onClick={() => window.print()} className="flex-1 bg-emerald-600 text-white font-black py-4 rounded-xl hover:bg-emerald-500 shadow-lg">🖨️ PRINT RECEIPT</button>
+                                        <button onClick={() => setReceiptData(null)} className="flex-1 bg-slate-200 text-slate-800 font-black py-4 rounded-xl hover:bg-slate-300">CLOSE</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <aside className={`${isMobile ? 'w-full h-16 flex-row items-center justify-between z-10' : 'w-72 flex-col z-10'} bg-black border-r border-slate-800 p-4 md:p-8 flex shrink-0 overflow-y-auto shadow-2xl no-print`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-8 md:w-10 h-8 md:h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black">A</div>
                                 {!isMobile && <h2 className="text-2xl font-black tracking-tighter italic">APEX</h2>}
@@ -520,7 +497,7 @@
                             )}
                         </aside>
 
-                        <main className={`flex-1 ${isMobile ? 'p-4' : 'p-8 md:p-10'} overflow-auto no-scrollbar relative flex flex-col`}>
+                        <main className={`flex-1 ${isMobile ? 'p-4' : 'p-8 md:p-10'} overflow-auto no-scrollbar relative flex flex-col no-print`}>
                             {viewHistory.length > 0 && view !== 'DASHBOARD' && (
                                 <button onClick={handleGoBack} className="self-start mb-6 text-emerald-500 font-black text-xs bg-slate-900 px-4 py-2 rounded-xl border border-slate-800 hover:bg-slate-800">← RETURN</button>
                             )}
@@ -528,10 +505,26 @@
                             {view === 'DASHBOARD' && (
                                 <div className="animate-in fade-in duration-700">
                                     <h2 className="text-2xl md:text-4xl font-black mb-6">Director's Overview</h2>
-                                    <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-4`}>
+                                    <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-4 mb-6`}>
                                         <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border-l-8 border-emerald-500 shadow-xl"><p className="text-slate-500 text-[10px] font-black uppercase mb-2">Total Revenue</p><h3 className="text-2xl md:text-4xl font-black text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} <span className="text-sm text-slate-500">TZS</span></h3></div>
                                         <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border-l-8 border-blue-500 shadow-xl"><p className="text-slate-500 text-[10px] font-black uppercase mb-2">Inventory Value</p><h3 className="text-2xl md:text-4xl font-black text-blue-400">{inventoryTotalValue.toLocaleString()} <span className="text-sm text-slate-500">TZS</span></h3></div>
                                         <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border-l-8 border-rose-500 shadow-xl"><p className="text-slate-500 text-[10px] font-black uppercase mb-2">Client Debt</p><h3 className="text-2xl md:text-4xl font-black text-rose-400">{data.patients.reduce((a,b)=>a+(Number(b.creditBalance)||0),0).toLocaleString()} <span className="text-sm text-slate-500">TZS</span></h3></div>
+                                    </div>
+                                    
+                                    <h3 className="text-lg font-black uppercase text-slate-500 mb-4 tracking-widest mt-8">🚨 System Alerts</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div onClick={() => { setView('STOO'); setSortOption('OOS'); }} className="bg-rose-900/20 border border-rose-800 p-6 rounded-3xl cursor-pointer hover:bg-rose-900/40 transition-colors">
+                                            <h4 className="text-rose-500 font-black text-3xl mb-1">{systemAlerts.outOfStock}</h4>
+                                            <p className="text-[10px] font-bold text-rose-400 uppercase">Items Out of Stock</p>
+                                        </div>
+                                        <div onClick={() => { setView('STOO'); setSortOption('OOS'); }} className="bg-orange-900/20 border border-orange-800 p-6 rounded-3xl cursor-pointer hover:bg-orange-900/40 transition-colors">
+                                            <h4 className="text-orange-500 font-black text-3xl mb-1">{systemAlerts.lowStock}</h4>
+                                            <p className="text-[10px] font-bold text-orange-400 uppercase">Items Low Stock (≤10)</p>
+                                        </div>
+                                        <div onClick={() => { setView('STOO'); setSortOption('EXPIRED'); }} className="bg-purple-900/20 border border-purple-800 p-6 rounded-3xl cursor-pointer hover:bg-purple-900/40 transition-colors">
+                                            <h4 className="text-purple-500 font-black text-3xl mb-1">{systemAlerts.expired}</h4>
+                                            <p className="text-[10px] font-bold text-purple-400 uppercase">Expired Items on Shelves</p>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -540,23 +533,18 @@
                                 <div className={`flex ${isMobile ? 'flex-col overflow-y-auto pb-10' : 'flex-row'} gap-4 md:gap-8 h-full`}>
                                     <div className={`flex-1 space-y-4 flex flex-col ${isMobile ? 'shrink-0' : 'h-full'}`}>
                                         
-                                        <div className="flex flex-col md:flex-row gap-2 shrink-0">
+                                        <form onSubmit={handleBarcodeSubmit} className="flex gap-2 shrink-0">
+                                            <input type="text" value={barcodeInput} onChange={(e)=>setBarcodeInput(e.target.value)} placeholder="⚡ Scan Barcode Here..." className="w-1/3 p-4 bg-emerald-900/20 rounded-[2.5rem] font-bold outline-none text-sm text-emerald-400 border border-emerald-800 focus:border-emerald-500 transition-colors placeholder:text-emerald-700" />
                                             <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Brand, Generic, or Category..." className="flex-1 w-full p-4 bg-slate-900 rounded-[2.5rem] font-bold outline-none text-sm text-white border border-slate-800 focus:border-emerald-500 transition-colors" />
-                                            
-                                            <select value={sortOption} onChange={(e)=>setSortOption(e.target.value)} className="p-4 bg-slate-900 rounded-[2.5rem] font-bold outline-none text-xs md:text-sm text-emerald-400 border border-slate-800 focus:border-emerald-500 cursor-pointer">
+                                            <select value={sortOption} onChange={(e)=>setSortOption(e.target.value)} className="p-4 bg-slate-900 rounded-[2.5rem] font-bold outline-none text-xs md:text-sm text-emerald-400 border border-slate-800 focus:border-emerald-500 cursor-pointer hidden md:block">
                                                 <option value="DEFAULT">Sort: Default</option>
                                                 <option value="NEW">✨ Newest Added</option>
                                                 <option value="BRAND_ASC">🔤 Brand (A-Z)</option>
-                                                <option value="BRAND_DESC">🔤 Brand (Z-A)</option>
-                                                <option value="GENERIC_ASC">💊 Generic (A-Z)</option>
                                                 <option value="PRICE_ASC">💵 Price (Low-High)</option>
                                                 <option value="PRICE_DESC">💵 Price (High-Low)</option>
                                                 <option value="OOS">⚠️ Out of Stock (OOS)</option>
-                                                <option value="EXPIRED">❌ Expired Items</option>
                                             </select>
-                                            
-                                            {search && <button onClick={()=>setSearch("")} className="bg-rose-900/30 text-rose-400 px-6 py-4 md:py-0 rounded-[2.5rem] font-black text-xs hover:bg-rose-600 hover:text-white transition-colors">CLEAR</button>}
-                                        </div>
+                                        </form>
 
                                         <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-3'} gap-3 ${isMobile ? '' : 'overflow-y-auto'} no-scrollbar pb-10`}>
                                             {processedInventory.map(p => {
@@ -590,7 +578,7 @@
                                         </div>
                                         <div className="pt-4 border-t border-slate-200 shrink-0">
                                             <div className="flex justify-between font-black text-2xl text-emerald-600 mb-6"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0).toLocaleString()}</span></div>
-                                            <button onClick={openCheckoutModal} className={`w-full py-5 rounded-[2rem] font-black text-white ${isMobile ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-slate-900 hover:bg-black'}`}>CHECKOUT</button>
+                                            <button onClick={openCheckoutModal} className={`w-full py-5 rounded-[2rem] font-black text-white transition-colors ${isMobile ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-slate-900 hover:bg-black'}`}>CHECKOUT</button>
                                         </div>
                                     </div>
                                 </div>
@@ -601,7 +589,7 @@
                                     <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black text-emerald-500 uppercase">Vault</h2>{hasAccess('MANAGER') && <button onClick={() => setEditing({ type: 'PRODUCT', item: {} })} className="bg-emerald-600 text-white px-6 py-2 rounded-2xl font-black text-xs hover:bg-emerald-500">+ NEW ITEM</button>}</div>
                                     
                                     <div className="flex flex-col md:flex-row gap-2 mb-6">
-                                        <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search Brand or Category..." className="w-full flex-1 p-4 bg-black rounded-2xl font-bold outline-none text-white border border-slate-800 focus:border-emerald-500" />
+                                        <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search Brand, Generic, or Category..." className="w-full flex-1 p-4 bg-black rounded-2xl font-bold outline-none text-white border border-slate-800 focus:border-emerald-500" />
                                         <select value={sortOption} onChange={(e)=>setSortOption(e.target.value)} className="p-4 bg-black rounded-2xl font-bold outline-none text-xs md:text-sm text-emerald-400 border border-slate-800 focus:border-emerald-500 cursor-pointer">
                                             <option value="DEFAULT">Sort: Default</option>
                                             <option value="NEW">✨ Newest First</option>
@@ -622,7 +610,10 @@
                                                 {processedInventory.map(p => (
                                                     <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50">
                                                         <td className="py-4 px-2 font-black text-white">
-                                                            {p.brandName || 'Unnamed'} 
+                                                            <div className="flex items-center gap-2">
+                                                                {p.brandName || 'Unnamed'} 
+                                                                {p.barcode && <span className="bg-slate-800 text-slate-400 text-[8px] px-1 py-0.5 rounded">||| {p.barcode}</span>}
+                                                            </div>
                                                             <span className="block text-[9px] text-slate-500 mt-1">
                                                                 {p.category && <span onClick={()=>setSearch(p.category)} className="cursor-pointer hover:underline text-blue-400">{p.category}</span>}
                                                                 {p.subcategory && <span> / <span onClick={()=>setSearch(p.subcategory)} className="cursor-pointer hover:underline text-purple-400">{p.subcategory}</span></span>}
@@ -716,7 +707,12 @@
                                                     {pt.creditBalance > 0 && <p className="text-xs font-black text-rose-500 mt-2">DEBT: {pt.creditBalance.toLocaleString()} TZS</p>}
                                                 </div>
                                                 <div className="flex flex-wrap gap-2 shrink-0">
-                                                    {pt.creditBalance > 0 && <button onClick={()=>handleClearDebt(pt)} className="bg-emerald-900/30 hover:bg-emerald-600 text-emerald-500 hover:text-white px-3 py-2 rounded-xl font-black text-[10px] transition-colors">PAY DEBT</button>}
+                                                    {pt.creditBalance > 0 && (
+                                                        <>
+                                                            <button onClick={()=>handleWhatsAppReminder(pt)} className="bg-blue-900/30 hover:bg-blue-600 text-blue-400 hover:text-white px-3 py-2 rounded-xl font-black text-[10px] transition-colors">💬 WHATSAPP</button>
+                                                            <button onClick={()=>handleClearDebt(pt)} className="bg-emerald-900/30 hover:bg-emerald-600 text-emerald-500 hover:text-white px-3 py-2 rounded-xl font-black text-[10px] transition-colors">PAY DEBT</button>
+                                                        </>
+                                                    )}
                                                     {pt.clientType === 'PATIENT' && <button onClick={()=>setMedicalHistoryModal(pt)} className="bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl text-blue-400 font-black text-[10px]">HISTORY</button>}
                                                     {hasAccess('MANAGER') && <button onClick={()=>setEditing({type:'PATIENT', item: pt})} className="bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl text-slate-300 font-black text-[10px]">EDIT</button>}
                                                 </div>
@@ -762,7 +758,7 @@
                                             
                                         }} className="space-y-4">
                                             
-                                            {editing.type === 'PRODUCT' && (<><input name="brandName" defaultValue={editing.item.brandName || ''} placeholder="Brand Name *" required className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500" /><input name="genericName" defaultValue={editing.item.genericName || ''} placeholder="Generic Name" className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500" /><div className="grid grid-cols-2 gap-3"><input name="category" defaultValue={editing.item.category || ''} placeholder="Category" className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /><input name="subcategory" defaultValue={editing.item.subcategory || ''} placeholder="Subcategory" className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /></div><div className="grid grid-cols-2 gap-3"><input name="price" type="number" defaultValue={editing.item.price || ''} placeholder="Sell Price *" required className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /><input name="costPrice" type="number" defaultValue={editing.item.costPrice || ''} placeholder="Cost Price *" required className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /></div><input name="stock" type="number" defaultValue={editing.item.stock || ''} placeholder="Stock Quantity *" required className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /><div className="relative"><span className="absolute -top-2 left-3 bg-slate-900 px-1 text-[10px] font-bold text-slate-500 uppercase">Expiry Date</span><input name="expiryDate" type="date" defaultValue={editing.item.expiryDate || ''} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500" /></div>{editing.item.id && <button type="button" onClick={()=>handleDeleteProduct(editing.item.id)} className="w-full text-rose-500 bg-rose-900/20 font-bold text-xs py-3 rounded-xl hover:bg-rose-600 hover:text-white mt-2">🗑️ PERMANENTLY DELETE ITEM</button>}</>)}
+                                            {editing.type === 'PRODUCT' && (<><div className="flex gap-2"><input name="barcode" defaultValue={editing.item.barcode || ''} placeholder="||| Barcode (Optional)" className="w-1/3 p-4 bg-black rounded-xl text-emerald-400 font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500" /><input name="brandName" defaultValue={editing.item.brandName || ''} placeholder="Brand Name *" required className="flex-1 w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500" /></div><input name="genericName" defaultValue={editing.item.genericName || ''} placeholder="Generic Name" className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500" /><div className="grid grid-cols-2 gap-3"><input name="category" defaultValue={editing.item.category || ''} placeholder="Category" className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /><input name="subcategory" defaultValue={editing.item.subcategory || ''} placeholder="Subcategory" className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /></div><div className="grid grid-cols-2 gap-3"><input name="price" type="number" defaultValue={editing.item.price || ''} placeholder="Sell Price *" required className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /><input name="costPrice" type="number" defaultValue={editing.item.costPrice || ''} placeholder="Cost Price *" required className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /></div><input name="stock" type="number" defaultValue={editing.item.stock || ''} placeholder="Stock Quantity *" required className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /><div className="relative"><span className="absolute -top-2 left-3 bg-slate-900 px-1 text-[10px] font-bold text-slate-500 uppercase">Expiry Date</span><input name="expiryDate" type="date" defaultValue={editing.item.expiryDate || ''} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500" /></div>{editing.item.id && <button type="button" onClick={()=>handleDeleteProduct(editing.item.id)} className="w-full text-rose-500 bg-rose-900/20 font-bold text-xs py-3 rounded-xl hover:bg-rose-600 hover:text-white mt-2">🗑️ PERMANENTLY DELETE ITEM</button>}</>)}
                                             
                                             {editing.type === 'PATIENT' && (
                                                 <>
@@ -771,7 +767,7 @@
                                                         <option value="CUSTOMER">🛒 Customer (Retail/Wholesale)</option>
                                                     </select>
                                                     <input name="name" defaultValue={editing.item.name || ''} placeholder="Full Name *" required className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-blue-500" />
-                                                    <input name="phone" defaultValue={editing.item.phone || ''} placeholder="Phone Number / Contacts" className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-blue-500" />
+                                                    <input name="phone" defaultValue={editing.item.phone || ''} placeholder="Phone Number (e.g. +255...)" className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-blue-500" />
                                                     <input name="address" defaultValue={editing.item.address || ''} placeholder="Address / Location" className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-blue-500" />
                                                     
                                                     {editClientType === 'PATIENT' && (
