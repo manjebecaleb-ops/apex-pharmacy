@@ -104,7 +104,12 @@
                 const [amountTendered, setAmountTendered] = useState(0);
                 const [checkoutPatient, setCheckoutPatient] = useState('');
                 const [medicalHistoryModal, setMedicalHistoryModal] = useState(null);
+                
+                // Finance Modals & Toggles
                 const [viewSalesVolume, setViewSalesVolume] = useState(false);
+                const [viewExpensesDetail, setViewExpensesDetail] = useState(false);
+                const [viewNetProfitDetail, setViewNetProfitDetail] = useState(false);
+                const [chartPeriod, setChartPeriod] = useState('7DAYS'); // '7DAYS' | 'MONTHLY'
 
                 const [reportPeriod, setReportPeriod] = useState('DAILY');
                 const [reportTab, setReportTab] = useState('SALES');
@@ -121,7 +126,6 @@
                                     const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
                                     if (uData.status === 'ACTIVE') {
                                         setUser(uData);
-                                        // Restrict Dashboard to Managers only
                                         if (uData.role === 'MANAGER') setView('DASHBOARD');
                                         else setView('POS');
                                     } else {
@@ -366,27 +370,46 @@
                     };
                 }, [data, reportPeriod, reportSearch]);
 
-                // Chart Render
+                // Finance Dual-Graph Render (7-Day vs Monthly)
                 useEffect(() => {
                     if (view !== 'FINANCE' || !chartRef.current || typeof Chart === 'undefined') return;
-                    const last7Days = [...Array(7)].map((_, i) => {
-                        const d = new Date(); d.setDate(d.getDate() - i);
-                        return d.toLocaleDateString();
-                    }).reverse();
 
-                    const revs = last7Days.map(date => data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === date).reduce((sum, s) => sum + s.total, 0));
-                    const profs = last7Days.map(date => data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === date).reduce((sum, s) => sum + s.profit, 0));
+                    let labels = []; let revs = []; let profs = []; let losses = [];
+
+                    if (chartPeriod === '7DAYS') {
+                        labels = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toLocaleDateString(); }).reverse();
+                        revs = labels.map(date => data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === date).reduce((sum, s) => sum + s.total, 0));
+                        profs = labels.map(date => data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === date).reduce((sum, s) => sum + s.profit, 0));
+                        losses = labels.map(date => data.expenses.filter(e => new Date(e.timestamp || e.date).toLocaleDateString() === date).reduce((sum, e) => sum + Number(e.amount), 0));
+                    } else {
+                        labels = [...Array(6)].map((_, i) => { const d = new Date(); d.setMonth(d.getMonth() - i); return d.toLocaleString('default', { month: 'short', year: 'numeric' }); }).reverse();
+                        revs = labels.map(monthStr => data.sales.filter(s => new Date(s.timestamp).toLocaleString('default', { month: 'short', year: 'numeric' }) === monthStr).reduce((sum, s) => sum + s.total, 0));
+                        profs = labels.map(monthStr => data.sales.filter(s => new Date(s.timestamp).toLocaleString('default', { month: 'short', year: 'numeric' }) === monthStr).reduce((sum, s) => sum + s.profit, 0));
+                        losses = labels.map(monthStr => data.expenses.filter(e => new Date(e.timestamp || e.date).toLocaleString('default', { month: 'short', year: 'numeric' }) === monthStr).reduce((sum, e) => sum + Number(e.amount), 0));
+                    }
 
                     if (chartInstance.current) chartInstance.current.destroy();
                     
                     chartInstance.current = new Chart(chartRef.current, {
                         type: 'bar',
-                        data: { labels: last7Days, datasets: [{ label: 'Revenue (TZS)', data: revs, backgroundColor: '#10b981', borderRadius: 4 }, { label: 'Profit (TZS)', data: profs, backgroundColor: '#3b82f6', borderRadius: 4 }] },
-                        options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#1e293b' }, ticks:{color:'#64748b'} }, x: { grid: { display: false }, ticks:{color:'#64748b'} } }, plugins: { legend: { labels: { color: '#cbd5e1' } } } }
+                        data: { 
+                            labels: labels, 
+                            datasets: [
+                                { label: 'Revenue (TZS)', data: revs, backgroundColor: '#10b981', borderRadius: 4 }, 
+                                { label: 'Profit (TZS)', data: profs, backgroundColor: '#3b82f6', borderRadius: 4 },
+                                { label: 'Losses (TZS)', data: losses, backgroundColor: '#f43f5e', borderRadius: 4 }
+                            ] 
+                        },
+                        options: { 
+                            responsive: true, 
+                            maintainAspectRatio: false, 
+                            scales: { y: { grid: { color: '#1e293b' }, ticks:{color:'#64748b'} }, x: { grid: { display: false }, ticks:{color:'#64748b'} } }, 
+                            plugins: { legend: { labels: { color: '#cbd5e1' } } } 
+                        }
                     });
 
                     return () => { if (chartInstance.current) { chartInstance.current.destroy(); chartInstance.current = null; } };
-                }, [view, data.sales]);
+                }, [view, data.sales, data.expenses, chartPeriod]);
 
                 // -- RENDER BLOCK --
                 if (!user) {
@@ -399,8 +422,8 @@
                                 <h1 className="text-4xl font-black text-emerald-500 mb-2 italic">APEX</h1>
                                 <p className="text-slate-500 text-[10px] font-bold uppercase mb-8 tracking-[0.3em]">Private & Secure</p>
                                 <form onSubmit={handleLogin} className="flex flex-col">
-                                    <input name="email" type="email" placeholder="Email Address" required className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white" />
-                                    <input name="password" type="password" placeholder="Password" required className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white" />
+                                    <input name="email" type="email" placeholder="Email Address" required className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white focus:border-emerald-500 transition-colors" />
+                                    <input name="password" type="password" placeholder="Password" required className="w-full p-4 mb-10 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white focus:border-emerald-500 transition-colors" />
                                     <button type="submit" className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500">AUTHENTICATE</button>
                                 </form>
                             </div>
@@ -473,7 +496,7 @@
                                 <div className={`flex ${isMobile ? 'flex-col overflow-y-auto pb-10' : 'flex-row'} gap-4 md:gap-8 h-full`}>
                                     <div className={`flex-1 space-y-4 flex flex-col ${isMobile ? 'shrink-0' : 'h-full'}`}>
                                         <div className="flex gap-2">
-                                            <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Brand, Generic, or Category..." className="flex-1 w-full p-4 bg-slate-900 rounded-[2.5rem] font-bold outline-none text-sm shrink-0 text-white border border-slate-800 focus:border-emerald-500" />
+                                            <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Brand, Generic, or Category..." className="flex-1 w-full p-4 bg-slate-900 rounded-[2.5rem] font-bold outline-none text-sm shrink-0 text-white border border-slate-800 focus:border-emerald-500 transition-colors" />
                                             {search && <button onClick={()=>setSearch("")} className="bg-rose-900/30 text-rose-400 px-6 rounded-[2.5rem] font-black text-xs">CLEAR</button>}
                                         </div>
                                         <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-3'} gap-3 ${isMobile ? '' : 'overflow-y-auto'} no-scrollbar pb-10`}>
@@ -547,11 +570,36 @@
                                 <div className="space-y-6 h-full overflow-y-auto pb-10">
                                     <div className="flex justify-between"><h2 className="text-2xl font-black uppercase">Finance</h2>{hasAccess('MANAGER') && <button onClick={() => setEditing({ type: 'EXPENSE', item: {} })} className="bg-rose-600 text-white px-6 py-2 rounded-2xl font-black text-xs hover:bg-rose-500">+ EXPENSE</button>}</div>
                                     <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-4`}>
-                                        <div className="bg-slate-900 p-6 rounded-[2rem] text-center border-t-4 border-rose-500"><p className="text-[10px] font-black uppercase text-slate-500">Losses / Expenses</p><p className="text-2xl font-black text-rose-500">{data.expenses.reduce((a,b)=>a+Number(b.amount),0).toLocaleString()} TZS</p></div>
-                                        <div className="bg-white p-6 rounded-[2rem] text-center border-t-4 border-emerald-500"><p className="text-[10px] font-black uppercase text-slate-500">Net Profit</p><p className="text-2xl font-black text-emerald-600">{totalNetProfit.toLocaleString()} TZS</p></div>
-                                        <div onClick={() => setViewSalesVolume(true)} className="bg-emerald-600 hover:bg-emerald-500 cursor-pointer p-6 rounded-[2rem] text-center transition-colors"><p className="text-[10px] font-black uppercase text-emerald-200">Total Sales Volume</p><p className="text-3xl font-black text-white">{data.sales.length} <span className="text-sm font-bold opacity-75">(Click to View)</span></p></div>
+                                        
+                                        <div onClick={() => setViewExpensesDetail(true)} className="bg-slate-900 hover:bg-slate-800 cursor-pointer p-6 rounded-[2rem] text-center border-t-4 border-rose-500 shadow-lg transition-colors">
+                                            <p className="text-[10px] font-black uppercase text-slate-500">Losses / Expenses</p>
+                                            <p className="text-2xl font-black text-rose-500">{data.expenses.reduce((a,b)=>a+Number(b.amount),0).toLocaleString()} TZS</p>
+                                            <p className="text-[9px] font-bold text-slate-600 mt-1 uppercase">(Click to View Logs)</p>
+                                        </div>
+
+                                        <div onClick={() => setViewNetProfitDetail(true)} className="bg-white hover:bg-slate-200 cursor-pointer p-6 rounded-[2rem] text-center border-t-4 border-emerald-500 shadow-lg transition-colors">
+                                            <p className="text-[10px] font-black uppercase text-slate-500">Net Profit</p>
+                                            <p className="text-2xl font-black text-emerald-600">{totalNetProfit.toLocaleString()} TZS</p>
+                                            <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">(Click for Breakdown)</p>
+                                        </div>
+
+                                        <div onClick={() => setViewSalesVolume(true)} className="bg-emerald-600 hover:bg-emerald-500 cursor-pointer p-6 rounded-[2rem] text-center transition-colors shadow-lg">
+                                            <p className="text-[10px] font-black uppercase text-emerald-200">Total Sales Volume</p>
+                                            <p className="text-3xl font-black text-white">{data.sales.length}</p>
+                                            <p className="text-[9px] font-bold text-emerald-100 mt-1 uppercase">(Click to View Logs)</p>
+                                        </div>
                                     </div>
-                                    <div className="bg-slate-900 p-6 rounded-[3.5rem] border border-slate-800"><h3 className="text-xl font-black uppercase mb-4 text-emerald-500">7-Day Trend</h3><div className="w-full h-64"><canvas ref={chartRef}></canvas></div></div>
+
+                                    <div className="bg-slate-900 p-6 rounded-[3.5rem] border border-slate-800 shadow-xl">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h3 className="text-xl font-black uppercase text-emerald-500">Financial Trend</h3>
+                                            <div className="flex bg-black rounded-xl p-1 border border-slate-800">
+                                                <button onClick={() => setChartPeriod('7DAYS')} className={`px-3 py-1 rounded-lg text-[10px] font-black transition-colors ${chartPeriod === '7DAYS' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-white'}`}>7 DAYS</button>
+                                                <button onClick={() => setChartPeriod('MONTHLY')} className={`px-3 py-1 rounded-lg text-[10px] font-black transition-colors ${chartPeriod === 'MONTHLY' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-white'}`}>6 MONTHS</button>
+                                            </div>
+                                        </div>
+                                        <div className="w-full h-64"><canvas ref={chartRef}></canvas></div>
+                                    </div>
                                 </div>
                             )}
 
@@ -629,7 +677,7 @@
                                             
                                             if (type === 'PRODUCT') { col = 'inventory'; final = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock) }; } 
                                             else if (type === 'PATIENT') { col = 'patients'; final = item.id ? { ...payload, clientType: editClientType } : { ...payload, clientType: editClientType, creditBalance: 0 }; }
-                                            else if (type === 'EXPENSE') { col = 'expenses'; final = { ...payload, amount: Number(payload.amount), timestamp: new Date().toISOString() }; }
+                                            else if (type === 'EXPENSE') { col = 'expenses'; final = { ...payload, amount: Number(payload.amount), timestamp: new Date().toISOString(), addedBy: user.fullName || user.email }; }
                                             else if (type === 'USER') {
                                                 col = 'users'; final = { fullName: payload.fullName, email: payload.email, role: payload.role, status: 'ACTIVE' };
                                                 if (!item.id && isOnline) fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyDOFibCiMfYeVP4A6p6En9Jlml10eATGio`, { method: 'POST', body: JSON.stringify({ email: payload.email, password: payload.password, returnSecureToken: false }) });
@@ -686,29 +734,135 @@
                                 </div>
                             )}
                             
-                            {/* MEDICAL HISTORY MODAL */}
+                            {/* NEW COMPREHENSIVE MEDICAL HISTORY MODAL */}
                             {medicalHistoryModal && (
                                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setMedicalHistoryModal(null))}>
-                                    <div className="bg-slate-900 w-full max-w-lg p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh] border border-slate-800">
-                                        <h3 className="text-xl font-black text-blue-500 mb-6 border-b border-slate-800 pb-4">{medicalHistoryModal.name}'s Timeline</h3>
+                                    <div className="bg-slate-900 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh] border border-slate-800">
+                                        <h3 className="text-xl font-black text-blue-500 mb-6 border-b border-slate-800 pb-4">{medicalHistoryModal.name}'s Medical Record</h3>
+                                        
                                         <form onSubmit={(e) => {
-                                            e.preventDefault(); const fd = new FormData(e.target); 
-                                            addMedicalHistory(medicalHistoryModal.id, {diagnosis: fd.get('diagnosis'), treatment: fd.get('treatment'), cost: fd.get('cost')}); 
+                                            e.preventDefault(); 
+                                            const fd = new FormData(e.target); 
+                                            addMedicalHistory(medicalHistoryModal.id, {
+                                                disease: fd.get('disease'),
+                                                diagnosis: fd.get('diagnosis'), 
+                                                treatment: fd.get('treatment'),
+                                                medicineGiven: fd.get('medicineGiven'),
+                                                dose: fd.get('dose'),
+                                                dosage: fd.get('dosage'),
+                                                duration: fd.get('duration'),
+                                                allergies: fd.get('allergies'),
+                                                notes: fd.get('notes'),
+                                                cost: fd.get('cost')
+                                            }); 
                                             setMedicalHistoryModal(null);
                                         }} className="mb-6 space-y-3 bg-black p-4 rounded-2xl border border-slate-800 shrink-0">
-                                            <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">New Entry</p>
-                                            <input name="diagnosis" placeholder="Diagnosis / Complaint *" required className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
-                                            <input name="treatment" placeholder="Treatment / Notes" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
-                                            <input name="cost" type="number" placeholder="Cost of Treatment (TZS)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
+                                            <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">Log New Entry</p>
+                                            
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <input name="disease" placeholder="Disease / Condition *" required className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
+                                                <input name="diagnosis" placeholder="Diagnosis Details" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
+                                            </div>
+                                            
+                                            <input name="treatment" placeholder="Treatment Given" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
+                                            
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                <input name="medicineGiven" placeholder="Medicine Given" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
+                                                <input name="dose" placeholder="Dose (e.g. 500mg)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
+                                                <input name="dosage" placeholder="Dosage (e.g. 1x3)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
+                                                <input name="duration" placeholder="Duration (e.g. 5 days)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <input name="allergies" placeholder="Known Allergies" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
+                                                <input name="cost" type="number" placeholder="Cost of Treatment (TZS)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
+                                            </div>
+
+                                            <textarea name="notes" placeholder="Additional Medical Notes..." rows="2" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent"></textarea>
+
                                             <button className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-black shadow-lg mt-2">ADD RECORD</button>
                                         </form>
-                                        <div className="flex-1 overflow-y-auto space-y-3 pr-2 no-scrollbar">
+
+                                        <div className="flex-1 overflow-y-auto space-y-4 pr-2 no-scrollbar">
                                             {data.medicalHistory.filter(h=>h.patientId===medicalHistoryModal.id).sort((a,b)=>new Date(b.date)-new Date(a.date)).map(h=>(
-                                                <div key={h.id} className="bg-black p-4 rounded-xl border-l-4 border-blue-500"><div className="flex justify-between items-start mb-1"><p className="font-bold text-blue-400">{h.diagnosis}</p><p className="text-[9px] text-slate-500 font-bold bg-slate-900 px-2 py-1 rounded">{new Date(h.date).toLocaleDateString()}</p></div>{h.treatment && <p className="text-xs text-slate-400 mb-1">{h.treatment}</p>}{h.cost && <p className="text-[10px] text-emerald-500 font-black">Cost: {Number(h.cost).toLocaleString()} TZS</p>}</div>
+                                                <div key={h.id} className="bg-black p-4 rounded-xl border-l-4 border-blue-500 flex flex-col gap-2">
+                                                    <div className="flex justify-between items-start mb-1">
+                                                        <p className="font-black text-blue-400 text-lg uppercase">{h.disease || h.diagnosis || 'Medical Record'}</p>
+                                                        <p className="text-[9px] text-slate-500 font-bold bg-slate-900 px-2 py-1 rounded">{new Date(h.date).toLocaleDateString()}</p>
+                                                    </div>
+                                                    
+                                                    {h.diagnosis && h.disease && <p className="text-xs text-slate-300"><span className="font-bold text-slate-500 uppercase text-[9px]">Diagnosis:</span> {h.diagnosis}</p>}
+                                                    {h.treatment && <p className="text-xs text-slate-300"><span className="font-bold text-slate-500 uppercase text-[9px]">Treatment:</span> {h.treatment}</p>}
+                                                    
+                                                    {(h.medicineGiven || h.dose || h.dosage || h.duration) && (
+                                                        <div className="bg-slate-900 p-2 rounded-lg grid grid-cols-2 md:grid-cols-4 gap-2">
+                                                            {h.medicineGiven && <div><span className="block text-[8px] font-bold text-slate-500 uppercase">Medicine</span><span className="text-xs text-white">{h.medicineGiven}</span></div>}
+                                                            {h.dose && <div><span className="block text-[8px] font-bold text-slate-500 uppercase">Dose</span><span className="text-xs text-white">{h.dose}</span></div>}
+                                                            {h.dosage && <div><span className="block text-[8px] font-bold text-slate-500 uppercase">Dosage</span><span className="text-xs text-white">{h.dosage}</span></div>}
+                                                            {h.duration && <div><span className="block text-[8px] font-bold text-slate-500 uppercase">Duration</span><span className="text-xs text-white">{h.duration}</span></div>}
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {h.allergies && <p className="text-xs text-rose-400"><span className="font-bold text-rose-900 uppercase text-[9px]">Allergies:</span> {h.allergies}</p>}
+                                                    {h.notes && <p className="text-[10px] text-slate-400 italic bg-slate-900/50 p-2 rounded border-l-2 border-slate-700">"{h.notes}"</p>}
+                                                    {h.cost && <p className="text-[10px] text-emerald-500 font-black mt-1">Cost: {Number(h.cost).toLocaleString()} TZS</p>}
+                                                </div>
                                             ))}
                                             {data.medicalHistory.filter(h=>h.patientId===medicalHistoryModal.id).length === 0 && <p className="text-center py-6 text-slate-600 font-bold uppercase text-xs">No records found</p>}
                                         </div>
                                         <button onClick={()=>setMedicalHistoryModal(null)} className="mt-4 shrink-0 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest">CLOSE</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* EXPENSES DETAIL MODAL */}
+                            {viewExpensesDetail && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setViewExpensesDetail(false))}>
+                                    <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-10 rounded-[3rem] shadow-2xl max-h-[90vh] flex flex-col">
+                                        <h3 className="text-2xl font-black text-rose-500 uppercase mb-6 shrink-0">Losses & Expenses Log</h3>
+                                        <div className="flex-1 overflow-y-auto pr-2 no-scrollbar bg-black p-4 rounded-[2rem] border border-slate-800">
+                                            <table className="w-full text-left text-xs">
+                                                <thead><tr className="text-slate-500 uppercase border-b border-slate-800"><th className="pb-3 px-2">Date</th><th className="pb-3 px-2">Reason</th><th className="pb-3 px-2">Responsible</th><th className="pb-3 px-2">Amount</th></tr></thead>
+                                                <tbody>
+                                                    {data.expenses.sort((a,b)=>new Date(b.timestamp || b.date)-new Date(a.timestamp || a.date)).map(e => (
+                                                        <tr key={e.id} className="border-b border-slate-800 hover:bg-slate-900 transition-colors">
+                                                            <td className="py-3 px-2 text-slate-400 font-bold">{new Date(e.timestamp || e.date).toLocaleDateString()}</td>
+                                                            <td className="py-3 px-2 text-white">{e.description}</td>
+                                                            <td className="py-3 px-2 text-blue-400 font-bold uppercase">{e.addedBy || 'Admin'}</td>
+                                                            <td className="py-3 px-2 text-rose-500 font-black">{Number(e.amount).toLocaleString()} TZS</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            {data.expenses.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase">No Expenses Recorded</p>}
+                                        </div>
+                                        <button onClick={()=>setViewExpensesDetail(false)} className="mt-6 shrink-0 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest w-full">CLOSE</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* NET PROFIT BREAKDOWN MODAL */}
+                            {viewNetProfitDetail && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setViewNetProfitDetail(false))}>
+                                    <div className="bg-slate-900 border border-slate-800 w-full max-w-sm p-6 md:p-10 rounded-[3rem] shadow-2xl flex flex-col">
+                                        <h3 className="text-2xl font-black text-emerald-500 uppercase mb-6 text-center">Profit Breakdown</h3>
+                                        
+                                        <div className="bg-black p-6 rounded-3xl mb-4 border border-slate-800">
+                                            <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-800">
+                                                <span className="text-slate-400 font-bold text-xs uppercase">Gross Profit</span>
+                                                <span className="text-blue-400 font-black text-lg">{data.sales.reduce((a,b)=>a+Number(b.profit),0).toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-800">
+                                                <span className="text-slate-400 font-bold text-xs uppercase">Total Losses/Expenses</span>
+                                                <span className="text-rose-500 font-black text-lg">- {data.expenses.reduce((a,b)=>a+Number(b.amount),0).toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center mt-2">
+                                                <span className="text-emerald-500 font-black text-sm uppercase">Net Profit</span>
+                                                <span className="text-emerald-400 font-black text-2xl">{totalNetProfit.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+
+                                        <button onClick={()=>setViewNetProfitDetail(false)} className="mt-2 shrink-0 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest w-full">CLOSE</button>
                                     </div>
                                 </div>
                             )}
