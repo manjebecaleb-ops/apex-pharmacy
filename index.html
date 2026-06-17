@@ -33,8 +33,8 @@
         .bg-online { background: #10b981; animation: pulse 2s infinite; }
         .bg-offline { background: #dc2626; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        button { transition: transform 0.1s ease, background-color 0.2s ease; cursor: pointer; }
-        button:active { transform: scale(0.97); }
+        button, select { transition: transform 0.1s ease, background-color 0.2s ease; cursor: pointer; }
+        button:active, select:active { transform: scale(0.97); }
     </style>
 </head>
 <body>
@@ -96,6 +96,7 @@
                 const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [] });
                 const [cart, setCart] = useState([]);
                 const [search, setSearch] = useState("");
+                const [sortOption, setSortOption] = useState("DEFAULT"); // Main Inventory/POS Sorting
                 const [isOnline, setIsOnline] = useState(navigator.onLine);
                 
                 const [editing, setEditing] = useState(null); 
@@ -126,6 +127,7 @@
                                     const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
                                     if (uData.status === 'ACTIVE') {
                                         setUser(uData);
+                                        // Restrict Dashboard to Managers only
                                         if (uData.role === 'MANAGER') setView('DASHBOARD');
                                         else setView('POS');
                                     } else {
@@ -180,6 +182,7 @@
                         setViewHistory(prev => [...prev, view]);
                         setView(newView);
                         setSearch("");
+                        setSortOption("DEFAULT");
                     }
                 };
 
@@ -331,6 +334,47 @@
                     XLSX.writeFile(wb, `${filename}_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
                 };
 
+                // DYNAMIC SORTING ENGINE FOR INVENTORY
+                const processedInventory = useMemo(() => {
+                    let items = [...data.inventory];
+                    
+                    // 1. Filter by Search
+                    if (search) {
+                        const term = search.toLowerCase();
+                        items = items.filter(p => 
+                            (p.brandName || '').toLowerCase().includes(term) || 
+                            (p.genericName || '').toLowerCase().includes(term) || 
+                            (p.category || '').toLowerCase().includes(term) || 
+                            (p.subcategory || '').toLowerCase().includes(term)
+                        );
+                    }
+
+                    // 2. Apply Dynamic Sorting
+                    items.sort((a, b) => {
+                        const isExpA = a.expiryDate && new Date(a.expiryDate) < new Date() ? 1 : 0;
+                        const isExpB = b.expiryDate && new Date(b.expiryDate) < new Date() ? 1 : 0;
+                        const oosA = a.stock <= 0 ? 1 : 0;
+                        const oosB = b.stock <= 0 ? 1 : 0;
+
+                        switch(sortOption) {
+                            case 'NEW':
+                                const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+                                const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+                                return dateB - dateA;
+                            case 'BRAND_ASC': return (a.brandName||'').localeCompare(b.brandName||'');
+                            case 'BRAND_DESC': return (b.brandName||'').localeCompare(a.brandName||'');
+                            case 'GENERIC_ASC': return (a.genericName||'').localeCompare(b.genericName||'');
+                            case 'PRICE_ASC': return (Number(a.price)||0) - (Number(b.price)||0);
+                            case 'PRICE_DESC': return (Number(b.price)||0) - (Number(a.price)||0);
+                            case 'EXPIRED': return isExpB - isExpA || (a.brandName||'').localeCompare(b.brandName||'');
+                            case 'OOS': return oosB - oosA || (Number(a.stock)||0) - (Number(b.stock)||0);
+                            default: return 0; // Natural Order
+                        }
+                    });
+
+                    return items;
+                }, [data.inventory, search, sortOption]);
+
                 // METRICS CALCULATIONS
                 const inventoryTotalCost = data.inventory.reduce((a,b)=>a+(Number(b.costPrice)*Number(b.stock)), 0);
                 const inventoryTotalValue = data.inventory.reduce((a,b)=>a+(Number(b.price)*Number(b.stock)), 0);
@@ -478,7 +522,7 @@
 
                         <main className={`flex-1 ${isMobile ? 'p-4' : 'p-8 md:p-10'} overflow-auto no-scrollbar relative flex flex-col`}>
                             {viewHistory.length > 0 && view !== 'DASHBOARD' && (
-                                <button onClick={handleGoBack} className="self-start mb-6 text-emerald-500 font-black text-xs bg-slate-900 px-4 py-2 rounded-xl border border-slate-800">← RETURN</button>
+                                <button onClick={handleGoBack} className="self-start mb-6 text-emerald-500 font-black text-xs bg-slate-900 px-4 py-2 rounded-xl border border-slate-800 hover:bg-slate-800">← RETURN</button>
                             )}
 
                             {view === 'DASHBOARD' && (
@@ -495,12 +539,27 @@
                             {view === 'POS' && (
                                 <div className={`flex ${isMobile ? 'flex-col overflow-y-auto pb-10' : 'flex-row'} gap-4 md:gap-8 h-full`}>
                                     <div className={`flex-1 space-y-4 flex flex-col ${isMobile ? 'shrink-0' : 'h-full'}`}>
-                                        <div className="flex gap-2">
-                                            <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Brand, Generic, or Category..." className="flex-1 w-full p-4 bg-slate-900 rounded-[2.5rem] font-bold outline-none text-sm shrink-0 text-white border border-slate-800 focus:border-emerald-500 transition-colors" />
-                                            {search && <button onClick={()=>setSearch("")} className="bg-rose-900/30 text-rose-400 px-6 rounded-[2.5rem] font-black text-xs">CLEAR</button>}
+                                        
+                                        <div className="flex flex-col md:flex-row gap-2 shrink-0">
+                                            <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Brand, Generic, or Category..." className="flex-1 w-full p-4 bg-slate-900 rounded-[2.5rem] font-bold outline-none text-sm text-white border border-slate-800 focus:border-emerald-500 transition-colors" />
+                                            
+                                            <select value={sortOption} onChange={(e)=>setSortOption(e.target.value)} className="p-4 bg-slate-900 rounded-[2.5rem] font-bold outline-none text-xs md:text-sm text-emerald-400 border border-slate-800 focus:border-emerald-500 cursor-pointer">
+                                                <option value="DEFAULT">Sort: Default</option>
+                                                <option value="NEW">✨ Newest Added</option>
+                                                <option value="BRAND_ASC">🔤 Brand (A-Z)</option>
+                                                <option value="BRAND_DESC">🔤 Brand (Z-A)</option>
+                                                <option value="GENERIC_ASC">💊 Generic (A-Z)</option>
+                                                <option value="PRICE_ASC">💵 Price (Low-High)</option>
+                                                <option value="PRICE_DESC">💵 Price (High-Low)</option>
+                                                <option value="OOS">⚠️ Out of Stock (OOS)</option>
+                                                <option value="EXPIRED">❌ Expired Items</option>
+                                            </select>
+                                            
+                                            {search && <button onClick={()=>setSearch("")} className="bg-rose-900/30 text-rose-400 px-6 py-4 md:py-0 rounded-[2.5rem] font-black text-xs hover:bg-rose-600 hover:text-white transition-colors">CLEAR</button>}
                                         </div>
+
                                         <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-3'} gap-3 ${isMobile ? '' : 'overflow-y-auto'} no-scrollbar pb-10`}>
-                                            {data.inventory.filter(p => !search || (p.brandName || '').toLowerCase().includes(search.toLowerCase()) || (p.category || '').toLowerCase().includes(search.toLowerCase()) || (p.subcategory || '').toLowerCase().includes(search.toLowerCase())).map(p => {
+                                            {processedInventory.map(p => {
                                                 const isExp = p.expiryDate && new Date(p.expiryDate) < new Date();
                                                 return (
                                                 <div key={p.id} onClick={()=>addToCart(p)} className={`bg-slate-900 p-4 rounded-[2.5rem] cursor-pointer hover:border-emerald-500 border border-slate-800 flex flex-col justify-between transition-transform active:scale-95 ${p.stock<=0||isExp ? 'opacity-50 grayscale' : ''}`}>
@@ -540,12 +599,27 @@
                             {view === 'STOO' && (
                                 <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] h-full overflow-y-auto">
                                     <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black text-emerald-500 uppercase">Vault</h2>{hasAccess('MANAGER') && <button onClick={() => setEditing({ type: 'PRODUCT', item: {} })} className="bg-emerald-600 text-white px-6 py-2 rounded-2xl font-black text-xs hover:bg-emerald-500">+ NEW ITEM</button>}</div>
-                                    <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search Brand or Category..." className="w-full p-4 mb-6 bg-black rounded-2xl font-bold outline-none text-white border border-slate-800 focus:border-emerald-500" />
+                                    
+                                    <div className="flex flex-col md:flex-row gap-2 mb-6">
+                                        <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search Brand or Category..." className="w-full flex-1 p-4 bg-black rounded-2xl font-bold outline-none text-white border border-slate-800 focus:border-emerald-500" />
+                                        <select value={sortOption} onChange={(e)=>setSortOption(e.target.value)} className="p-4 bg-black rounded-2xl font-bold outline-none text-xs md:text-sm text-emerald-400 border border-slate-800 focus:border-emerald-500 cursor-pointer">
+                                            <option value="DEFAULT">Sort: Default</option>
+                                            <option value="NEW">✨ Newest First</option>
+                                            <option value="BRAND_ASC">🔤 Brand (A-Z)</option>
+                                            <option value="BRAND_DESC">🔤 Brand (Z-A)</option>
+                                            <option value="GENERIC_ASC">💊 Generic (A-Z)</option>
+                                            <option value="PRICE_ASC">💵 Price (Low-High)</option>
+                                            <option value="PRICE_DESC">💵 Price (High-Low)</option>
+                                            <option value="OOS">⚠️ Out of Stock (OOS)</option>
+                                            <option value="EXPIRED">❌ Expired First</option>
+                                        </select>
+                                    </div>
+
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-left text-xs md:text-sm">
                                             <thead><tr className="text-slate-500 font-bold uppercase border-b border-slate-800"><th className="pb-3 px-2">Item</th><th className="px-2">Stock</th><th className="px-2">Sell Price</th>{hasAccess('MANAGER') && <th className="px-2"></th>}</tr></thead>
                                             <tbody>
-                                                {data.inventory.filter(p => !search || (p.brandName || '').toLowerCase().includes(search.toLowerCase()) || (p.category || '').toLowerCase().includes(search.toLowerCase()) || (p.subcategory || '').toLowerCase().includes(search.toLowerCase())).map(p => (
+                                                {processedInventory.map(p => (
                                                     <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50">
                                                         <td className="py-4 px-2 font-black text-white">
                                                             {p.brandName || 'Unnamed'} 
@@ -559,7 +633,7 @@
                                                         {hasAccess('MANAGER') && <td className="px-2 text-right"><button onClick={() => setEditing({type: 'PRODUCT', item: p})} className="bg-slate-800 hover:bg-slate-700 text-blue-400 text-[10px] px-3 py-1 rounded font-black">EDIT</button></td>}
                                                     </tr>
                                                 ))}
-                                                {data.inventory.length === 0 && <tr><td colSpan="4" className="py-8 text-center text-slate-500 font-bold uppercase">No Items Found</td></tr>}
+                                                {processedInventory.length === 0 && <tr><td colSpan="4" className="py-8 text-center text-slate-500 font-bold uppercase">No Items Found</td></tr>}
                                             </tbody>
                                         </table>
                                     </div>
@@ -675,7 +749,7 @@
                                             const { type, item } = editing; setEditing(null);
                                             let col = ''; let final = {};
                                             
-                                            if (type === 'PRODUCT') { col = 'inventory'; final = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock) }; } 
+                                            if (type === 'PRODUCT') { col = 'inventory'; final = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock), updatedAt: new Date().toISOString() }; } 
                                             else if (type === 'PATIENT') { col = 'patients'; final = item.id ? { ...payload, clientType: editClientType } : { ...payload, clientType: editClientType, creditBalance: 0 }; }
                                             else if (type === 'EXPENSE') { col = 'expenses'; final = { ...payload, amount: Number(payload.amount), timestamp: new Date().toISOString(), addedBy: user.fullName || user.email }; }
                                             else if (type === 'USER') {
@@ -734,83 +808,107 @@
                                 </div>
                             )}
                             
-                            {/* NEW COMPREHENSIVE MEDICAL HISTORY MODAL */}
+                            {/* ADVANCED EHR CLINICAL HISTORY MODAL */}
                             {medicalHistoryModal && (
                                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setMedicalHistoryModal(null))}>
-                                    <div className="bg-slate-900 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh] border border-slate-800">
-                                        <h3 className="text-xl font-black text-blue-500 mb-6 border-b border-slate-800 pb-4">{medicalHistoryModal.name}'s Medical Record</h3>
-                                        
-                                        <form onSubmit={(e) => {
-                                            e.preventDefault(); 
-                                            const fd = new FormData(e.target); 
-                                            addMedicalHistory(medicalHistoryModal.id, {
-                                                disease: fd.get('disease'),
-                                                diagnosis: fd.get('diagnosis'), 
-                                                treatment: fd.get('treatment'),
-                                                medicineGiven: fd.get('medicineGiven'),
-                                                dose: fd.get('dose'),
-                                                dosage: fd.get('dosage'),
-                                                duration: fd.get('duration'),
-                                                allergies: fd.get('allergies'),
-                                                notes: fd.get('notes'),
-                                                cost: fd.get('cost')
-                                            }); 
-                                            setMedicalHistoryModal(null);
-                                        }} className="mb-6 space-y-3 bg-black p-4 rounded-2xl border border-slate-800 shrink-0">
-                                            <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">Log New Entry</p>
-                                            
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <input name="disease" placeholder="Disease / Condition *" required className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
-                                                <input name="diagnosis" placeholder="Diagnosis Details" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
+                                    <div className="bg-slate-900 w-full max-w-5xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh] border border-slate-800">
+                                        <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4 shrink-0">
+                                            <div>
+                                                <h3 className="text-2xl font-black text-blue-500 uppercase">{medicalHistoryModal.name}'s Clinical Chart</h3>
+                                                <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase">
+                                                    {medicalHistoryModal.sex || '-'} • {medicalHistoryModal.age ? `${medicalHistoryModal.age} yrs` : '-'} • {medicalHistoryModal.bodyweight ? `${medicalHistoryModal.bodyweight} kg` : '-'}
+                                                </p>
                                             </div>
-                                            
-                                            <input name="treatment" placeholder="Treatment Given" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
-                                            
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                                <input name="medicineGiven" placeholder="Medicine Given" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
-                                                <input name="dose" placeholder="Dose (e.g. 500mg)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
-                                                <input name="dosage" placeholder="Dosage (e.g. 1x3)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
-                                                <input name="duration" placeholder="Duration (e.g. 5 days)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
-                                            </div>
+                                            <button onClick={()=>setMedicalHistoryModal(null)} className="text-rose-500 hover:text-rose-400 font-black text-3xl">✖</button>
+                                        </div>
 
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <input name="allergies" placeholder="Known Allergies" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
-                                                <input name="cost" type="number" placeholder="Cost of Treatment (TZS)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent" />
-                                            </div>
-
-                                            <textarea name="notes" placeholder="Additional Medical Notes..." rows="2" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-transparent"></textarea>
-
-                                            <button className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-black shadow-lg mt-2">ADD RECORD</button>
-                                        </form>
-
-                                        <div className="flex-1 overflow-y-auto space-y-4 pr-2 no-scrollbar">
-                                            {data.medicalHistory.filter(h=>h.patientId===medicalHistoryModal.id).sort((a,b)=>new Date(b.date)-new Date(a.date)).map(h=>(
-                                                <div key={h.id} className="bg-black p-4 rounded-xl border-l-4 border-blue-500 flex flex-col gap-2">
-                                                    <div className="flex justify-between items-start mb-1">
-                                                        <p className="font-black text-blue-400 text-lg uppercase">{h.disease || h.diagnosis || 'Medical Record'}</p>
-                                                        <p className="text-[9px] text-slate-500 font-bold bg-slate-900 px-2 py-1 rounded">{new Date(h.date).toLocaleDateString()}</p>
+                                        <div className="flex flex-col md:flex-row gap-6 overflow-hidden">
+                                            {/* LEFT: MEDICAL FORM */}
+                                            <div className="w-full md:w-1/2 flex flex-col shrink-0 overflow-y-auto no-scrollbar pr-2">
+                                                <form onSubmit={(e) => {
+                                                    e.preventDefault(); 
+                                                    const fd = new FormData(e.target); 
+                                                    addMedicalHistory(medicalHistoryModal.id, {
+                                                        disease: fd.get('disease'),
+                                                        diagnosis: fd.get('diagnosis'), 
+                                                        treatment: fd.get('treatment'),
+                                                        medicineGiven: fd.get('medicineGiven'),
+                                                        dose: fd.get('dose'),
+                                                        dosage: fd.get('dosage'),
+                                                        duration: fd.get('duration'),
+                                                        allergies: fd.get('allergies'),
+                                                        notes: fd.get('notes'),
+                                                        cost: fd.get('cost')
+                                                    }); 
+                                                    e.target.reset();
+                                                }} className="space-y-4 bg-black p-5 rounded-2xl border border-slate-800">
+                                                    <p className="text-xs font-black uppercase text-blue-400 border-b border-slate-800 pb-2">Log Clinical Entry</p>
+                                                    
+                                                    <div className="space-y-3">
+                                                        <input name="disease" placeholder="Disease / Chief Complaint *" required className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                        <input name="diagnosis" placeholder="Diagnosis Details" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                        <input name="treatment" placeholder="Clinical Treatment Given" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
                                                     </div>
-                                                    
-                                                    {h.diagnosis && h.disease && <p className="text-xs text-slate-300"><span className="font-bold text-slate-500 uppercase text-[9px]">Diagnosis:</span> {h.diagnosis}</p>}
-                                                    {h.treatment && <p className="text-xs text-slate-300"><span className="font-bold text-slate-500 uppercase text-[9px]">Treatment:</span> {h.treatment}</p>}
-                                                    
-                                                    {(h.medicineGiven || h.dose || h.dosage || h.duration) && (
-                                                        <div className="bg-slate-900 p-2 rounded-lg grid grid-cols-2 md:grid-cols-4 gap-2">
-                                                            {h.medicineGiven && <div><span className="block text-[8px] font-bold text-slate-500 uppercase">Medicine</span><span className="text-xs text-white">{h.medicineGiven}</span></div>}
-                                                            {h.dose && <div><span className="block text-[8px] font-bold text-slate-500 uppercase">Dose</span><span className="text-xs text-white">{h.dose}</span></div>}
-                                                            {h.dosage && <div><span className="block text-[8px] font-bold text-slate-500 uppercase">Dosage</span><span className="text-xs text-white">{h.dosage}</span></div>}
-                                                            {h.duration && <div><span className="block text-[8px] font-bold text-slate-500 uppercase">Duration</span><span className="text-xs text-white">{h.duration}</span></div>}
+
+                                                    <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800 space-y-3">
+                                                        <p className="text-[9px] font-bold text-slate-500 uppercase">Prescription Details</p>
+                                                        <input name="medicineGiven" placeholder="Medicine / Drug Name" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            <input name="dose" placeholder="Dose (500mg)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                            <input name="dosage" placeholder="Dosage (1x3)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                            <input name="duration" placeholder="Days (5)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <input name="allergies" placeholder="Known Allergies" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                        <input name="cost" type="number" placeholder="Cost (TZS)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                    </div>
+
+                                                    <textarea name="notes" placeholder="Additional Clinical Notes / Progress..." rows="2" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800"></textarea>
+
+                                                    <button className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-black shadow-lg text-xs uppercase tracking-widest mt-2">SAVE CLINICAL RECORD</button>
+                                                </form>
+                                            </div>
+
+                                            {/* RIGHT: TIMELINE DISPLAY */}
+                                            <div className="w-full md:w-1/2 flex flex-col overflow-y-auto no-scrollbar bg-black p-4 rounded-2xl border border-slate-800">
+                                                <p className="text-xs font-black uppercase text-slate-500 mb-4 sticky top-0 bg-black z-10 py-2">Historical Timeline</p>
+                                                <div className="space-y-4 pb-4">
+                                                    {data.medicalHistory.filter(h=>h.patientId===medicalHistoryModal.id).sort((a,b)=>new Date(b.date)-new Date(a.date)).map(h=>(
+                                                        <div key={h.id} className="bg-slate-900 p-5 rounded-2xl border-l-4 border-blue-500 flex flex-col gap-3">
+                                                            <div className="flex justify-between items-start border-b border-slate-800 pb-2">
+                                                                <p className="font-black text-blue-400 text-lg uppercase leading-tight">{h.disease || h.diagnosis || 'Clinical Visit'}</p>
+                                                                <p className="text-[10px] text-slate-400 font-bold bg-black px-2 py-1 rounded shrink-0 ml-2">{new Date(h.date).toLocaleDateString()}</p>
+                                                            </div>
+                                                            
+                                                            <div className="space-y-1">
+                                                                {h.diagnosis && h.disease && <p className="text-xs text-white"><span className="font-bold text-slate-500 uppercase text-[9px] mr-2">Diagnosis:</span>{h.diagnosis}</p>}
+                                                                {h.treatment && <p className="text-xs text-white"><span className="font-bold text-slate-500 uppercase text-[9px] mr-2">Treatment:</span>{h.treatment}</p>}
+                                                            </div>
+                                                            
+                                                            {(h.medicineGiven || h.dose || h.dosage || h.duration) && (
+                                                                <div className="bg-black p-3 rounded-xl grid grid-cols-2 md:grid-cols-4 gap-3 border border-slate-800 mt-2">
+                                                                    {h.medicineGiven && <div><span className="block text-[8px] font-black text-blue-500 uppercase">Medicine</span><span className="text-xs text-white font-bold">{h.medicineGiven}</span></div>}
+                                                                    {h.dose && <div><span className="block text-[8px] font-black text-blue-500 uppercase">Dose</span><span className="text-xs text-white font-bold">{h.dose}</span></div>}
+                                                                    {h.dosage && <div><span className="block text-[8px] font-black text-blue-500 uppercase">Dosage</span><span className="text-xs text-white font-bold">{h.dosage}</span></div>}
+                                                                    {h.duration && <div><span className="block text-[8px] font-black text-blue-500 uppercase">Duration</span><span className="text-xs text-white font-bold">{h.duration}</span></div>}
+                                                                </div>
+                                                            )}
+                                                            
+                                                            {h.allergies && <p className="text-xs text-rose-400 bg-rose-950/30 p-2 rounded-lg mt-2"><span className="font-black uppercase text-[9px] mr-2">Allergies:</span> {h.allergies}</p>}
+                                                            {h.notes && <p className="text-[11px] text-slate-400 italic bg-black p-3 rounded-lg border-l-2 border-slate-600 leading-relaxed mt-2">"{h.notes}"</p>}
+                                                            {h.cost && <p className="text-[10px] text-emerald-500 font-black self-end bg-emerald-900/20 px-2 py-1 rounded mt-2">Cost: {Number(h.cost).toLocaleString()} TZS</p>}
+                                                        </div>
+                                                    ))}
+                                                    {data.medicalHistory.filter(h=>h.patientId===medicalHistoryModal.id).length === 0 && (
+                                                        <div className="text-center py-10">
+                                                            <p className="text-slate-600 font-black uppercase text-xs">No Clinical Records Found</p>
                                                         </div>
                                                     )}
-                                                    
-                                                    {h.allergies && <p className="text-xs text-rose-400"><span className="font-bold text-rose-900 uppercase text-[9px]">Allergies:</span> {h.allergies}</p>}
-                                                    {h.notes && <p className="text-[10px] text-slate-400 italic bg-slate-900/50 p-2 rounded border-l-2 border-slate-700">"{h.notes}"</p>}
-                                                    {h.cost && <p className="text-[10px] text-emerald-500 font-black mt-1">Cost: {Number(h.cost).toLocaleString()} TZS</p>}
                                                 </div>
-                                            ))}
-                                            {data.medicalHistory.filter(h=>h.patientId===medicalHistoryModal.id).length === 0 && <p className="text-center py-6 text-slate-600 font-bold uppercase text-xs">No records found</p>}
+                                            </div>
                                         </div>
-                                        <button onClick={()=>setMedicalHistoryModal(null)} className="mt-4 shrink-0 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest">CLOSE</button>
                                     </div>
                                 </div>
                             )}
