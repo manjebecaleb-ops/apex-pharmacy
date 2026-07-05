@@ -17,8 +17,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    <!-- Barcode Scanner Library -->
     <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- Markdown Parser for beautiful AI output -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
 
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -34,6 +35,1229 @@
         .status-badge { position: fixed; top: 1rem; right: 1rem; padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: bold; z-index: 40; transition: all 0.3s ease; }
         .bg-online { background: #10b981; animation: pulse 2s infinite; }
         .bg-offline { background: #dc2626; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        button, select { transition: transform 0.1s ease, background-color 0.2s ease; cursor: pointer; }
+        button:active, select:active { transform: scale(0.97); }
+
+        @media print {
+            body * { visibility: hidden !important; }
+            #print-area, #print-area * { visibility: visible !important; }
+            #print-area { position: absolute; left: 0; top: 0; width: 80mm; padding: 10px; margin: 0; background: white; color: black; font-family: monospace; }
+            .no-print { display: none !important; }
+        }
+
+        #reader video { border-radius: 1rem !important; object-fit: cover; width: 100% !important; }
+        #reader { border: none !important; }
+        
+        /* Markdown Styles for AI Output */
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 { color: #10b981; margin-top: 1rem; margin-bottom: 0.5rem; font-weight: 800; }
+        .markdown-body ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
+        .markdown-body strong { color: #3b82f6; }
+        .markdown-body p { margin-bottom: 0.75rem; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div id="apex-root">
+        <div style="height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#020617;">
+            <h1 style="font-size:4rem;font-weight:900;color:#10b981;font-style:italic;margin:0;">APEX</h1>
+            <p style="color:#64748b;font-weight:bold;margin-top:10px;letter-spacing:0.1em;">INITIALIZING VAULT...</p>
+            <p id="error-text" style="color:#dc2626;font-size:12px;margin-top:20px;font-weight:bold;display:none;text-align:center;max-width:400px;background:#3f0000;padding:10px;border-radius:8px;"></p>
+        </div>
+    </div>
+
+    <script>
+        window.addEventListener('error', function(e) {
+            const el = document.getElementById('error-text');
+            if(el) { el.style.display = 'block'; el.innerText = 'SYSTEM CRASH LOG: ' + (e.message || "Network Blocked CDN Download."); }
+        });
+        setTimeout(() => {
+            const el = document.getElementById('error-text');
+            if (el && el.style.display === 'none') { el.style.display = 'block'; el.innerText = "⚠️ Connection timed out. Ensure you have internet for the first boot."; }
+        }, 8000);
+    </script>
+
+    <script>
+        try {
+            firebase.initializeApp({
+                apiKey: "AIzaSyDOFibCiMfYeVP4A6p6En9Jlml10eATGio",
+                authDomain: "apex-management-system-93a9e.firebaseapp.com",
+                projectId: "apex-management-system-93a9e",
+                storageBucket: "apex-management-system-93a9e.firebasestorage.app",
+                messagingSenderId: "514939996572",
+                appId: "1:514939996572:web:3ecbe1fd7003d024bd6059"
+            });
+            window.db = firebase.firestore();
+            window.db.enablePersistence({ synchronizeTabs: true }).catch(err => console.warn('Offline Persistence Note:', err.code));
+        } catch (error) { console.error("Firebase Config Error:", error); }
+    </script>
+
+    <script type="text/babel">
+        try {
+            const { useState, useEffect, useMemo, useRef } = React;
+
+            const App = () => {
+                const chartRef = useRef(null);
+                const chartInstance = useRef(null);
+
+                const [isInitializing, setIsInitializing] = useState(true);
+                const [view, setView] = useState('LOGIN');
+                const [viewHistory, setViewHistory] = useState([]);
+                const [user, setUser] = useState(null);
+                const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+                const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [] });
+                const [cart, setCart] = useState([]);
+                const [heldCarts, setHeldCarts] = useState([]); 
+                const [search, setSearch] = useState("");
+                const [sortOption, setSortOption] = useState("DEFAULT");
+                const [isOnline, setIsOnline] = useState(navigator.onLine);
+                const [barcodeInput, setBarcodeInput] = useState('');
+                
+                const [editing, setEditing] = useState(null); 
+                const [editClientType, setEditClientType] = useState('PATIENT');
+                const [checkoutModal, setCheckoutModal] = useState(false);
+                const [amountTendered, setAmountTendered] = useState(0);
+                const [checkoutDiscount, setCheckoutDiscount] = useState(0); 
+                const [checkoutPatient, setCheckoutPatient] = useState('');
+                const [medicalHistoryModal, setMedicalHistoryModal] = useState(null);
+                const [receiptData, setReceiptData] = useState(null);
+                
+                const [scannerActive, setScannerActive] = useState(false);
+                const scannerTargetRef = useRef(''); 
+                
+                const [viewHeldCarts, setViewHeldCarts] = useState(false);
+                const [viewSalesVolume, setViewSalesVolume] = useState(false);
+                const [viewExpensesDetail, setViewExpensesDetail] = useState(false);
+                const [viewNetProfitDetail, setViewNetProfitDetail] = useState(false);
+                const [chartPeriod, setChartPeriod] = useState('7DAYS'); 
+
+                const [reportPeriod, setReportPeriod] = useState('DAILY');
+                const [reportTab, setReportTab] = useState('SALES');
+                const [reportSearch, setReportSearch] = useState('');
+
+                // AI ASSISTANT STATES
+                const [aiKey, setAiKey] = useState(localStorage.getItem('apex_gemini_key') || '');
+                const [showAiSettings, setShowAiSettings] = useState(false);
+                const [aiQuery, setAiQuery] = useState('');
+                const [aiResponse, setAiResponse] = useState('');
+                const [isAiLoading, setIsAiLoading] = useState(false);
+
+                // STRICT AUTHENTICATION LISTENER
+                useEffect(() => {
+                    if (typeof firebase === 'undefined') { setIsInitializing(false); return; }
+                    if (!localStorage.getItem('apex_strict_login_enforced')) {
+                        firebase.auth().signOut();
+                        localStorage.setItem('apex_strict_login_enforced', 'true');
+                    }
+                    const unsubscribe = firebase.auth().onAuthStateChanged(async (authUser) => {
+                        if (authUser) {
+                            try {
+                                const snap = await window.db.collection('users').where('email', '==', authUser.email).get();
+                                if (!snap.empty) {
+                                    const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                                    if (uData.status === 'ACTIVE') {
+                                        setUser(uData);
+                                        if (uData.role === 'MANAGER') setView('DASHBOARD'); else setView('POS');
+                                    } else {
+                                        alert("Account disabled. Contact Administrator.");
+                                        await firebase.auth().signOut();
+                                    }
+                                }
+                            } catch (err) { console.error("Auth routing failed:", err); }
+                        } else { setUser(null); setView('LOGIN'); }
+                        setIsInitializing(false);
+                    });
+                    return () => unsubscribe();
+                }, []);
+
+                useEffect(() => { if(editing?.type === 'PATIENT') setEditClientType(editing.item.clientType || 'PATIENT'); }, [editing]);
+
+                useEffect(() => {
+                    const handleResize = () => setIsMobile(window.innerWidth < 768);
+                    const handleOnline = () => setIsOnline(true);
+                    const handleOffline = () => setIsOnline(false);
+                    window.addEventListener('resize', handleResize); window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
+                    return () => { window.removeEventListener('resize', handleResize); window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
+                }, []);
+
+                useEffect(() => {
+                    if (typeof window.db === 'undefined' || !user) return;
+                    const collections = ["inventory", "sales", "patients", "users", "expenses", "medicalHistory"];
+                    const unsubscribers = collections.map(col => 
+                        window.db.collection(col).onSnapshot(s => setData(p => ({...p, [col]: s.docs.map(d=>({id:d.id, ...d.data()}))})), err => console.error(`Error loading ${col}:`, err))
+                    );
+                    return () => unsubscribers.forEach(u => u());
+                }, [user]);
+
+                // CAMERA SCANNER LOGIC
+                useEffect(() => {
+                    if (!scannerActive) return;
+                    let html5QrCode;
+                    const timer = setTimeout(() => {
+                        try {
+                            html5QrCode = new Html5Qrcode("reader");
+                            html5QrCode.start(
+                                { facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 100 } },
+                                (decodedText) => {
+                                    html5QrCode.stop().then(() => {
+                                        setScannerActive(false);
+                                        if (scannerTargetRef.current === 'POS') {
+                                            const item = data.inventory.find(i => i.barcode === decodedText || i.brandName.toLowerCase() === decodedText.toLowerCase());
+                                            if (item) addToCart(item); else alert(`Barcode Not Found: ${decodedText}`);
+                                        } else if (scannerTargetRef.current === 'INVENTORY') {
+                                            const input = document.getElementById('edit-barcode-input');
+                                            if(input) input.value = decodedText;
+                                        }
+                                    }).catch(err => console.error(err));
+                                },
+                                (errorMessage) => { }
+                            ).catch((err) => { alert("Camera Access Denied! Ensure you are using HTTPS."); setScannerActive(false); });
+                        } catch (err) { alert("Scanner failed to load."); setScannerActive(false); }
+                    }, 200);
+                    return () => { clearTimeout(timer); if (html5QrCode && html5QrCode.isScanning) { html5QrCode.stop().catch(console.error); } };
+                }, [scannerActive, data.inventory]);
+
+                const hasAccess = (level) => {
+                    const roles = { 'MANAGER': 4, 'PHARMACIST': 3, 'TECHNICIAN': 2, 'ASSISTANT': 1, 'DISPENSER': 0 };
+                    return roles[user?.role] >= roles[level];
+                };
+
+                const handleSetView = (newView) => {
+                    if (view !== newView) { setViewHistory(prev => [...prev, view]); setView(newView); setSearch(""); setSortOption("DEFAULT"); setBarcodeInput(""); }
+                };
+
+                const handleGoBack = () => {
+                    if (viewHistory.length > 0) { const prev = [...viewHistory]; setView(prev.pop()); setViewHistory(prev); setSearch(""); }
+                };
+
+                const handleModalClickOutside = (e, closeFunc) => { if (e.target === e.currentTarget) closeFunc(); };
+
+                const handleLogin = async (e) => {
+                    e.preventDefault();
+                    if (typeof firebase === 'undefined') return alert("System core not loaded.");
+                    const email = e.target.email.value.trim(); const password = e.target.password.value;
+                    try { 
+                        setIsInitializing(true);
+                        await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION);
+                        await firebase.auth().signInWithEmailAndPassword(email, password); 
+                    } catch (err) { setIsInitializing(false); alert("Authentication Failed."); }
+                };
+
+                const handleLogout = async () => { if (confirm("Logout from system?")) { await firebase.auth().signOut(); setUser(null); } };
+
+                const executeWithAdminPassword = async (actionFunc) => {
+                    if(!isOnline) return alert("You must be online to verify Admin credentials for deletions.");
+                    const pwd = prompt("SECURITY LOCK: Enter your Admin Password to confirm this sensitive action.");
+                    if (!pwd) return;
+                    try { await firebase.auth().signInWithEmailAndPassword(user.email, pwd); actionFunc(); } catch(e) { alert("Incorrect Password. Action Denied."); }
+                };
+
+                const handleDeletePersonnel = (userItem) => {
+                    if (userItem.email.toLowerCase() === 'manjebecaleb@gmail.com') return alert("Cannot delete master admin.");
+                    if(!confirm("⚠️ Delete this personnel permanently?")) return;
+                    executeWithAdminPassword(() => { setEditing(null); window.db.collection('users').doc(userItem.id).delete(); });
+                };
+
+                const handleDeleteProduct = (id) => {
+                    if(!confirm("⚠️ Delete this item completely?")) return;
+                    executeWithAdminPassword(() => { setEditing(null); window.db.collection('inventory').doc(id).delete(); });
+                };
+
+                const handleDeleteAllFinance = () => {
+                    if(!confirm("⚠️ EXTREME WARNING: Permanently delete ALL sales and expenses? This CANNOT be undone!")) return;
+                    executeWithAdminPassword(() => {
+                        data.sales.forEach(s => window.db.collection('sales').doc(s.id).delete());
+                        data.expenses.forEach(e => window.db.collection('expenses').doc(e.id).delete());
+                        alert("Financial history wipe executed successfully.");
+                    });
+                };
+
+                const handleWhatsAppReminder = (pt) => {
+                    if(!pt.phone) return alert("Client has no phone number recorded.");
+                    const msg = `Hello ${pt.name},\n\nThis is a polite reminder from APEX Pharmacy. You currently have an outstanding balance of ${pt.creditBalance.toLocaleString()} TZS.\n\nPlease arrange for payment at your earliest convenience. Thank you for your business!`;
+                    window.open(`https://wa.me/${pt.phone.replace(/[^0-9\+]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+                };
+
+                const handleClearDebt = (client) => {
+                    const amount = prompt(`Enter cash amount paid by ${client.name} to clear debt.\nCurrent Debt: ${client.creditBalance.toLocaleString()} TZS`);
+                    if(!amount || isNaN(amount) || Number(amount) <= 0) return;
+                    const paid = Number(amount);
+                    const newBalance = Math.max(0, (client.creditBalance || 0) - paid);
+                    window.db.collection('patients').doc(client.id).update({ creditBalance: newBalance });
+                    window.db.collection('sales').add({
+                        total: paid, profit: paid, amountTendered: paid, changeGiven: 0, timestamp: new Date().toISOString(), soldBy: user.fullName || user.email, 
+                        method: 'DEBT_PAYMENT', items: [{brandName: 'Debt Clearance Payment', qty: 1, currentPrice: paid, costPrice: 0}], patientId: client.id
+                    });
+                    alert(`Successfully cleared ${paid.toLocaleString()} TZS from ${client.name}'s debt.`);
+                };
+
+                const handleBarcodeSubmit = (e) => {
+                    e.preventDefault();
+                    if(!barcodeInput.trim()) return;
+                    const item = data.inventory.find(i => i.barcode === barcodeInput.trim() || i.brandName.toLowerCase() === barcodeInput.trim().toLowerCase());
+                    if(item) addToCart(item); else alert("Item / Barcode not found in inventory!");
+                    setBarcodeInput('');
+                };
+
+                const addToCart = (p) => {
+                    if (p.stock <= 0) return alert("Item out of stock!");
+                    if (p.expiryDate && new Date(p.expiryDate) < new Date()) return alert("⚠️ Cannot sell an expired item!");
+                    setCart(prev => {
+                        const ex = prev.find(i => i.id === p.id);
+                        if (ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
+                        return [...prev, {...p, qty: 1, currentPrice: p.price}];
+                    });
+                };
+
+                const updateCartItem = (id, field, val) => {
+                    const numVal = Number(val);
+                    if (field === 'qty' && numVal <= 0) removeFromCart(id);
+                    else setCart(prev => prev.map(i => i.id === id ? {...i, [field]: numVal || 0} : i));
+                };
+
+                const removeFromCart = (id) => setCart(prev => prev.filter(i => i.id !== id));
+
+                const handleHoldCart = () => {
+                    if (cart.length === 0) return alert("Cart is empty.");
+                    const refName = prompt("Enter a reference name for this sale (e.g., Customer Name):");
+                    if (!refName) return;
+                    setHeldCarts(prev => [...prev, { id: Date.now(), name: refName, items: [...cart] }]);
+                    setCart([]);
+                };
+
+                const handleRecallCart = (heldCart) => {
+                    if (cart.length > 0 && !confirm("Warning: Current cart has items. Recalling this held sale will overwrite your current items!")) return;
+                    setCart(heldCart.items);
+                    setHeldCarts(prev => prev.filter(c => c.id !== heldCart.id));
+                };
+
+                const openCheckoutModal = () => {
+                    if(cart.length === 0) return alert("Cart is empty");
+                    setAmountTendered(''); setCheckoutDiscount(0); setCheckoutPatient(''); setCheckoutModal(true);
+                };
+
+                const finalizeSale = (method) => {
+                    if (method === 'DEBT' && !checkoutPatient) return alert("Select a client to issue on credit!");
+                    const subTotal = cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0);
+                    const totalCost = cart.reduce((s,i)=>s+(i.costPrice*i.qty), 0);
+                    const totalDue = Math.max(0, subTotal - checkoutDiscount); 
+                    const changeGiven = (method === 'CASH' && amountTendered > totalDue) ? (amountTendered - totalDue) : 0;
+                    
+                    const saleData = { 
+                        total: totalDue, subTotal, discount: checkoutDiscount, profit: totalDue - totalCost, amountTendered: method === 'CASH' ? amountTendered : totalDue, changeGiven,
+                        timestamp: new Date().toISOString(), soldBy: user.fullName || user.email, method, items: cart, patientId: checkoutPatient || null 
+                    };
+                    
+                    const currentCart = [...cart];
+                    setCart([]); setCheckoutModal(false); 
+
+                    window.db.collection("sales").add(saleData);
+                    if (method === 'DEBT' && checkoutPatient) {
+                        const pt = data.patients.find(p => p.id === checkoutPatient);
+                        if(pt) window.db.collection("patients").doc(checkoutPatient).update({ creditBalance: (Number(pt.creditBalance) || 0) + totalDue });
+                    }
+                    currentCart.forEach(i => window.db.collection("inventory").doc(i.id).update({ stock: i.stock - i.qty }));
+
+                    setReceiptData(saleData);
+                };
+
+                const addMedicalHistory = (patientId, record) => { window.db.collection("medicalHistory").add({ patientId, date: new Date().toISOString(), ...record }); };
+
+                // AI ASSISTANT LOGIC
+                const handleAiSubmit = async (e) => {
+                    e.preventDefault();
+                    if (!isOnline) return alert("You must be online to use the Clinical AI Assistant.");
+                    if (!aiKey) {
+                        setShowAiSettings(true);
+                        return alert("Please enter your Google Gemini API Key first.");
+                    }
+                    
+                    setIsAiLoading(true);
+                    setAiResponse('');
+                    
+                    try {
+                        const systemPrompt = `You are an expert Clinical Pharmacist and Medical Reference Assistant operating in Tanzania. Your role is to provide highly accurate medical reference strictly based on the Tanzania Standard Treatment Guidelines (STG), NEMLIT, and current local protocols. The user will ask about diagnosis, treatment, diseases, signs/symptoms, indications, or contraindications. Format your response professionally using Markdown, with clear headings and bullet points. Never provide direct patient advice, always phrase it as clinical reference. User Query: ${aiQuery}`;
+                        
+                        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiKey}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }] }] })
+                        });
+                        
+                        const json = await res.json();
+                        if(json.error) throw new Error(json.error.message);
+                        
+                        let responseText = json.candidates[0].content.parts[0].text;
+                        // Parse markdown into safe HTML
+                        const parsedHTML = marked.parse(responseText);
+                        setAiResponse(parsedHTML);
+                        setAiQuery(''); // clear input
+                        
+                    } catch (err) {
+                        setAiResponse(`<p class="text-rose-500 font-bold">AI Error: ${err.message}. Please check your API key or internet connection.</p>`);
+                    }
+                    setIsAiLoading(false);
+                };
+
+                const exportToExcel = (exportData, filename) => {
+                    if (typeof XLSX === 'undefined') return alert("Excel library could not be loaded. Ensure you are online.");
+                    if(exportData.length === 0) return alert("No data to export");
+                    const ws = XLSX.utils.json_to_sheet(exportData);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Data");
+                    XLSX.writeFile(wb, `${filename}_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
+                };
+
+                const processedInventory = useMemo(() => {
+                    let items = [...data.inventory];
+                    if (search) {
+                        const term = search.toLowerCase();
+                        items = items.filter(p => (p.brandName || '').toLowerCase().includes(term) || (p.genericName || '').toLowerCase().includes(term) || (p.category || '').toLowerCase().includes(term) || (p.subcategory || '').toLowerCase().includes(term) || (p.barcode || '') === term);
+                    }
+                    items.sort((a, b) => {
+                        const isExpA = a.expiryDate && new Date(a.expiryDate) < new Date() ? 1 : 0;
+                        const isExpB = b.expiryDate && new Date(b.expiryDate) < new Date() ? 1 : 0;
+                        const oosA = a.stock <= 0 ? 1 : 0; const oosB = b.stock <= 0 ? 1 : 0;
+                        switch(sortOption) {
+                            case 'NEW': return (b.updatedAt ? new Date(b.updatedAt).getTime() : 0) - (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
+                            case 'BRAND_ASC': return (a.brandName||'').localeCompare(b.brandName||'');
+                            case 'BRAND_DESC': return (b.brandName||'').localeCompare(a.brandName||'');
+                            case 'GENERIC_ASC': return (a.genericName||'').localeCompare(b.genericName||'');
+                            case 'PRICE_ASC': return (Number(a.price)||0) - (Number(b.price)||0);
+                            case 'PRICE_DESC': return (Number(b.price)||0) - (Number(a.price)||0);
+                            case 'EXPIRED': return isExpB - isExpA || (a.brandName||'').localeCompare(b.brandName||'');
+                            case 'OOS': return oosB - oosA || (Number(a.stock)||0) - (Number(b.stock)||0);
+                            case 'EXPIRING_SOON': 
+                                const timeA = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
+                                const timeB = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
+                                return timeA - timeB;
+                            default: return 0;
+                        }
+                    });
+                    return items;
+                }, [data.inventory, search, sortOption]);
+
+                const systemAlerts = useMemo(() => {
+                    const now = new Date(); const thirtyDaysFromNow = new Date(); thirtyDaysFromNow.setDate(now.getDate() + 30);
+                    const lowStock = data.inventory.filter(i => i.stock > 0 && i.stock <= 10).length;
+                    const outOfStock = data.inventory.filter(i => i.stock <= 0).length;
+                    let expired = 0; let expiringSoon = 0;
+                    data.inventory.forEach(i => {
+                        if (i.expiryDate) {
+                            const exp = new Date(i.expiryDate);
+                            if (exp < now) expired++; else if (exp <= thirtyDaysFromNow) expiringSoon++;
+                        }
+                    });
+                    return { lowStock, outOfStock, expired, expiringSoon };
+                }, [data.inventory]);
+
+                const inventoryTotalCost = data.inventory.reduce((a,b)=>a+(Number(b.costPrice||0)*Number(b.stock||0)), 0);
+                const inventoryTotalValue = data.inventory.reduce((a,b)=>a+(Number(b.price||0)*Number(b.stock||0)), 0);
+                const inventoryExpectedProfit = inventoryTotalValue - inventoryTotalCost;
+                
+                const totalNetProfit = data.sales.reduce((a,b)=>a+Number(b.profit),0) - data.expenses.reduce((a,b)=>a+Number(b.amount),0);
+
+                const itemAnalytics = useMemo(() => {
+                    const stats = {};
+                    data.sales.forEach(s => {
+                        s.items?.forEach(i => {
+                            if(!stats[i.id]) stats[i.id] = { name: i.brandName, cat: i.category, qty: 0, revenue: 0, profit: 0 };
+                            stats[i.id].qty += Number(i.qty);
+                            stats[i.id].revenue += (Number(i.currentPrice) * Number(i.qty));
+                            stats[i.id].profit += ((Number(i.currentPrice) - Number(i.costPrice)) * Number(i.qty));
+                        });
+                    });
+                    return Object.values(stats).sort((a,b) => b.qty - a.qty);
+                }, [data.sales]);
+
+                const filteredReportData = useMemo(() => {
+                    const now = new Date(); let start = new Date();
+                    if (reportPeriod === 'DAILY') start.setHours(0,0,0,0);
+                    else if (reportPeriod === 'WEEKLY') { start.setDate(start.getDate() - 7); start.setHours(0,0,0,0); }
+                    else if (reportPeriod === 'MONTHLY') start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    const term = reportSearch.toLowerCase();
+                    const rSales = data.sales.filter(s => new Date(s.timestamp) >= start && (!term || (s.soldBy||'').toLowerCase().includes(term) || s.items.some(i => (i.brandName||'').toLowerCase().includes(term))));
+                    const rExpenses = data.expenses.filter(e => new Date(e.timestamp||Date.now()) >= start && (!term || (e.description||'').toLowerCase().includes(term)));
+                    const rExpired = data.inventory.filter(i => i.expiryDate && new Date(i.expiryDate) < now && (!term || (i.brandName||'').toLowerCase().includes(term)));
+                    return {
+                        sales: rSales, expenses: rExpenses, expired: rExpired,
+                        totalSales: rSales.reduce((a,b) => a + b.total, 0), totalProfit: rSales.reduce((a,b) => a + b.profit, 0),
+                        totalLosses: rExpenses.reduce((a,b) => a + Number(b.amount), 0), expiredCost: rExpired.reduce((a,b) => a + (Number(b.costPrice)*Number(b.stock)), 0)
+                    };
+                }, [data, reportPeriod, reportSearch]);
+
+                useEffect(() => {
+                    if (view !== 'FINANCE' || !chartRef.current || typeof Chart === 'undefined') return;
+                    let labels = []; let revs = []; let profs = []; let losses = [];
+                    if (chartPeriod === '7DAYS') {
+                        labels = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toLocaleDateString(); }).reverse();
+                        revs = labels.map(date => data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === date).reduce((sum, s) => sum + s.total, 0));
+                        profs = labels.map(date => data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === date).reduce((sum, s) => sum + s.profit, 0));
+                        losses = labels.map(date => data.expenses.filter(e => new Date(e.timestamp || e.date).toLocaleDateString() === date).reduce((sum, e) => sum + Number(e.amount), 0));
+                    } else {
+                        labels = [...Array(6)].map((_, i) => { const d = new Date(); d.setMonth(d.getMonth() - i); return d.toLocaleString('default', { month: 'short', year: 'numeric' }); }).reverse();
+                        revs = labels.map(monthStr => data.sales.filter(s => new Date(s.timestamp).toLocaleString('default', { month: 'short', year: 'numeric' }) === monthStr).reduce((sum, s) => sum + s.total, 0));
+                        profs = labels.map(monthStr => data.sales.filter(s => new Date(s.timestamp).toLocaleString('default', { month: 'short', year: 'numeric' }) === monthStr).reduce((sum, s) => sum + s.profit, 0));
+                        losses = labels.map(monthStr => data.expenses.filter(e => new Date(e.timestamp || e.date).toLocaleString('default', { month: 'short', year: 'numeric' }) === monthStr).reduce((sum, e) => sum + Number(e.amount), 0));
+                    }
+                    if (chartInstance.current) chartInstance.current.destroy();
+                    chartInstance.current = new Chart(chartRef.current, {
+                        type: 'bar', data: { labels: labels, datasets: [{ label: 'Revenue (TZS)', data: revs, backgroundColor: '#10b981', borderRadius: 4 }, { label: 'Profit (TZS)', data: profs, backgroundColor: '#3b82f6', borderRadius: 4 }, { label: 'Losses (TZS)', data: losses, backgroundColor: '#f43f5e', borderRadius: 4 }] },
+                        options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#1e293b' }, ticks:{color:'#64748b'} }, x: { grid: { display: false }, ticks:{color:'#64748b'} } }, plugins: { legend: { labels: { color: '#cbd5e1' } } } }
+                    });
+                    return () => { if (chartInstance.current) { chartInstance.current.destroy(); chartInstance.current = null; } };
+                }, [view, data.sales, data.expenses, chartPeriod]);
+
+                // -- RENDER BLOCK --
+                
+                if (isInitializing) {
+                    return (
+                        <div className="h-screen flex items-center justify-center bg-black p-4">
+                            <div className="text-center animate-pulse">
+                                <h1 className="text-5xl font-black text-emerald-500 mb-2 italic">APEX</h1>
+                                <p className="text-slate-500 text-xs font-bold uppercase tracking-[0.3em]">Securing Terminal...</p>
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (!user) {
+                    return (
+                        <div className="h-screen flex items-center justify-center bg-black p-4">
+                            <div className={`status-badge ${isOnline ? 'bg-online text-white' : 'bg-offline text-white'}`}>{isOnline ? '🔵 ONLINE' : '🔴 OFFLINE CACHE MODE'}</div>
+                            <div className="bg-slate-900 p-8 rounded-[4rem] shadow-2xl w-full max-w-sm text-center border border-slate-800">
+                                <h1 className="text-4xl font-black text-emerald-500 mb-2 italic">APEX</h1>
+                                <p className="text-slate-500 text-[10px] font-bold uppercase mb-8 tracking-[0.3em]">Private & Secure</p>
+                                <form onSubmit={handleLogin} className="flex flex-col">
+                                    <input name="email" type="email" placeholder="Email Address" required className="w-full p-4 mb-3 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white focus:border-emerald-500 transition-colors" />
+                                    <input name="password" type="password" placeholder="Password" required className="w-full p-4 mb-8 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white focus:border-emerald-500 transition-colors" />
+                                    <button type="submit" className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-emerald-500">AUTHENTICATE</button>
+                                </form>
+                                <p className="text-slate-600 text-[9px] font-bold uppercase mt-6 tracking-widest border-t border-slate-800 pt-4">🔒 Strict Security Activated<br/>Session erases when browser closes.</p>
+                            </div>
+                        </div>
+                    );
+                }
+
+                const navItems = [
+                    { n: 'DASHBOARD', i: '📊', v: 'DASHBOARD', a: 'MANAGER' },
+                    { n: 'POS', i: '🛒', v: 'POS' },
+                    { n: 'INVENTORY', i: '📦', v: 'STOO', a: 'TECHNICIAN' },
+                    { n: 'CLIENTS', i: '👥', v: 'PATIENTS' },
+                    { n: 'CLINICAL AI', i: '🧠', v: 'AI_CLINICAL' }, // New AI Menu Item
+                    { n: 'FINANCE & SALES', i: '💰', v: 'FINANCE', a: 'MANAGER' },
+                    { n: 'REPORTS', i: '📈', v: 'REPORTS', a: 'MANAGER' },
+                    { n: 'STAFF', i: '👤', v: 'USERS', a: 'MANAGER' }
+                ];
+
+                return (
+                    <div className={`flex h-screen overflow-hidden bg-slate-950 ${isMobile ? 'flex-col' : ''}`}>
+                        <div className={`status-badge ${isOnline ? 'bg-online text-white' : 'bg-offline text-white'} no-print`}>{isOnline ? '🔵 ONLINE SYNCING' : '🔴 OFFLINE CACHE MODE'}</div>
+
+                        {/* SMARTPHONE CAMERA SCANNER MODAL */}
+                        {scannerActive && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay bg-black/95">
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 rounded-[3rem] shadow-2xl flex flex-col items-center">
+                                    <h3 className="text-xl font-black text-emerald-500 uppercase mb-4 text-center">Scan Barcode</h3>
+                                    <div id="reader" className="w-full bg-black rounded-2xl overflow-hidden border-2 border-slate-800"></div>
+                                    <p className="text-[10px] text-slate-500 mt-4 text-center uppercase tracking-widest font-bold">Align barcode inside the camera frame.</p>
+                                    <button onClick={() => setScannerActive(false)} className="mt-6 bg-rose-600 hover:bg-rose-500 text-white py-4 px-8 rounded-2xl font-black text-xs uppercase tracking-widest w-full">CANCEL SCAN</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* SUSPENDED SALES (HELD CARTS) MODAL */}
+                        {viewHeldCarts && (
+                            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setViewHeldCarts(false))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col">
+                                    <h3 className="text-xl font-black text-blue-500 uppercase mb-4 text-center">Suspended Sales</h3>
+                                    <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar max-h-64">
+                                        {heldCarts.map(hc => (
+                                            <div key={hc.id} className="bg-black p-4 rounded-2xl border border-slate-800 flex justify-between items-center">
+                                                <div>
+                                                    <p className="text-white font-bold">{hc.name}</p>
+                                                    <p className="text-[10px] text-slate-500">{hc.items.length} items • {new Date(hc.id).toLocaleTimeString()}</p>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={()=>{ setHeldCarts(prev=>prev.filter(c=>c.id!==hc.id)); }} className="text-rose-500 font-black px-2 hover:text-rose-400 text-lg">✖</button>
+                                                    <button onClick={()=>{ handleRecallCart(hc); setViewHeldCarts(false); }} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-black text-xs shadow-lg">RECALL</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {heldCarts.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No held sales</p>}
+                                    </div>
+                                    <button onClick={()=>setViewHeldCarts(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">CLOSE</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* THERMAL RECEIPT PRINT OVERLAY */}
+                        {receiptData && (
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center modal-overlay no-print" onClick={(e) => handleModalClickOutside(e, () => setReceiptData(null))}>
+                                <div className="bg-white text-black p-6 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col">
+                                    <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-black text-emerald-600 uppercase">Receipt Preview</h3></div>
+                                    
+                                    <div id="print-area" className="flex flex-col text-sm space-y-2 mb-6 text-black bg-white">
+                                        <h2 className="text-center font-black text-xl mb-1">APEX PHARMACY</h2>
+                                        <p className="text-center text-xs">Date: {new Date(receiptData.timestamp).toLocaleString()}</p>
+                                        <p className="text-center text-xs">Cashier: {receiptData.soldBy}</p>
+                                        <p className="text-center text-xs font-bold uppercase mt-1">Pay Method: {receiptData.method}</p>
+                                        
+                                        <div className="border-b-2 border-black border-dashed my-2"></div>
+                                        {receiptData.items.map(i => (
+                                            <div className="flex justify-between text-xs" key={i.id}>
+                                                <span className="truncate pr-2">{i.qty}x {i.brandName}</span>
+                                                <span className="shrink-0">{(i.qty * i.currentPrice).toLocaleString()}</span>
+                                            </div>
+                                        ))}
+                                        <div className="border-b-2 border-black border-dashed my-2"></div>
+                                        
+                                        {receiptData.discount > 0 && <div className="flex justify-between text-xs mt-1 text-slate-600"><span>Subtotal:</span><span>{receiptData.subTotal.toLocaleString()} TZS</span></div>}
+                                        {receiptData.discount > 0 && <div className="flex justify-between text-xs mb-1 text-slate-600"><span>Discount:</span><span>- {receiptData.discount.toLocaleString()} TZS</span></div>}
+                                        <div className="flex justify-between font-black text-base"><span>TOTAL DUE:</span><span>{receiptData.total.toLocaleString()} TZS</span></div>
+                                        <div className="flex justify-between text-xs mt-1"><span>Tendered:</span><span>{receiptData.amountTendered.toLocaleString()} TZS</span></div>
+                                        <div className="flex justify-between text-xs"><span>Change:</span><span>{receiptData.changeGiven.toLocaleString()} TZS</span></div>
+                                        
+                                        <div className="border-b-2 border-black border-dashed my-2"></div>
+                                        <p className="text-center text-xs font-bold mt-2">Thank you for your business!</p>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button onClick={() => window.print()} className="flex-1 bg-emerald-600 text-white font-black py-4 rounded-xl hover:bg-emerald-500 shadow-lg">🖨️ PRINT RECEIPT</button>
+                                        <button onClick={() => setReceiptData(null)} className="flex-1 bg-slate-200 text-slate-800 font-black py-4 rounded-xl hover:bg-slate-300">CLOSE</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <aside className={`${isMobile ? 'w-full h-16 flex-row items-center justify-between z-10' : 'w-72 flex-col z-10'} bg-black border-r border-slate-800 p-4 md:p-8 flex shrink-0 overflow-y-auto shadow-2xl no-print`}>
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 md:w-10 h-8 md:h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black">A</div>
+                                {!isMobile && <h2 className="text-2xl font-black tracking-tighter italic">APEX</h2>}
+                            </div>
+                            
+                            {!isMobile ? (
+                                <>
+                                    <nav className="flex-1 space-y-1 mt-10">
+                                        {navItems.map(item => {
+                                            if (item.a && !hasAccess(item.a)) return null;
+                                            return <button key={item.v} onClick={() => handleSetView(item.v)} className={`w-full text-left p-4 rounded-3xl font-black text-[10px] uppercase ${view === item.v ? 'active-tab' : 'text-slate-400 hover:bg-slate-900'}`}>{item.i} {item.n}</button>;
+                                        })}
+                                    </nav>
+                                    <div className="pt-6 border-t border-slate-800 mt-4">
+                                        <div className="flex items-center gap-3 mb-4 overflow-hidden">
+                                            <div className="w-8 h-8 bg-slate-800 text-emerald-500 rounded-full flex items-center justify-center font-black">{(user.fullName || user.email)[0].toUpperCase()}</div>
+                                            <div className="truncate"><p className="text-[10px] font-black text-emerald-500">{user.role}</p><p className="text-xs font-bold text-slate-300 truncate">{user.fullName || user.email}</p></div>
+                                        </div>
+                                        <button onClick={handleLogout} className="text-rose-500 font-bold text-[10px] uppercase p-2 w-full text-left hover:bg-rose-950/30 rounded">🚪 Logout</button>
+                                    </div>
+                                </>
+                            ) : (
+                                <select onChange={(e) => handleSetView(e.target.value)} value={view} className="bg-slate-800 text-white rounded-xl p-2 text-sm font-bold outline-none border-none">
+                                    {navItems.filter(i => !i.a || hasAccess(i.a)).map(i => <option key={i.v} value={i.v}>{i.n}</option>)}
+                                </select>
+                            )}
+                        </aside>
+
+                        <main className={`flex-1 ${isMobile ? 'p-4' : 'p-8 md:p-10'} overflow-auto no-scrollbar relative flex flex-col no-print`}>
+                            {viewHistory.length > 0 && view !== 'DASHBOARD' && (
+                                <button onClick={handleGoBack} className="self-start mb-6 text-emerald-500 font-black text-xs bg-slate-900 px-4 py-2 rounded-xl border border-slate-800 hover:bg-slate-800">← RETURN</button>
+                            )}
+
+                            {view === 'DASHBOARD' && (
+                                <div className="animate-in fade-in duration-700">
+                                    <h2 className="text-2xl md:text-4xl font-black mb-6">Director's Overview</h2>
+                                    <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-4 mb-6`}>
+                                        <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border-l-8 border-emerald-500 shadow-xl"><p className="text-slate-500 text-[10px] font-black uppercase mb-2">Total Revenue</p><h3 className="text-2xl md:text-4xl font-black text-emerald-400">{data.sales.reduce((a,b)=>a+b.total,0).toLocaleString()} <span className="text-sm text-slate-500">TZS</span></h3></div>
+                                        <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border-l-8 border-blue-500 shadow-xl"><p className="text-slate-500 text-[10px] font-black uppercase mb-2">Inventory Value</p><h3 className="text-2xl md:text-4xl font-black text-blue-400">{inventoryTotalValue.toLocaleString()} <span className="text-sm text-slate-500">TZS</span></h3></div>
+                                        <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] border-l-8 border-rose-500 shadow-xl"><p className="text-slate-500 text-[10px] font-black uppercase mb-2">Client Debt</p><h3 className="text-2xl md:text-4xl font-black text-rose-400">{data.patients.reduce((a,b)=>a+(Number(b.creditBalance)||0),0).toLocaleString()} <span className="text-sm text-slate-500">TZS</span></h3></div>
+                                    </div>
+                                    
+                                    <h3 className="text-lg font-black uppercase text-slate-500 mb-4 tracking-widest mt-8">🚨 System Alerts</h3>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div onClick={() => { setView('STOO'); setSortOption('OOS'); }} className="bg-rose-900/20 border border-rose-800 p-6 rounded-3xl cursor-pointer hover:bg-rose-900/40 transition-colors">
+                                            <h4 className="text-rose-500 font-black text-3xl mb-1">{systemAlerts.outOfStock}</h4>
+                                            <p className="text-[10px] font-bold text-rose-400 uppercase">Out of Stock</p>
+                                        </div>
+                                        <div onClick={() => { setView('STOO'); setSortOption('OOS'); }} className="bg-orange-900/20 border border-orange-800 p-6 rounded-3xl cursor-pointer hover:bg-orange-900/40 transition-colors">
+                                            <h4 className="text-orange-500 font-black text-3xl mb-1">{systemAlerts.lowStock}</h4>
+                                            <p className="text-[10px] font-bold text-orange-400 uppercase">Low Stock (≤10)</p>
+                                        </div>
+                                        <div onClick={() => { setView('STOO'); setSortOption('EXPIRING_SOON'); }} className="bg-yellow-900/20 border border-yellow-800 p-6 rounded-3xl cursor-pointer hover:bg-yellow-900/40 transition-colors">
+                                            <h4 className="text-yellow-500 font-black text-3xl mb-1">{systemAlerts.expiringSoon}</h4>
+                                            <p className="text-[10px] font-bold text-yellow-400 uppercase">Expiring &lt; 30 Days</p>
+                                        </div>
+                                        <div onClick={() => { setView('STOO'); setSortOption('EXPIRED'); }} className="bg-purple-900/20 border border-purple-800 p-6 rounded-3xl cursor-pointer hover:bg-purple-900/40 transition-colors">
+                                            <h4 className="text-purple-500 font-black text-3xl mb-1">{systemAlerts.expired}</h4>
+                                            <p className="text-[10px] font-bold text-purple-400 uppercase">Expired Items</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {view === 'AI_CLINICAL' && (
+                                <div className="h-full flex flex-col">
+                                    <div className="flex justify-between items-center mb-6 shrink-0">
+                                        <h2 className="text-2xl md:text-4xl font-black text-emerald-500 uppercase flex items-center gap-3">
+                                            <span>🧠</span> Clinical AI
+                                        </h2>
+                                        <button onClick={() => setShowAiSettings(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-xl font-black text-xs">⚙️ SETTINGS</button>
+                                    </div>
+                                    
+                                    <div className="bg-slate-900 p-6 md:p-8 rounded-[3.5rem] border border-slate-800 flex-1 flex flex-col overflow-hidden">
+                                        <div className="flex-1 overflow-y-auto no-scrollbar mb-6 p-4 md:p-6 bg-black rounded-3xl border border-slate-800">
+                                            {!aiResponse && !isAiLoading && (
+                                                <div className="h-full flex flex-col items-center justify-center text-slate-500 text-center">
+                                                    <p className="text-5xl mb-4">🇹🇿</p>
+                                                    <h3 className="font-black text-lg mb-2">Tanzania STG Reference Tool</h3>
+                                                    <p className="text-xs font-bold uppercase tracking-widest max-w-sm">Ask about diagnosis, disease signs, treatments, dosages, or contraindications according to national guidelines.</p>
+                                                </div>
+                                            )}
+                                            
+                                            {isAiLoading && (
+                                                <div className="h-full flex items-center justify-center">
+                                                    <div className="animate-pulse text-emerald-500 font-black text-sm uppercase tracking-widest">🧠 Analyzing Guidelines...</div>
+                                                </div>
+                                            )}
+
+                                            {aiResponse && !isAiLoading && (
+                                                <div className="markdown-body text-slate-300 text-sm md:text-base" dangerouslySetInnerHTML={{ __html: aiResponse }}></div>
+                                            )}
+                                        </div>
+
+                                        <form onSubmit={handleAiSubmit} className="flex gap-2 shrink-0">
+                                            <input 
+                                                value={aiQuery} 
+                                                onChange={(e) => setAiQuery(e.target.value)} 
+                                                placeholder="e.g. What is the 1st line treatment for severe malaria in adults?" 
+                                                className="w-full p-4 bg-black rounded-[2rem] font-bold outline-none text-sm text-white border border-slate-800 focus:border-emerald-500 transition-colors" 
+                                                required
+                                            />
+                                            <button disabled={isAiLoading} className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 rounded-[2rem] font-black shadow-lg disabled:opacity-50">ASK</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            )}
+
+                            {showAiSettings && (
+                                <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowAiSettings(false))}>
+                                    <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-8 rounded-[3rem] shadow-2xl flex flex-col">
+                                        <h3 className="text-xl font-black text-emerald-500 uppercase mb-4 text-center">AI API Settings</h3>
+                                        <p className="text-[10px] text-slate-400 font-bold mb-6 text-center leading-relaxed">To power the Clinical Assistant, you need a free Google Gemini API key. Get it from <a href="https://aistudio.google.com/" target="_blank" className="text-blue-400 underline">Google AI Studio</a>.</p>
+                                        
+                                        <input 
+                                            type="password"
+                                            value={aiKey} 
+                                            onChange={(e) => setAiKey(e.target.value)} 
+                                            placeholder="Paste Gemini API Key here..." 
+                                            className="w-full p-4 bg-black rounded-2xl font-bold outline-none text-sm text-emerald-400 border border-slate-800 focus:border-emerald-500 mb-6" 
+                                        />
+                                        
+                                        <button onClick={() => {
+                                            localStorage.setItem('apex_gemini_key', aiKey);
+                                            setShowAiSettings(false);
+                                            alert("API Key saved securely to your browser.");
+                                        }} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black shadow-lg">SAVE KEY</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {view === 'POS' && (
+                                <div className={`flex ${isMobile ? 'flex-col overflow-y-auto pb-10' : 'flex-row'} gap-4 md:gap-8 h-full`}>
+                                    <div className={`flex-1 space-y-4 flex flex-col ${isMobile ? 'shrink-0' : 'h-full'}`}>
+                                        
+                                        <form onSubmit={handleBarcodeSubmit} className="flex gap-2 shrink-0 flex-col md:flex-row">
+                                            <div className="flex gap-2 w-full md:w-auto flex-1">
+                                                <input type="text" value={barcodeInput} onChange={(e)=>setBarcodeInput(e.target.value)} placeholder="⚡ Scan Barcode..." className="flex-1 md:w-1/3 p-4 bg-emerald-900/20 rounded-[2.5rem] font-bold outline-none text-sm text-emerald-400 border border-emerald-800 focus:border-emerald-500 transition-colors placeholder:text-emerald-700" />
+                                                <button type="button" onClick={() => { scannerTargetRef.current = 'POS'; setScannerActive(true); }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 rounded-[2.5rem] font-black text-xl transition-transform active:scale-95 shadow-lg">📷</button>
+                                            </div>
+                                            <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Brand, Generic, or Category..." className="flex-1 w-full p-4 bg-slate-900 rounded-[2.5rem] font-bold outline-none text-sm text-white border border-slate-800 focus:border-emerald-500 transition-colors" />
+                                            <select value={sortOption} onChange={(e)=>setSortOption(e.target.value)} className="p-4 bg-slate-900 rounded-[2.5rem] font-bold outline-none text-xs md:text-sm text-emerald-400 border border-slate-800 focus:border-emerald-500 cursor-pointer hidden md:block">
+                                                <option value="DEFAULT">Sort: Default</option>
+                                                <option value="NEW">✨ Newest Added</option>
+                                                <option value="BRAND_ASC">🔤 Brand (A-Z)</option>
+                                                <option value="PRICE_ASC">💵 Price (Low-High)</option>
+                                                <option value="PRICE_DESC">💵 Price (High-Low)</option>
+                                                <option value="OOS">⚠️ Out of Stock (OOS)</option>
+                                            </select>
+                                        </form>
+
+                                        <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-3'} gap-3 ${isMobile ? '' : 'overflow-y-auto'} no-scrollbar pb-10`}>
+                                            {processedInventory.map(p => {
+                                                const isExp = p.expiryDate && new Date(p.expiryDate) < new Date();
+                                                return (
+                                                <div key={p.id} onClick={()=>addToCart(p)} className={`bg-slate-900 p-4 rounded-[2.5rem] cursor-pointer hover:border-emerald-500 border border-slate-800 flex flex-col justify-between transition-transform active:scale-95 ${p.stock<=0||isExp ? 'opacity-50 grayscale' : ''}`}>
+                                                    <div>
+                                                        <h4 className="font-black text-sm">{p.brandName || 'Unnamed'} {isExp && '⚠️'}</h4>
+                                                        <p className="text-[9px] text-slate-500 font-bold uppercase">{p.genericName || 'No Generic'} • {p.strength}</p>
+                                                        <div className="mt-2 flex flex-wrap gap-1">
+                                                            {p.category && <span onClick={(e)=>{e.stopPropagation(); setSearch(p.category);}} className="text-[8px] bg-slate-800 text-blue-400 px-2 py-1 rounded font-black hover:bg-blue-600 hover:text-white transition-colors">🏷️ {p.category}</span>}
+                                                            {p.subcategory && <span onClick={(e)=>{e.stopPropagation(); setSearch(p.subcategory);}} className="text-[8px] bg-slate-800 text-purple-400 px-2 py-1 rounded font-black hover:bg-purple-600 hover:text-white transition-colors">🧬 {p.subcategory}</span>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex justify-between items-end mt-4 pt-3 border-t border-slate-800"><p className="text-lg font-black text-emerald-400">{Number(p.price).toLocaleString()}</p><p className={`text-[10px] font-black px-2 py-1 rounded-lg ${p.stock < 10 ? 'bg-rose-900 text-rose-300' : 'bg-slate-800 text-slate-400'}`}>{p.stock}</p></div>
+                                                </div>
+                                            )})}
+                                        </div>
+                                    </div>
+
+                                    <div className={`${isMobile ? 'w-full bg-slate-900 text-white mt-2' : 'w-96 bg-white text-slate-900 h-[calc(100vh-6rem)] sticky top-0'} p-8 rounded-[3.5rem] border-t-8 border-emerald-600 flex flex-col shrink-0 shadow-2xl`}>
+                                        <div className="flex justify-between items-center mb-4 shrink-0"><h3 className="font-black text-2xl uppercase">Cart</h3><span className="bg-emerald-100 text-emerald-700 text-xs font-black px-2 py-1 rounded-lg">{cart.length} ITEMS</span></div>
+                                        
+                                        <div className="flex gap-2 mb-4 shrink-0">
+                                            <button onClick={handleHoldCart} className="flex-1 py-3 bg-blue-900/10 text-blue-600 border border-blue-200 font-black rounded-[1.5rem] hover:bg-blue-600 hover:text-white transition-colors text-xs shadow-sm">⏸️ HOLD SALE</button>
+                                            {heldCarts.length > 0 && <button onClick={()=>setViewHeldCarts(true)} className="flex-1 py-3 bg-indigo-900/10 text-indigo-600 border border-indigo-200 font-black rounded-[1.5rem] hover:bg-indigo-600 hover:text-white transition-colors text-xs shadow-sm">📥 RECALL ({heldCarts.length})</button>}
+                                        </div>
+
+                                        <div className={`${isMobile ? 'max-h-64' : 'flex-1'} space-y-4 mb-6 overflow-y-auto no-scrollbar`}>
+                                            {cart.length === 0 && <p className="text-center font-bold text-xs uppercase text-slate-400 py-10">Cart is Empty</p>}
+                                            {cart.map(i => (
+                                                <div key={i.id} className={`flex justify-between items-center border-b ${isMobile ? 'border-slate-800' : 'border-slate-100'} pb-3`}>
+                                                    <div className="flex-1 overflow-hidden pr-2"><p className="text-sm font-bold uppercase truncate">{i.brandName}</p><input type="number" value={i.currentPrice} onChange={(e)=>updateCartItem(i.id, 'currentPrice', e.target.value)} className={`w-20 px-2 py-1 text-xs font-bold mt-1 rounded outline-none ${isMobile ? 'bg-slate-800 text-white' : 'bg-slate-200 text-black'}`} /></div>
+                                                    <div className="flex items-center gap-2"><input type="number" value={i.qty} onChange={(e)=>updateCartItem(i.id, 'qty', e.target.value)} className={`w-14 p-2 text-center font-black rounded-xl outline-none ${isMobile ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-black border-slate-200 border'}`} /><button onClick={() => removeFromCart(i.id)} className="text-rose-500 font-black hover:text-rose-700 p-2 text-lg">✖</button></div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="pt-4 border-t border-slate-200 shrink-0">
+                                            <div className="flex justify-between font-black text-2xl text-emerald-600 mb-6"><span>Total</span><span>{cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0).toLocaleString()}</span></div>
+                                            <button onClick={openCheckoutModal} className={`w-full py-5 rounded-[2rem] font-black text-white transition-colors ${isMobile ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-slate-900 hover:bg-black'}`}>CHECKOUT</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {view === 'STOO' && (
+                                <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] h-full overflow-y-auto">
+                                    <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black text-emerald-500 uppercase">Vault</h2>{hasAccess('MANAGER') && <button onClick={() => setEditing({ type: 'PRODUCT', item: {} })} className="bg-emerald-600 text-white px-6 py-2 rounded-2xl font-black text-xs hover:bg-emerald-500">+ NEW ITEM</button>}</div>
+                                    
+                                    <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-4 mb-6`}>
+                                        <div className="bg-black p-6 rounded-[2rem] border border-slate-800 text-center shadow-lg">
+                                            <p className="text-[10px] font-black uppercase text-slate-500">Total Investment (Cost)</p>
+                                            <p className="text-xl md:text-2xl font-black text-rose-400">{inventoryTotalCost.toLocaleString()} TZS</p>
+                                        </div>
+                                        <div className="bg-black p-6 rounded-[2rem] border border-slate-800 text-center shadow-lg">
+                                            <p className="text-[10px] font-black uppercase text-slate-500">Expected Revenue</p>
+                                            <p className="text-xl md:text-2xl font-black text-blue-400">{inventoryTotalValue.toLocaleString()} TZS</p>
+                                        </div>
+                                        <div className="bg-black p-6 rounded-[2rem] border border-slate-800 text-center shadow-lg border-t-4 border-t-emerald-500">
+                                            <p className="text-[10px] font-black uppercase text-slate-500">Expected Net Profit</p>
+                                            <p className="text-xl md:text-2xl font-black text-emerald-400">{inventoryExpectedProfit.toLocaleString()} TZS</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col md:flex-row gap-2 mb-6">
+                                        <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search Brand, Barcode, or Category..." className="w-full flex-1 p-4 bg-black rounded-2xl font-bold outline-none text-white border border-slate-800 focus:border-emerald-500" />
+                                        <select value={sortOption} onChange={(e)=>setSortOption(e.target.value)} className="p-4 bg-black rounded-2xl font-bold outline-none text-xs md:text-sm text-emerald-400 border border-slate-800 focus:border-emerald-500 cursor-pointer">
+                                            <option value="DEFAULT">Sort: Default</option>
+                                            <option value="NEW">✨ Newest First</option>
+                                            <option value="BRAND_ASC">🔤 Brand (A-Z)</option>
+                                            <option value="BRAND_DESC">🔤 Brand (Z-A)</option>
+                                            <option value="GENERIC_ASC">💊 Generic (A-Z)</option>
+                                            <option value="PRICE_ASC">💵 Price (Low-High)</option>
+                                            <option value="PRICE_DESC">💵 Price (High-Low)</option>
+                                            <option value="OOS">⚠️ Out of Stock (OOS)</option>
+                                            <option value="EXPIRING_SOON">⏳ Expiring Soon (&lt;30d)</option>
+                                            <option value="EXPIRED">❌ Expired First</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-xs md:text-sm">
+                                            <thead><tr className="text-slate-500 font-bold uppercase border-b border-slate-800"><th className="pb-3 px-2">Item</th><th className="px-2">Stock</th><th className="px-2">Sell Price</th>{hasAccess('MANAGER') && <th className="px-2"></th>}</tr></thead>
+                                            <tbody>
+                                                {processedInventory.map(p => (
+                                                    <tr key={p.id} className="border-b border-slate-800/50 hover:bg-black/50">
+                                                        <td className="py-4 px-2 font-black text-white">
+                                                            <div className="flex items-center gap-2">
+                                                                {p.brandName || 'Unnamed'} 
+                                                                {p.barcode && <span className="bg-slate-800 text-slate-400 text-[8px] px-1 py-0.5 rounded font-mono">||| {p.barcode}</span>}
+                                                            </div>
+                                                            <span className="block text-[9px] text-slate-500 mt-1">
+                                                                {p.category && <span onClick={()=>setSearch(p.category)} className="cursor-pointer hover:underline text-blue-400">{p.category}</span>}
+                                                                {p.subcategory && <span> / <span onClick={()=>setSearch(p.subcategory)} className="cursor-pointer hover:underline text-purple-400">{p.subcategory}</span></span>}
+                                                            </span>
+                                                        </td>
+                                                        <td className={`px-2 font-black ${p.stock <= 0 ? 'text-rose-600' : 'text-slate-300'}`}>{p.stock}</td>
+                                                        <td className="px-2 text-emerald-400 font-black">{Number(p.price).toLocaleString()}</td>
+                                                        {hasAccess('MANAGER') && <td className="px-2 text-right"><button onClick={() => setEditing({type: 'PRODUCT', item: p})} className="bg-slate-800 hover:bg-slate-700 text-blue-400 text-[10px] px-3 py-1 rounded font-black">EDIT</button></td>}
+                                                    </tr>
+                                                ))}
+                                                {processedInventory.length === 0 && <tr><td colSpan="4" className="py-8 text-center text-slate-500 font-bold uppercase">No Items Found</td></tr>}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {view === 'FINANCE' && (
+                                <div className="space-y-6 h-full overflow-y-auto pb-10">
+                                    <div className="flex justify-between"><h2 className="text-2xl font-black uppercase">Finance</h2>{hasAccess('MANAGER') && <button onClick={() => setEditing({ type: 'EXPENSE', item: {} })} className="bg-rose-600 text-white px-6 py-2 rounded-2xl font-black text-xs hover:bg-rose-500">+ EXPENSE</button>}</div>
+                                    <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-4`}>
+                                        
+                                        <div onClick={() => setViewExpensesDetail(true)} className="bg-slate-900 hover:bg-slate-800 cursor-pointer p-6 rounded-[2rem] text-center border-t-4 border-rose-500 shadow-lg transition-colors">
+                                            <p className="text-[10px] font-black uppercase text-slate-500">Losses / Expenses</p>
+                                            <p className="text-2xl font-black text-rose-500">{data.expenses.reduce((a,b)=>a+Number(b.amount),0).toLocaleString()} TZS</p>
+                                            <p className="text-[9px] font-bold text-slate-600 mt-1 uppercase">(Click to View Logs)</p>
+                                        </div>
+
+                                        <div onClick={() => setViewNetProfitDetail(true)} className="bg-white hover:bg-slate-200 cursor-pointer p-6 rounded-[2rem] text-center border-t-4 border-emerald-500 shadow-lg transition-colors">
+                                            <p className="text-[10px] font-black uppercase text-slate-500">Net Profit</p>
+                                            <p className="text-2xl font-black text-emerald-600">{totalNetProfit.toLocaleString()} TZS</p>
+                                            <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">(Click for Breakdown)</p>
+                                        </div>
+
+                                        <div onClick={() => setViewSalesVolume(true)} className="bg-emerald-600 hover:bg-emerald-500 cursor-pointer p-6 rounded-[2rem] text-center transition-colors shadow-lg">
+                                            <p className="text-[10px] font-black uppercase text-emerald-200">Total Sales Volume</p>
+                                            <p className="text-3xl font-black text-white">{data.sales.length}</p>
+                                            <p className="text-[9px] font-bold text-emerald-100 mt-1 uppercase">(Click to View Logs)</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-900 p-6 rounded-[3.5rem] border border-slate-800 shadow-xl">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h3 className="text-xl font-black uppercase text-emerald-500">Financial Trend</h3>
+                                            <div className="flex bg-black rounded-xl p-1 border border-slate-800">
+                                                <button onClick={() => setChartPeriod('7DAYS')} className={`px-3 py-1 rounded-lg text-[10px] font-black transition-colors ${chartPeriod === '7DAYS' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-white'}`}>7 DAYS</button>
+                                                <button onClick={() => setChartPeriod('MONTHLY')} className={`px-3 py-1 rounded-lg text-[10px] font-black transition-colors ${chartPeriod === 'MONTHLY' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-white'}`}>6 MONTHS</button>
+                                            </div>
+                                        </div>
+                                        <div className="w-full h-64"><canvas ref={chartRef}></canvas></div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {view === 'REPORTS' && (
+                                <div className="space-y-6 h-full overflow-y-auto pb-10">
+                                    <h2 className="text-2xl font-black uppercase">Analytics & Export</h2>
+                                    <div className="flex gap-4 border-b border-slate-800 overflow-x-auto no-scrollbar">
+                                        <button onClick={()=>setReportTab('SALES')} className={`pb-3 font-black text-xs uppercase shrink-0 ${reportTab==='SALES' ? 'text-emerald-500 border-b-2 border-emerald-500' : 'text-slate-500 hover:text-white'}`}>Sales Log</button>
+                                        <button onClick={()=>setReportTab('ANALYTICS')} className={`pb-3 font-black text-xs uppercase shrink-0 ${reportTab==='ANALYTICS' ? 'text-blue-500 border-b-2 border-blue-500' : 'text-slate-500 hover:text-white'}`}>Item Analytics</button>
+                                        <button onClick={()=>setReportTab('EXPIRED')} className={`pb-3 font-black text-xs uppercase shrink-0 ${reportTab==='EXPIRED' ? 'text-purple-500 border-b-2 border-purple-500' : 'text-slate-500 hover:text-white'}`}>Expired Alert</button>
+                                    </div>
+                                    <div className="bg-black p-6 rounded-[2.5rem] overflow-x-auto max-h-96 border border-slate-800">
+                                        <table className="w-full text-left text-xs">
+                                            {reportTab === 'SALES' && <tbody>{filteredReportData.sales.map(s => <tr key={s.id} className="border-b border-slate-800 hover:bg-slate-900"><td className="py-3 px-2 text-slate-300">{new Date(s.timestamp).toLocaleDateString()}</td><td className="py-3 px-2 text-white font-bold">{s.items?.map(i => `${i.qty}x ${i.brandName}`).join(', ')}</td><td className="py-3 px-2 font-black text-emerald-400">{Number(s.total).toLocaleString()} TZS</td></tr>)}{filteredReportData.sales.length === 0 && <tr><td colSpan="3" className="py-8 text-center text-slate-600 font-bold uppercase">No Sales Data</td></tr>}</tbody>}
+                                            {reportTab === 'ANALYTICS' && (
+                                                <>
+                                                    <thead><tr className="text-[10px] text-slate-500 uppercase"><th className="pb-2">Item / Brand</th><th className="pb-2">Qty Sold</th><th className="pb-2">Total Revenue</th><th className="pb-2">Net Profit</th></tr></thead>
+                                                    <tbody>{itemAnalytics.map((i, idx) => <tr key={idx} className="border-b border-slate-800 hover:bg-slate-900"><td className="py-3 px-2 text-white font-bold">{i.name} <span className="block text-[8px] text-slate-500">{i.cat}</span></td><td className="py-3 px-2 text-blue-400 font-black">{i.qty}</td><td className="py-3 px-2 text-slate-300 font-bold">{i.revenue.toLocaleString()}</td><td className="py-3 px-2 font-black text-emerald-400">{i.profit.toLocaleString()} TZS</td></tr>)}{itemAnalytics.length === 0 && <tr><td colSpan="4" className="py-8 text-center text-slate-600 font-bold uppercase">No Analytics Data</td></tr>}</tbody>
+                                                </>
+                                            )}
+                                            {reportTab === 'EXPIRED' && <tbody>{filteredReportData.expired.map(i => <tr key={i.id} className="border-b border-slate-800 hover:bg-slate-900"><td className="py-3 px-2 text-white font-bold">{i.brandName}</td><td className="py-3 px-2 text-rose-500 font-black">{i.stock} Wasted</td></tr>)}{filteredReportData.expired.length === 0 && <tr><td colSpan="2" className="py-8 text-center text-slate-600 font-bold uppercase">No Expired Drugs</td></tr>}</tbody>}
+                                        </table>
+                                    </div>
+                                    <div className="pt-6 border-t border-slate-800 grid grid-cols-2 gap-3"><button onClick={()=>exportToExcel(data.sales, 'APEX_Sales')} className="bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-bold text-[10px] py-4 rounded-xl">📥 EXPORT SALES</button><button onClick={()=>exportToExcel(data.inventory, 'APEX_Inventory')} className="bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-bold text-[10px] py-4 rounded-xl">📥 EXPORT INVENTORY</button></div>
+                                    <div className="pt-6 mt-6 border-t border-rose-900/50"><button onClick={handleDeleteAllFinance} className="bg-rose-900/20 text-rose-500 font-bold text-[10px] py-4 px-6 rounded-xl border border-rose-800 hover:bg-rose-600 hover:text-white w-full text-left transition-colors">⚠️ CLEAR ALL FINANCIAL HISTORY (SALES & EXPENSES)</button></div>
+                                </div>
+                            )}
+
+                            {view === 'PATIENTS' && (
+                                <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] h-full overflow-auto">
+                                    <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black text-blue-500 uppercase">Clients & Patients</h2>{hasAccess('MANAGER') && <button onClick={() => setEditing({ type: 'PATIENT', item: {} })} className="bg-blue-600 text-white px-6 py-2 rounded-2xl font-black text-xs hover:bg-blue-500">+ ADD</button>}</div>
+                                    <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Database..." className="w-full p-4 mb-6 bg-black rounded-2xl font-bold outline-none text-white border border-slate-800 focus:border-blue-500" />
+                                    <div className="space-y-4">
+                                        {data.patients.filter(pt => !search || (pt.name||'').toLowerCase().includes(search.toLowerCase())).map(pt => (
+                                            <div key={pt.id} className="p-5 bg-black rounded-[2rem] border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-blue-500 transition-colors">
+                                                <div className="overflow-hidden">
+                                                    <h4 className="font-black text-white truncate text-lg">{pt.name} <span className="text-[9px] bg-slate-800 text-slate-400 px-2 py-1 rounded ml-2 uppercase">{pt.clientType}</span></h4>
+                                                    <p className="text-[10px] text-slate-500 font-bold truncate mt-1">📞 {pt.phone || 'No phone'} • 📍 {pt.address || 'No address'}</p>
+                                                    {pt.clientType === 'PATIENT' && <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase">🧬 {pt.sex || '-'} • {pt.age ? `${pt.age} yrs` : '-'} • {pt.bodyweight ? `${pt.bodyweight} kg` : '-'}</p>}
+                                                    {pt.creditBalance > 0 && <p className="text-xs font-black text-rose-500 mt-2">DEBT: {pt.creditBalance.toLocaleString()} TZS</p>}
+                                                </div>
+                                                <div className="flex flex-wrap gap-2 shrink-0">
+                                                    {pt.creditBalance > 0 && (
+                                                        <>
+                                                            <button onClick={()=>handleWhatsAppReminder(pt)} className="bg-blue-900/30 hover:bg-blue-600 text-blue-400 hover:text-white px-3 py-2 rounded-xl font-black text-[10px] transition-colors">💬 WHATSAPP</button>
+                                                            <button onClick={()=>handleClearDebt(pt)} className="bg-emerald-900/30 hover:bg-emerald-600 text-emerald-500 hover:text-white px-3 py-2 rounded-xl font-black text-[10px] transition-colors">PAY DEBT</button>
+                                                        </>
+                                                    )}
+                                                    {pt.clientType === 'PATIENT' && <button onClick={()=>setMedicalHistoryModal(pt)} className="bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl text-blue-400 font-black text-[10px]">HISTORY</button>}
+                                                    {hasAccess('MANAGER') && <button onClick={()=>setEditing({type:'PATIENT', item: pt})} className="bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl text-slate-300 font-black text-[10px]">EDIT</button>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {data.patients.length === 0 && <p className="text-center py-8 text-slate-500 font-bold uppercase">No Clients Found</p>}
+                                    </div>
+                                </div>
+                            )}
+
+                            {view === 'USERS' && (
+                                <div className="bg-slate-900 p-6 md:p-10 rounded-[3.5rem] h-full overflow-auto">
+                                    <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black uppercase">Staff Personnel</h2>{hasAccess('MANAGER') && <button onClick={() => setEditing({ type: 'USER', item: {} })} className="bg-emerald-600 text-white px-6 py-2 rounded-2xl font-black text-xs hover:bg-emerald-500">+ ADD STAFF</button>}</div>
+                                    <div className="space-y-4">
+                                        {data.users.map(u => (
+                                            <div key={u.id} className="bg-black p-4 rounded-[2rem] border border-slate-800 flex justify-between items-center hover:border-emerald-500"><div className="overflow-hidden"><p className="font-black text-white uppercase truncate">{u.fullName}</p><p className="text-[10px] text-emerald-500 font-black truncate">{u.role} <span className="text-slate-500 lowercase ml-2">{u.email}</span></p></div>{hasAccess('MANAGER') && <button onClick={()=>setEditing({type: 'USER', item: u})} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-blue-400 font-black text-[10px] rounded-lg shrink-0">MANAGE</button>}</div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* UNIVERSAL EDIT MODAL */}
+                            {editing && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setEditing(null))}>
+                                    <div className="bg-slate-900 border border-slate-800 w-full max-w-lg p-6 md:p-10 rounded-[3rem] shadow-2xl max-h-[90vh] overflow-y-auto">
+                                        <h3 className="text-2xl font-black text-emerald-500 uppercase mb-6">Modify Data</h3>
+                                        <form onSubmit={(e) => {
+                                            e.preventDefault();
+                                            const payload = Object.fromEntries(new FormData(e.target));
+                                            const { type, item } = editing; setEditing(null);
+                                            let col = ''; let final = {};
+                                            
+                                            if (type === 'PRODUCT') { col = 'inventory'; final = { ...payload, price: Number(payload.price), costPrice: Number(payload.costPrice), stock: Number(payload.stock), updatedAt: new Date().toISOString() }; } 
+                                            else if (type === 'PATIENT') { col = 'patients'; final = item.id ? { ...payload, clientType: editClientType } : { ...payload, clientType: editClientType, creditBalance: 0 }; }
+                                            else if (type === 'EXPENSE') { col = 'expenses'; final = { ...payload, amount: Number(payload.amount), timestamp: new Date().toISOString(), addedBy: user.fullName || user.email }; }
+                                            else if (type === 'USER') {
+                                                col = 'users'; final = { fullName: payload.fullName, email: payload.email, role: payload.role, status: 'ACTIVE' };
+                                                if (!item.id && isOnline) fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyDOFibCiMfYeVP4A6p6En9Jlml10eATGio`, { method: 'POST', body: JSON.stringify({ email: payload.email, password: payload.password, returnSecureToken: false }) });
+                                            }
+
+                                            if (item.id) window.db.collection(col).doc(item.id).update(final);
+                                            else window.db.collection(col).add(final);
+                                            
+                                        }} className="space-y-4">
+                                            
+                                            {editing.type === 'PRODUCT' && (<><div className="flex gap-2"><input id="edit-barcode-input" name="barcode" defaultValue={editing.item.barcode || ''} placeholder="||| Barcode" className="w-2/3 p-4 bg-black rounded-xl text-emerald-400 font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500" /><button type="button" onClick={() => { scannerTargetRef.current = 'INVENTORY'; setScannerActive(true); }} className="w-1/3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-xl flex items-center justify-center transition-transform active:scale-95 shadow-lg">📷 SCAN</button></div><input name="brandName" defaultValue={editing.item.brandName || ''} placeholder="Brand Name *" required className="flex-1 w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500" /><input name="genericName" defaultValue={editing.item.genericName || ''} placeholder="Generic Name" className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500" /><div className="grid grid-cols-2 gap-3"><input name="category" defaultValue={editing.item.category || ''} placeholder="Category" className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /><input name="subcategory" defaultValue={editing.item.subcategory || ''} placeholder="Subcategory" className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /></div><div className="grid grid-cols-2 gap-3"><input name="price" type="number" defaultValue={editing.item.price || ''} placeholder="Sell Price *" required className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /><input name="costPrice" type="number" defaultValue={editing.item.costPrice || ''} placeholder="Cost Price *" required className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /></div><input name="stock" type="number" defaultValue={editing.item.stock || ''} placeholder="Stock Quantity *" required className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /><div className="relative"><span className="absolute -top-2 left-3 bg-slate-900 px-1 text-[10px] font-bold text-slate-500 uppercase">Expiry Date</span><input name="expiryDate" type="date" defaultValue={editing.item.expiryDate || ''} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500" /></div>{editing.item.id && <button type="button" onClick={()=>handleDeleteProduct(editing.item.id)} className="w-full text-rose-500 bg-rose-900/20 font-bold text-xs py-3 rounded-xl hover:bg-rose-600 hover:text-white mt-2">🗑️ PERMANENTLY DELETE ITEM</button>}</>)}
+                                            
+                                            {editing.type === 'PATIENT' && (
+                                                <>
+                                                    <select value={editClientType} onChange={(e)=>setEditClientType(e.target.value)} className="w-full p-4 bg-black rounded-xl text-blue-400 font-bold outline-none border border-slate-800 focus:border-blue-500 mb-2">
+                                                        <option value="PATIENT">🏥 Patient (Medical Record)</option>
+                                                        <option value="CUSTOMER">🛒 Customer (Retail/Wholesale)</option>
+                                                    </select>
+                                                    <input name="name" defaultValue={editing.item.name || ''} placeholder="Full Name *" required className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-blue-500" />
+                                                    <input name="phone" defaultValue={editing.item.phone || ''} placeholder="Phone Number (e.g. +255...)" className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-blue-500" />
+                                                    <input name="address" defaultValue={editing.item.address || ''} placeholder="Address / Location" className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-blue-500" />
+                                                    
+                                                    {editClientType === 'PATIENT' && (
+                                                        <div className="grid grid-cols-2 gap-3 border-t border-slate-800 pt-4 mt-2">
+                                                            <input name="age" type="number" defaultValue={editing.item.age || ''} placeholder="Age" className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-blue-500" />
+                                                            <select name="sex" defaultValue={editing.item.sex || 'M'} className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-blue-500"><option>M</option><option>F</option></select>
+                                                            <input name="bodyweight" type="number" defaultValue={editing.item.bodyweight || ''} placeholder="Weight (kg)" className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-blue-500" />
+                                                            <input name="email" type="email" defaultValue={editing.item.email || ''} placeholder="Email" className="p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-blue-500" />
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+
+                                            {editing.type === 'EXPENSE' && (<><input name="description" defaultValue={editing.item.description || ''} placeholder="Expense Reason *" required className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-rose-500" /><input name="amount" type="number" defaultValue={editing.item.amount || ''} placeholder="Amount (TZS) *" required className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-rose-500" /></>)}
+                                            {editing.type === 'USER' && (<><input name="fullName" defaultValue={editing.item.fullName || ''} placeholder="Full Name *" required className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" /><input name="email" type="email" defaultValue={editing.item.email || ''} placeholder="Email Address *" required readOnly={!!editing.item.id} className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500 read-only:opacity-50" />{!editing.item.id && <input name="password" type="password" placeholder="Account Password *" required className="w-full p-4 bg-black rounded-xl text-white font-bold outline-none border border-slate-800 focus:border-emerald-500" />}<select name="role" defaultValue={editing.item.role || 'DISPENSER'} className="w-full p-4 bg-black rounded-xl text-emerald-400 font-bold outline-none border border-slate-800 focus:border-emerald-500"><option>MANAGER</option><option>TECHNICIAN</option><option>DISPENSER</option></select>{editing.item.id && <button type="button" onClick={()=>handleDeletePersonnel(editing.item)} className="w-full text-rose-500 bg-rose-900/20 font-bold text-xs py-3 rounded-xl hover:bg-rose-600 hover:text-white mt-2">🗑️ DELETE PERSONNEL</button>}</>)}
+
+                                            <div className="flex gap-3 pt-6 border-t border-slate-800"><button type="submit" className="flex-1 bg-emerald-600 text-white py-4 rounded-[2rem] font-black hover:bg-emerald-500 shadow-lg">SAVE</button><button type="button" onClick={()=>setEditing(null)} className="flex-1 bg-black text-white py-4 rounded-[2rem] font-bold border border-slate-800 hover:border-slate-600">CANCEL</button></div>
+                                        </form>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* CHECKOUT MODAL */}
+                            {checkoutModal && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setCheckoutModal(false))}>
+                                    <div className="bg-slate-900 w-full max-w-sm p-8 rounded-[3.5rem] shadow-2xl border border-slate-800">
+                                        <h3 className="text-2xl font-black text-emerald-500 text-center mb-6">Checkout</h3>
+                                        <div className="bg-black p-6 rounded-3xl text-center mb-6 shadow-inner"><p className="text-slate-500 font-black text-[10px] tracking-widest uppercase">Total Bill Due</p><p className="text-3xl font-black text-emerald-400">{cart.reduce((s,i)=>s+(i.currentPrice*i.qty), 0).toLocaleString()} <span className="text-lg text-emerald-700">TZS</span></p></div>
+                                        <input type="number" value={amountTendered||''} onChange={(e)=>setAmountTendered(Number(e.target.value))} placeholder="Cash Tendered" className="w-full p-4 bg-black rounded-2xl text-center text-white font-bold mb-4 outline-none border border-slate-800 focus:border-emerald-500" />
+                                        <select value={checkoutPatient} onChange={(e)=>setCheckoutPatient(e.target.value)} className="w-full p-4 bg-black rounded-2xl text-white text-sm mb-6 outline-none border border-slate-800 focus:border-emerald-500"><option value="">-- Issue on Credit (Select Client) --</option>{data.patients.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
+                                        <div className="space-y-3 mb-6 border-t border-slate-800 pt-6"><button onClick={()=>finalizeSale('CASH')} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black shadow-lg">💵 EXACT / CASH</button><button onClick={()=>finalizeSale('DEBT')} className="w-full py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black shadow-lg">📝 RECORD DEBT</button></div>
+                                        <button onClick={()=>setCheckoutModal(false)} className="w-full text-slate-500 hover:text-white font-bold text-xs uppercase tracking-widest">CANCEL</button>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {/* ADVANCED EHR CLINICAL HISTORY MODAL */}
+                            {medicalHistoryModal && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setMedicalHistoryModal(null))}>
+                                    <div className="bg-slate-900 w-full max-w-5xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh] border border-slate-800">
+                                        <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4 shrink-0">
+                                            <div>
+                                                <h3 className="text-2xl font-black text-blue-500 uppercase">{medicalHistoryModal.name}'s Clinical Chart</h3>
+                                                <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase">
+                                                    {medicalHistoryModal.sex || '-'} • {medicalHistoryModal.age ? `${medicalHistoryModal.age} yrs` : '-'} • {medicalHistoryModal.bodyweight ? `${medicalHistoryModal.bodyweight} kg` : '-'}
+                                                </p>
+                                            </div>
+                                            <button onClick={()=>setMedicalHistoryModal(null)} className="text-rose-500 hover:text-rose-400 font-black text-3xl">✖</button>
+                                        </div>
+
+                                        <div className="flex flex-col md:flex-row gap-6 overflow-hidden">
+                                            {/* LEFT: MEDICAL FORM */}
+                                            <div className="w-full md:w-1/2 flex flex-col shrink-0 overflow-y-auto no-scrollbar pr-2">
+                                                <form onSubmit={(e) => {
+                                                    e.preventDefault(); 
+                                                    const fd = new FormData(e.target); 
+                                                    addMedicalHistory(medicalHistoryModal.id, {
+                                                        disease: fd.get('disease'),
+                                                        diagnosis: fd.get('diagnosis'), 
+                                                        treatment: fd.get('treatment'),
+                                                        medicineGiven: fd.get('medicineGiven'),
+                                                        dose: fd.get('dose'),
+                                                        dosage: fd.get('dosage'),
+                                                        duration: fd.get('duration'),
+                                                        allergies: fd.get('allergies'),
+                                                        notes: fd.get('notes'),
+                                                        cost: fd.get('cost')
+                                                    }); 
+                                                    e.target.reset();
+                                                }} className="space-y-4 bg-black p-5 rounded-2xl border border-slate-800">
+                                                    <p className="text-xs font-black uppercase text-blue-400 border-b border-slate-800 pb-2">Log Clinical Entry</p>
+                                                    
+                                                    <div className="space-y-3">
+                                                        <input name="disease" placeholder="Disease / Chief Complaint *" required className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                        <input name="diagnosis" placeholder="Diagnosis Details" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                        <input name="treatment" placeholder="Clinical Treatment Given" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                    </div>
+
+                                                    <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800 space-y-3">
+                                                        <p className="text-[9px] font-bold text-slate-500 uppercase">Prescription Details</p>
+                                                        <input name="medicineGiven" placeholder="Medicine / Drug Name" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            <input name="dose" placeholder="Dose (500mg)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                            <input name="dosage" placeholder="Dosage (1x3)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                            <input name="duration" placeholder="Days (5)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <input name="allergies" placeholder="Known Allergies" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                        <input name="cost" type="number" placeholder="Cost (TZS)" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800" />
+                                                    </div>
+
+                                                    <textarea name="notes" placeholder="Additional Clinical Notes / Progress..." rows="2" className="w-full p-3 bg-slate-900 text-white text-sm rounded-xl outline-none focus:border-blue-500 border border-slate-800"></textarea>
+
+                                                    <button className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-black shadow-lg text-xs uppercase tracking-widest mt-2">SAVE CLINICAL RECORD</button>
+                                                </form>
+                                            </div>
+
+                                            {/* RIGHT: TIMELINE DISPLAY */}
+                                            <div className="w-full md:w-1/2 flex flex-col overflow-y-auto no-scrollbar bg-black p-4 rounded-2xl border border-slate-800">
+                                                <p className="text-xs font-black uppercase text-slate-500 mb-4 sticky top-0 bg-black z-10 py-2">Historical Timeline</p>
+                                                <div className="space-y-4 pb-4">
+                                                    {data.medicalHistory.filter(h=>h.patientId===medicalHistoryModal.id).sort((a,b)=>new Date(b.date)-new Date(a.date)).map(h=>(
+                                                        <div key={h.id} className="bg-slate-900 p-5 rounded-2xl border-l-4 border-blue-500 flex flex-col gap-3">
+                                                            <div className="flex justify-between items-start border-b border-slate-800 pb-2">
+                                                                <p className="font-black text-blue-400 text-lg uppercase leading-tight">{h.disease || h.diagnosis || 'Clinical Visit'}</p>
+                                                                <p className="text-[10px] text-slate-400 font-bold bg-black px-2 py-1 rounded shrink-0 ml-2">{new Date(h.date).toLocaleDateString()}</p>
+                                                            </div>
+                                                            
+                                                            <div className="space-y-1">
+                                                                {h.diagnosis && h.disease && <p className="text-xs text-white"><span className="font-bold text-slate-500 uppercase text-[9px] mr-2">Diagnosis:</span>{h.diagnosis}</p>}
+                                                                {h.treatment && <p className="text-xs text-white"><span className="font-bold text-slate-500 uppercase text-[9px] mr-2">Treatment:</span>{h.treatment}</p>}
+                                                            </div>
+                                                            
+                                                            {(h.medicineGiven || h.dose || h.dosage || h.duration) && (
+                                                                <div className="bg-black p-3 rounded-xl grid grid-cols-2 md:grid-cols-4 gap-3 border border-slate-800 mt-2">
+                                                                    {h.medicineGiven && <div><span className="block text-[8px] font-black text-blue-500 uppercase">Medicine</span><span className="text-xs text-white font-bold">{h.medicineGiven}</span></div>}
+                                                                    {h.dose && <div><span className="block text-[8px] font-black text-blue-500 uppercase">Dose</span><span className="text-xs text-white font-bold">{h.dose}</span></div>}
+                                                                    {h.dosage && <div><span className="block text-[8px] font-black text-blue-500 uppercase">Dosage</span><span className="text-xs text-white font-bold">{h.dosage}</span></div>}
+                                                                    {h.duration && <div><span className="block text-[8px] font-black text-blue-500 uppercase">Duration</span><span className="text-xs text-white font-bold">{h.duration}</span></div>}
+                                                                </div>
+                                                            )}
+                                                            
+                                                            {h.allergies && <p className="text-xs text-rose-400 bg-rose-950/30 p-2 rounded-lg mt-2"><span className="font-black uppercase text-[9px] mr-2">Allergies:</span> {h.allergies}</p>}
+                                                            {h.notes && <p className="text-[11px] text-slate-400 italic bg-black p-3 rounded-lg border-l-2 border-slate-600 leading-relaxed mt-2">"{h.notes}"</p>}
+                                                            {h.cost && <p className="text-[10px] text-emerald-500 font-black self-end bg-emerald-900/20 px-2 py-1 rounded mt-2">Cost: {Number(h.cost).toLocaleString()} TZS</p>}
+                                                        </div>
+                                                    ))}
+                                                    {data.medicalHistory.filter(h=>h.patientId===medicalHistoryModal.id).length === 0 && (
+                                                        <div className="text-center py-10">
+                                                            <p className="text-slate-600 font-black uppercase text-xs">No Clinical Records Found</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* EXPENSES DETAIL MODAL */}
+                            {viewExpensesDetail && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setViewExpensesDetail(false))}>
+                                    <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-10 rounded-[3rem] shadow-2xl max-h-[90vh] flex flex-col">
+                                        <h3 className="text-2xl font-black text-rose-500 uppercase mb-6 shrink-0">Losses & Expenses Log</h3>
+                                        <div className="flex-1 overflow-y-auto pr-2 no-scrollbar bg-black p-4 rounded-[2rem] border border-slate-800">
+                                            <table className="w-full text-left text-xs">
+                                                <thead><tr className="text-slate-500 uppercase border-b border-slate-800"><th className="pb-3 px-2">Date</th><th className="pb-3 px-2">Reason</th><th className="pb-3 px-2">Responsible</th><th className="pb-3 px-2">Amount</th></tr></thead>
+                                                <tbody>
+                                                    {data.expenses.sort((a,b)=>new Date(b.timestamp || b.date)-new Date(a.timestamp || a.date)).map(e => (
+                                                        <tr key={e.id} className="border-b border-slate-800 hover:bg-slate-900 transition-colors">
+                                                            <td className="py-3 px-2 text-slate-400 font-bold">{new Date(e.timestamp || e.date).toLocaleDateString()}</td>
+                                                            <td className="py-3 px-2 text-white">{e.description}</td>
+                                                            <td className="py-3 px-2 text-blue-400 font-bold uppercase">{e.addedBy || 'Admin'}</td>
+                                                            <td className="py-3 px-2 text-rose-500 font-black">{Number(e.amount).toLocaleString()} TZS</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            {data.expenses.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase">No Expenses Recorded</p>}
+                                        </div>
+                                        <button onClick={()=>setViewExpensesDetail(false)} className="mt-6 shrink-0 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest w-full">CLOSE</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* NET PROFIT BREAKDOWN MODAL */}
+                            {viewNetProfitDetail && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setViewNetProfitDetail(false))}>
+                                    <div className="bg-slate-900 border border-slate-800 w-full max-w-sm p-6 md:p-10 rounded-[3rem] shadow-2xl flex flex-col">
+                                        <h3 className="text-2xl font-black text-emerald-500 uppercase mb-6 text-center">Profit Breakdown</h3>
+                                        
+                                        <div className="bg-black p-6 rounded-3xl mb-4 border border-slate-800">
+                                            <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-800">
+                                                <span className="text-slate-400 font-bold text-xs uppercase">Gross Profit</span>
+                                                <span className="text-blue-400 font-black text-lg">{data.sales.reduce((a,b)=>a+Number(b.profit),0).toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-800">
+                                                <span className="text-slate-400 font-bold text-xs uppercase">Total Losses/Expenses</span>
+                                                <span className="text-rose-500 font-black text-lg">- {data.expenses.reduce((a,b)=>a+Number(b.amount),0).toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center mt-2">
+                                                <span className="text-emerald-500 font-black text-sm uppercase">Net Profit</span>
+                                                <span className="text-emerald-400 font-black text-2xl">{totalNetProfit.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+
+                                        <button onClick={()=>setViewNetProfitDetail(false)} className="mt-2 shrink-0 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest w-full">CLOSE</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* SALES VOLUME DETAIL MODAL */}
+                            {viewSalesVolume && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setViewSalesVolume(false))}>
+                                    <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-10 rounded-[3rem] shadow-2xl max-h-[90vh] flex flex-col">
+                                        <h3 className="text-2xl font-black text-emerald-500 uppercase mb-6 shrink-0">Detailed Sales Volume</h3>
+                                        <div className="flex-1 overflow-y-auto pr-2 no-scrollbar bg-black p-4 rounded-[2rem] border border-slate-800">
+                                            <table className="w-full text-left text-xs">
+                                                <thead><tr className="text-slate-500 uppercase border-b border-slate-800"><th className="pb-3 px-2">Date/Time</th><th className="pb-3 px-2">Item(s) Sold</th><th className="pb-3 px-2">Total Value</th></tr></thead>
+                                                <tbody>
+                                                    {data.sales.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp)).map(s => (
+                                                        <tr key={s.id} className="border-b border-slate-800 hover:bg-slate-900 transition-colors">
+                                                            <td className="py-3 px-2 text-slate-400 font-bold">{new Date(s.timestamp).toLocaleString()}</td>
+                                                            <td className="py-3 px-2 text-white">{s.items?.map(i => `${i.qty}x ${i.brandName}`).join(', ')}</td>
+                                                            <td className="py-3 px-2 text-emerald-400 font-black">{Number(s.total).toLocaleString()}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            {data.sales.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase">No Sales Recorded</p>}
+                                        </div>
+                                        <button onClick={()=>setViewSalesVolume(false)} className="mt-6 shrink-0 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest w-full">CLOSE</button>
+                                    </div>
+                                </div>
+                            )}
+
+                        </main>
+                    </div>
+                );
+            };
+
+            const root = ReactDOM.createRoot(document.getElementById('apex-root'));
+            root.render(<App />);
+
+        } catch (error) {
+            const el = document.getElementById('error-text');
+            if(el) { el.style.display = 'block'; el.innerText = "REACT CRASH: " + error.message; }
+        }
+    </script>
+</body>
+</html>
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         button, select { transition: transform 0.1s ease, background-color 0.2s ease; cursor: pointer; }
         button:active, select:active { transform: scale(0.97); }
