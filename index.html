@@ -387,6 +387,7 @@
                 const addMedicalHistory = (patientId, record) => { window.db.collection("medicalHistory").add({ patientId, date: new Date().toISOString(), ...record }); };
 
                 // AI ASSISTANT LOGIC - FIX: Robust error handling, response validation, and library checks
+                // FIX: Updated model from gemini-1.5-flash to gemini-2.0-flash
                 const handleAiSubmit = async (e) => {
                     e.preventDefault();
                     if (!isOnline) return alert("You must be online to use the Clinical AI Assistant.");
@@ -404,7 +405,7 @@
                     try {
                         const systemPrompt = `You are an expert Clinical Pharmacist and Medical Reference Assistant operating in Tanzania. Your role is to provide highly accurate medical reference strictly based on the Tanzania Standard Treatment Guidelines (STG), NEMLIT, and current local protocols. The user will ask about diagnosis, treatment, diseases, signs/symptoms, indications, or contraindications. Format your response professionally using Markdown, with clear headings and bullet points. Never provide direct patient advice, always phrase it as clinical reference. User Query: ${aiQuery}`;
                         
-                        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiKey.trim()}`, {
+                        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${aiKey.trim()}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }] }] })
@@ -792,7 +793,12 @@
                                 <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowAiSettings(false))}>
                                     <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-8 rounded-[3rem] shadow-2xl flex flex-col">
                                         <h3 className="text-xl font-black text-emerald-500 uppercase mb-4 text-center">AI API Settings</h3>
-                                        <p className="text-[10px] text-slate-400 font-bold mb-6 text-center leading-relaxed">To power the Clinical Assistant, you need a free Google Gemini API key. Get it from <a href="https://aistudio.google.com/" target="_blank" className="text-blue-400 underline">Google AI Studio</a>.</p>
+                                        <p className="text-[10px] text-slate-400 font-bold mb-6 text-center leading-relaxed">To power the Clinical Assistant, you need a free Google Gemini API key. Get it from <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-blue-400 underline">Google AI Studio</a>.</p>
+                                        
+                                        <div className="bg-black p-3 rounded-xl border border-slate-800 mb-4">
+                                            <p className="text-[10px] text-slate-500 font-bold uppercase text-center">Active Model</p>
+                                            <p className="text-xs text-emerald-400 font-black text-center">gemini-2.0-flash</p>
+                                        </div>
                                         
                                         <input 
                                             type="password"
