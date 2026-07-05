@@ -448,51 +448,19 @@
                 }, [data.inventory, search, sortOption]);
 
                 const systemAlerts = useMemo(() => {
-try {
-    const systemPrompt = `You are an expert Clinical Pharmacist and Medical Reference Assistant operating in Tanzania. Your role is to provide highly accurate medical reference strictly based on the Tanzania Standard Treatment Guidelines (STG), NEMLIT, and current local protocols. Format your response professionally using Markdown. User Query: ${aiQuery}`;
+                    const now = new Date(); const thirtyDaysFromNow = new Date(); thirtyDaysFromNow.setDate(now.getDate() + 30);
+                    const lowStock = data.inventory.filter(i => i.stock > 0 && i.stock <= 10).length;
+                    const outOfStock = data.inventory.filter(i => i.stock <= 0).length;
+                    let expired = 0; let expiringSoon = 0;
+                    data.inventory.forEach(i => {
+                        if (i.expiryDate) {
+                            const exp = new Date(i.expiryDate);
+                            if (exp < now) expired++; else if (exp <= thirtyDaysFromNow) expiringSoon++;
+                        }
+                    });
+                    return { lowStock, outOfStock, expired, expiringSoon };
+                }, [data.inventory]);
 
-    const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${aiKey}`,
-        {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                contents: [
-                    {
-                        parts: [
-                            {
-                                text: systemPrompt,
-                            },
-                        ],
-                    },
-                ],
-            }),
-        }
-    );
-
-    if (!res.ok) {
-        throw new Error(await res.text());
-    }
-
-    const json = await res.json();
-
-    const responseText =
-        json.candidates?.[0]?.content?.parts?.[0]?.text ||
-        "No response received.";
-
-    setAiResponse(marked.parse(responseText));
-    setAiQuery("");
-
-} catch (err) {
-    console.error(err);
-    setAiResponse(
-        `<p class="text-red-500"><strong>AI Error:</strong><br>${err.message}</p>`
-    );
-}
-
-setIsAiLoading(false);
                 // ENHANCED INVENTORY METRICS
                 const inventoryTotalCost = data.inventory.reduce((a,b)=>a+(Number(b.costPrice||0)*Number(b.stock||0)), 0);
                 const inventoryTotalValue = data.inventory.reduce((a,b)=>a+(Number(b.price||0)*Number(b.stock||0)), 0);
