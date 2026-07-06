@@ -48,9 +48,11 @@
         @keyframes pulse-glow { 0%, 100% { opacity: 1; box-shadow: 0 0 20px currentColor; } 50% { opacity: 0.85; box-shadow: 0 0 8px currentColor; } }
         @keyframes slide-up { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 
         .animate-slide-up { animation: slide-up 0.4s ease-out; }
         .animate-fade-in { animation: fade-in 0.3s ease-out; }
+        .animate-shake { animation: shake 0.3s ease-in-out; }
 
         button, select { transition: all 0.15s ease; cursor: pointer; }
         button:active, select:active { transform: scale(0.97); }
@@ -98,7 +100,19 @@
         .kbd-shortcut { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 800; font-family: monospace; border: 1px solid rgba(255,255,255,0.1); }
 
         .notification-dot { position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%; animation: pulse-glow 2s infinite; }
+
+        .session-warning { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 300; background: linear-gradient(135deg, #1e293b, #0f172a); border: 2px solid #f59e0b; padding: 2rem; border-radius: 2rem; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); }
+        .countdown-ring { width: 80px; height: 80px; margin: 0 auto 1rem; }
+
+        .favorite-btn { position: absolute; top: 8px; right: 8px; opacity: 0; transition: opacity 0.2s; }
+        .product-card:hover .favorite-btn { opacity: 1; }
+        .favorite-btn.active { opacity: 1; color: #fbbf24; }
+
+        .batch-badge { background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.3); color: #60a5fa; font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
+
+        .loyalty-badge { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; font-size: 9px; padding: 2px 8px; border-radius: 12px; font-weight: 800; }
     </style>
+<base target="_blank">
 </head>
 <body>
     <div id="apex-root">
@@ -234,6 +248,7 @@
                 const sigCtxRef = useRef(null);
                 const isDrawing = useRef(false);
                 const idleTimerRef = useRef(null);
+                const sessionWarningRef = useRef(null);
 
                 const [isInitializing, setIsInitializing] = useState(true);
                 const [syncStatus, setSyncStatus] = useState('ONLINE');
@@ -241,7 +256,7 @@
                 const [viewHistory, setViewHistory] = useState([]);
                 const [user, setUser] = useState(null);
                 const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-                const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [], suppliers: [], insuranceClaims: [], auditLogs: [], returns: [] });
+                const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [], suppliers: [], insuranceClaims: [], auditLogs: [], returns: [], purchaseOrders: [], stockMovements: [], shifts: [], prescriptions: [] });
                 const [cart, setCart] = useState([]);
                 const [heldCarts, setHeldCarts] = useState([]);
                 const [search, setSearch] = useState("");
@@ -276,12 +291,27 @@
                 const [showTransferModal, setShowTransferModal] = useState(false);
                 const [showReturnModal, setShowReturnModal] = useState(false);
                 const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+                const [showShortcutHelp, setShowShortcutHelp] = useState(false);
+                const [showSessionWarning, setShowSessionWarning] = useState(false);
+                const [sessionCountdown, setSessionCountdown] = useState(60);
+                const [showStockTakeModal, setShowStockTakeModal] = useState(false);
+                const [showPurchaseOrderModal, setShowPurchaseOrderModal] = useState(false);
+                const [showBackupModal, setShowBackupModal] = useState(false);
+                const [showShiftModal, setShowShiftModal] = useState(false);
+                const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
+                const [showSettingsModal, setShowSettingsModal] = useState(false);
+                const [showCustomerHistory, setShowCustomerHistory] = useState(null);
+                const [splitPayment, setSplitPayment] = useState({ cash: 0, mobile: 0, card: 0 });
+                const [showSplitPayment, setShowSplitPayment] = useState(false);
 
                 const [reportPeriod, setReportPeriod] = useState('DAILY');
                 const [reportTab, setReportTab] = useState('SALES');
                 const [reportSearch, setReportSearch] = useState('');
                 const [currency, setCurrency] = useLocalStorage('apex_currency', 'TZS');
                 const [location, setLocation] = useLocalStorage('apex_location', 'MAIN');
+                const [taxRate, setTaxRate] = useLocalStorage('apex_tax_rate', 0);
+                const [favorites, setFavorites] = useLocalStorage('apex_favorites', []);
+                const [salesTarget, setSalesTarget] = useLocalStorage('apex_sales_target', 100000);
 
                 const [aiKey, setAiKey] = useState(localStorage.getItem('apex_gemini_key') || '');
                 const [showAiSettings, setShowAiSettings] = useState(false);
@@ -290,18 +320,32 @@
                 const [isAiLoading, setIsAiLoading] = useState(false);
                 const [aiProvider, setAiProvider] = useLocalStorage('apex_ai_provider', 'gemini');
 
+                const [currentShift, setCurrentShift] = useState(null);
+
                 useEffect(() => { inventoryRef.current = data.inventory; }, [data.inventory]);
 
-                // Idle timeout - auto-lock after 15 minutes
+                // Idle timeout - auto-lock after 15 minutes with warning at 1 minute
                 useEffect(() => {
                     const resetTimer = () => {
                         if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+                        if (sessionWarningRef.current) clearInterval(sessionWarningRef.current);
+                        setShowSessionWarning(false);
                         idleTimerRef.current = setTimeout(() => {
                             if (user && view === 'POS') {
-                                toast('Session locked due to inactivity', 'warning');
-                                handleLogout();
+                                setShowSessionWarning(true);
+                                setSessionCountdown(60);
+                                sessionWarningRef.current = setInterval(() => {
+                                    setSessionCountdown(prev => {
+                                        if (prev <= 1) {
+                                            clearInterval(sessionWarningRef.current);
+                                            handleLogout();
+                                            return 0;
+                                        }
+                                        return prev - 1;
+                                    });
+                                }, 1000);
                             }
-                        }, 15 * 60 * 1000);
+                        }, 14 * 60 * 1000);
                     };
                     window.addEventListener('mousemove', resetTimer);
                     window.addEventListener('keydown', resetTimer);
@@ -312,6 +356,7 @@
                         window.removeEventListener('keydown', resetTimer);
                         window.removeEventListener('click', resetTimer);
                         if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+                        if (sessionWarningRef.current) clearInterval(sessionWarningRef.current);
                     };
                 }, [user, view]);
 
@@ -353,6 +398,8 @@
                                 else if (viewHeldCarts) setViewHeldCarts(false);
                                 else if (receiptData) setReceiptData(null);
                                 else if (showNotificationCenter) setShowNotificationCenter(false);
+                                else if (showShortcutHelp) setShowShortcutHelp(false);
+                                else if (showSessionWarning) { setShowSessionWarning(false); if(sessionWarningRef.current) clearInterval(sessionWarningRef.current); }
                                 else if (viewHistory.length > 0) handleGoBack();
                                 break;
                             case 'F6':
@@ -367,11 +414,19 @@
                                 e.preventDefault();
                                 handleSetView('FINANCE');
                                 break;
+                            case 'F9':
+                                e.preventDefault();
+                                setShowShortcutHelp(true);
+                                break;
+                            case 'F10':
+                                e.preventDefault();
+                                if (view === 'POS') setShowCustomerHistory('walkin');
+                                break;
                         }
                     };
                     document.addEventListener('keydown', handleKeyDown);
                     return () => document.removeEventListener('keydown', handleKeyDown);
-                }, [user, view, cart, checkoutModal, scannerActive, editing, viewHeldCarts, receiptData, showNotificationCenter, viewHistory]);
+                }, [user, view, cart, checkoutModal, scannerActive, editing, viewHeldCarts, receiptData, showNotificationCenter, viewHistory, showShortcutHelp, showSessionWarning]);
 
                 useEffect(() => {
                     if (typeof firebase === 'undefined') { setIsInitializing(false); return; }
@@ -415,7 +470,7 @@
 
                 useEffect(() => {
                     if (typeof window.db === 'undefined' || !user) return;
-                    const collections = ["inventory", "sales", "patients", "users", "expenses", "medicalHistory", "suppliers", "insuranceClaims", "auditLogs", "returns"];
+                    const collections = ["inventory", "sales", "patients", "users", "expenses", "medicalHistory", "suppliers", "insuranceClaims", "auditLogs", "returns", "purchaseOrders", "stockMovements", "shifts", "prescriptions"];
                     const unsubscribers = collections.map(col => 
                         window.db.collection(col).onSnapshot(
                             s => {
@@ -429,6 +484,13 @@
                     return () => unsubscribers.forEach(u => u());
                 }, [user]);
 
+                // Load current shift
+                useEffect(() => {
+                    if (!user) return;
+                    const activeShift = data.shifts.find(s => s.status === 'OPEN' && s.userId === user.id && s.location === location);
+                    if (activeShift) setCurrentShift(activeShift);
+                }, [data.shifts, user, location]);
+
                 const logAudit = useCallback((action, details) => {
                     if (!user) return;
                     const log = {
@@ -441,6 +503,16 @@
                         location
                     };
                     window.db.collection('auditLogs').add(log).catch(() => {});
+                }, [user, location]);
+
+                const logStockMovement = useCallback((itemId, itemName, type, quantity, reason, reference) => {
+                    if (!user) return;
+                    window.db.collection('stockMovements').add({
+                        timestamp: new Date().toISOString(),
+                        itemId, itemName, type, quantity, reason, reference,
+                        userId: user.id, userName: user.fullName || user.email,
+                        location
+                    }).catch(() => {});
                 }, [user, location]);
 
                 useEffect(() => {
@@ -550,14 +622,14 @@
                     if(!amount || isNaN(amount) || Number(amount) <= 0) return;
                     const paid = Number(amount);
                     const newBalance = Math.max(0, (client.creditBalance || 0) - paid);
-                    window.db.collection('patients').doc(client.id).update({ creditBalance: newBalance });
+                    window.db.collection('patients').doc(client.id).update({ creditBalance: newBalance, loyaltyPoints: (client.loyaltyPoints || 0) + Math.floor(paid / 1000) });
                     window.db.collection('sales').add({
                         total: paid, profit: paid, amountTendered: paid, changeGiven: 0, timestamp: new Date().toISOString(),
                         soldBy: user.fullName || user.email, method: 'DEBT_PAYMENT',
                         items: [{brandName: 'Debt Clearance Payment', qty: 1, currentPrice: paid, costPrice: 0}],
                         patientId: client.id, location
                     });
-                    toast(`Cleared ${paid.toLocaleString()} ${currency} from ${client.name}'s debt`, 'success');
+                    toast(`Cleared ${paid.toLocaleString()} ${currency} from ${client.name}'s debt. Earned ${Math.floor(paid / 1000)} loyalty points.`, 'success');
                     logAudit('DEBT_PAYMENT', { patientId: client.id, amount: paid });
                 };
 
@@ -626,23 +698,40 @@
                     if (drugInteractions.some(i => i.severity === 'SEVERE')) {
                         if (!confirm("⚠️ SEVERE drug interactions detected! Proceed anyway?")) return;
                     }
-                    setAmountTendered(0); setCheckoutDiscount(0); setCheckoutPatient(''); setCheckoutModal(true);
+                    setAmountTendered(0); setCheckoutDiscount(0); setCheckoutPatient(''); setSplitPayment({ cash: 0, mobile: 0, card: 0 }); setShowSplitPayment(false); setCheckoutModal(true);
                 };
+
+                const getCartTotal = () => cart.reduce((s,i) => s + (i.currentPrice * i.qty), 0);
+                const getCartTax = () => getCartTotal() * (taxRate / 100);
+                const getCartTotalWithTax = () => getCartTotal() + getCartTax();
+                const getFinalTotal = () => Math.max(0, getCartTotalWithTax() - checkoutDiscount);
 
                 const finalizeSale = (method) => {
                     if (method === 'DEBT' && !checkoutPatient) return toast("Select a client for credit!", 'warning');
-                    const subTotal = cart.reduce((s,i) => s + (i.currentPrice * i.qty), 0);
+                    const subTotal = getCartTotal();
+                    const taxAmount = getCartTax();
                     const totalCost = cart.reduce((s,i) => s + (i.costPrice * i.qty), 0);
-                    const totalDue = Math.max(0, subTotal - checkoutDiscount);
-                    const changeGiven = (method === 'CASH' && amountTendered > totalDue) ? (amountTendered - totalDue) : 0;
+                    const totalDue = getFinalTotal();
+
+                    let amountTenderedTotal = 0, changeGiven = 0;
+                    if (method === 'SPLIT') {
+                        amountTenderedTotal = splitPayment.cash + splitPayment.mobile + splitPayment.card;
+                        if (amountTenderedTotal < totalDue) return toast(`Split payment insufficient. Need ${totalDue.toLocaleString()} ${currency}`, 'error');
+                        changeGiven = amountTenderedTotal - totalDue;
+                    } else if (method === 'CASH') {
+                        amountTenderedTotal = amountTendered;
+                        changeGiven = amountTendered > totalDue ? (amountTendered - totalDue) : 0;
+                    } else {
+                        amountTenderedTotal = totalDue;
+                    }
 
                     const saleData = {
-                        total: totalDue, subTotal, discount: checkoutDiscount, profit: totalDue - totalCost,
-                        amountTendered: method === 'CASH' ? amountTendered : totalDue, changeGiven,
+                        total: totalDue, subTotal, tax: taxAmount, taxRate, discount: checkoutDiscount, profit: totalDue - totalCost - taxAmount,
+                        amountTendered: amountTenderedTotal, changeGiven,
                         timestamp: new Date().toISOString(), soldBy: user.fullName || user.email, method,
                         items: cart, patientId: checkoutPatient || null, location,
                         drugInteractions: drugInteractions.length > 0 ? drugInteractions : null,
-                        currency
+                        currency, splitPayment: method === 'SPLIT' ? splitPayment : null
                     };
 
                     const currentCart = [...cart];
@@ -653,13 +742,32 @@
                         const pt = data.patients.find(p => p.id === checkoutPatient);
                         if(pt) window.db.collection("patients").doc(checkoutPatient).update({ creditBalance: (Number(pt.creditBalance) || 0) + totalDue });
                     }
+                    if (checkoutPatient && method !== 'DEBT') {
+                        const pt = data.patients.find(p => p.id === checkoutPatient);
+                        if (pt) {
+                            const pointsEarned = Math.floor(totalDue / 1000);
+                            window.db.collection("patients").doc(checkoutPatient).update({ 
+                                loyaltyPoints: (Number(pt.loyaltyPoints) || 0) + pointsEarned,
+                                lastPurchase: new Date().toISOString()
+                            });
+                            if (pointsEarned > 0) toast(`Client earned ${pointsEarned} loyalty points!`, 'success');
+                        }
+                    }
                     currentCart.forEach(i => {
                         window.db.collection("inventory").doc(i.id).update({ stock: i.stock - i.qty });
+                        logStockMovement(i.id, i.brandName, 'SALE', -i.qty, 'POS Sale', saleData.timestamp);
                         const newStock = i.stock - i.qty;
                         if (i.reorderPoint && newStock <= i.reorderPoint) {
                             toast(`⚠️ ${i.brandName} below reorder point (${i.reorderPoint})!`, 'warning');
                         }
                     });
+
+                    if (currentShift) {
+                        window.db.collection('shifts').doc(currentShift.id).update({
+                            totalSales: (currentShift.totalSales || 0) + totalDue,
+                            transactionCount: (currentShift.transactionCount || 0) + 1
+                        });
+                    }
 
                     setReceiptData(saleData);
                     logAudit('SALE_COMPLETED', { total: totalDue, method, items: currentCart.length });
@@ -683,10 +791,10 @@
                         location
                     });
 
-                    // Restore stock
                     const invItem = data.inventory.find(i => i.id === itemId);
                     if (invItem) {
                         window.db.collection('inventory').doc(itemId).update({ stock: invItem.stock + returnQty });
+                        logStockMovement(itemId, item.brandName, 'RETURN', returnQty, reason, saleId);
                     }
 
                     logAudit('RETURN_PROCESSED', { saleId, itemId, returnQty, amount: returnAmount });
@@ -823,11 +931,93 @@
                     toast("Excel file downloaded", 'success');
                 };
 
+                const handleBackup = () => {
+                    const backup = {
+                        version: '2.0',
+                        timestamp: new Date().toISOString(),
+                        data: {
+                            inventory: data.inventory,
+                            patients: data.patients,
+                            suppliers: data.suppliers,
+                            users: data.users.filter(u => u.email !== 'manjebecaleb@gmail.com')
+                        }
+                    };
+                    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `APEX_Backup_${new Date().toISOString().split('T')[0]}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    toast("Backup downloaded successfully", 'success');
+                    logAudit('BACKUP_CREATED', {});
+                };
+
+                const handleRestore = (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const backup = JSON.parse(event.target.result);
+                            if (!backup.data) throw new Error("Invalid backup file");
+                            if (!confirm(`Restore ${backup.data.inventory?.length || 0} products, ${backup.data.patients?.length || 0} clients? This will merge with existing data.`)) return;
+
+                            backup.data.inventory?.forEach(item => {
+                                if (!item.id) window.db.collection('inventory').add({ ...item, restoredAt: new Date().toISOString() });
+                            });
+                            backup.data.patients?.forEach(p => {
+                                if (!p.id) window.db.collection('patients').add({ ...p, restoredAt: new Date().toISOString() });
+                            });
+                            backup.data.suppliers?.forEach(s => {
+                                if (!s.id) window.db.collection('suppliers').add({ ...s, restoredAt: new Date().toISOString() });
+                            });
+                            toast("Restore completed. Check for duplicates.", 'success');
+                            logAudit('BACKUP_RESTORED', { items: backup.data.inventory?.length || 0 });
+                        } catch (err) { toast("Invalid backup file: " + err.message, 'error'); }
+                    };
+                    reader.readAsText(file);
+                };
+
+                const openShift = (openingFloat) => {
+                    window.db.collection('shifts').add({
+                        userId: user.id,
+                        userName: user.fullName || user.email,
+                        location,
+                        openedAt: new Date().toISOString(),
+                        openingFloat: Number(openingFloat),
+                        status: 'OPEN',
+                        totalSales: 0,
+                        transactionCount: 0
+                    }).then(docRef => {
+                        setCurrentShift({ id: docRef.id, openingFloat: Number(openingFloat), status: 'OPEN', totalSales: 0 });
+                        toast("Shift opened successfully", 'success');
+                        logAudit('SHIFT_OPENED', { float: Number(openingFloat) });
+                    });
+                };
+
+                const closeShift = (closingFloat) => {
+                    if (!currentShift) return toast("No active shift", 'warning');
+                    const expectedCash = currentShift.openingFloat + (currentShift.totalSales || 0);
+                    const difference = Number(closingFloat) - expectedCash;
+                    window.db.collection('shifts').doc(currentShift.id).update({
+                        closedAt: new Date().toISOString(),
+                        closingFloat: Number(closingFloat),
+                        expectedCash,
+                        difference,
+                        status: 'CLOSED'
+                    }).then(() => {
+                        setCurrentShift(null);
+                        toast(`Shift closed. Difference: ${difference.toLocaleString()} ${currency}`, difference === 0 ? 'success' : 'warning');
+                        logAudit('SHIFT_CLOSED', { expected: expectedCash, actual: Number(closingFloat), difference });
+                    });
+                };
+
                 const processedInventory = useMemo(() => {
                     let items = [...data.inventory];
                     if (search) {
                         const term = search.toLowerCase();
-                        items = items.filter(p => (p.brandName || '').toLowerCase().includes(term) || (p.genericName || '').toLowerCase().includes(term) || (p.category || '').toLowerCase().includes(term) || (p.subcategory || '').toLowerCase().includes(term) || (p.barcode || '') === term || (p.supplier || '').toLowerCase().includes(term));
+                        items = items.filter(p => (p.brandName || '').toLowerCase().includes(term) || (p.genericName || '').toLowerCase().includes(term) || (p.category || '').toLowerCase().includes(term) || (p.subcategory || '').toLowerCase().includes(term) || (p.barcode || '') === term || (p.supplier || '').toLowerCase().includes(term) || (p.batchNumber || '').toLowerCase().includes(term));
                     }
                     items.sort((a, b) => {
                         const isExpA = a.expiryDate && new Date(a.expiryDate) < new Date() ? 1 : 0;
@@ -859,9 +1049,10 @@
                         expiringSoon: data.inventory.filter(i => i.expiryDate && new Date(i.expiryDate) <= thirtyDays && new Date(i.expiryDate) >= now).length,
                         reorderNeeded: data.inventory.filter(i => i.reorderPoint && i.stock <= i.reorderPoint).length,
                         pendingClaims: data.insuranceClaims.filter(c => c.status === 'PENDING').length,
+                        openShifts: data.shifts.filter(s => s.status === 'OPEN').length,
                         totalUnread: 0
                     };
-                }, [data.inventory, data.insuranceClaims]);
+                }, [data.inventory, data.insuranceClaims, data.shifts]);
 
                 const inventoryTotalCost = data.inventory.reduce((a,b) => a + (Number(b.costPrice||0) * Number(b.stock||0)), 0);
                 const inventoryTotalValue = data.inventory.reduce((a,b) => a + (Number(b.price||0) * Number(b.stock||0)), 0);
@@ -880,6 +1071,14 @@
                     });
                     return Object.values(stats).sort((a,b) => b.qty - a.qty);
                 }, [data.sales]);
+
+                const todaySales = useMemo(() => {
+                    const today = new Date().toLocaleDateString();
+                    return data.sales.filter(s => new Date(s.timestamp).toLocaleDateString() === today);
+                }, [data.sales]);
+
+                const todayRevenue = todaySales.reduce((a,b) => a + Number(b.total), 0);
+                const salesTargetProgress = Math.min(100, (todayRevenue / salesTarget) * 100);
 
                 // Filtered sales for reports
                 const filteredSales = useMemo(() => {
@@ -948,7 +1147,7 @@
                             <div className={`status-badge ${isOnline ? 'bg-online' : 'bg-offline'}`}>{isOnline ? '🔵 Online' : '🔴 Offline'}</div>
                             <div className="bg-slate-900 p-10 rounded-[3rem] shadow-2xl w-full max-w-sm text-center border border-slate-800/50">
                                 <h1 className="text-5xl font-black text-emerald-500 mb-2 italic tracking-tight">APEX</h1>
-                                <p className="text-slate-500 text-[10px] font-bold uppercase mb-10 tracking-[0.3em]">Enterprise Pharmacy OS</p>
+                                <p className="text-slate-500 text-[10px] font-bold uppercase mb-10 tracking-[0.3em]">Enterprise Pharmacy OS v2.0</p>
                                 <form onSubmit={handleLogin} className="flex flex-col gap-3">
                                     <input name="email" type="email" placeholder="Email Address" required className="w-full p-4 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white focus:border-emerald-500 transition-all input-focus" />
                                     <input name="password" type="password" placeholder="Password" required className="w-full p-4 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white focus:border-emerald-500 transition-all input-focus" />
@@ -985,6 +1184,53 @@
                         </div>
 
                         {/* ========== MODALS ========== */}
+
+                        {/* Session Warning */}
+                        {showSessionWarning && (
+                            <div className="session-warning animate-slide-up">
+                                <div className="countdown-ring">
+                                    <svg viewBox="0 0 80 80" className="progress-ring">
+                                        <circle cx="40" cy="40" r="36" fill="none" stroke="#1e293b" strokeWidth="6" />
+                                        <circle cx="40" cy="40" r="36" fill="none" stroke="#f59e0b" strokeWidth="6" strokeDasharray={`${2 * Math.PI * 36}`} strokeDashoffset={`${2 * Math.PI * 36 * (1 - sessionCountdown / 60)}`} strokeLinecap="round" className="progress-ring-circle" />
+                                    </svg>
+                                    <div className="text-amber-400 font-black text-xl" style={{marginTop: '-56px'}}>{sessionCountdown}s</div>
+                                </div>
+                                <h3 className="text-white font-black text-lg mb-2">Session Expiring</h3>
+                                <p className="text-slate-400 text-xs mb-4">Move mouse or press any key to stay logged in</p>
+                                <button onClick={() => { setShowSessionWarning(false); if(sessionWarningRef.current) clearInterval(sessionWarningRef.current); }} className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest">Stay Logged In</button>
+                            </div>
+                        )}
+
+                        {/* Shortcut Help */}
+                        {showShortcutHelp && (
+                            <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowShortcutHelp(false))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-lg p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh]">
+                                    <h3 className="text-xl font-black text-emerald-500 uppercase mb-6 text-center">⌨️ Keyboard Shortcuts</h3>
+                                    <div className="grid grid-cols-2 gap-3 overflow-y-auto no-scrollbar">
+                                        {[
+                                            ['F1', 'POS / Search Focus'],
+                                            ['F2', 'Checkout'],
+                                            ['F3', 'Hold Cart'],
+                                            ['F4', 'Recall Held'],
+                                            ['F5', 'Barcode Scanner'],
+                                            ['F6', 'Inventory'],
+                                            ['F7', 'Clients'],
+                                            ['F8', 'Finance'],
+                                            ['F9', 'This Help Menu'],
+                                            ['F10', 'Customer History'],
+                                            ['Esc', 'Close / Go Back'],
+                                            ['Ctrl+S', 'Quick Save (forms)']
+                                        ].map(([key, desc]) => (
+                                            <div key={key} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+                                                <span className="kbd-shortcut">{key}</span>
+                                                <span className="text-slate-400 text-xs font-bold">{desc}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button onClick={() => setShowShortcutHelp(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close <span className="kbd-shortcut">Esc</span></button>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Scanner Modal */}
                         {scannerActive && (
@@ -1033,11 +1279,17 @@
                                         <p className="text-center text-xs">{new Date(receiptData.timestamp).toLocaleString()}</p>
                                         <p className="text-center text-xs">Cashier: {receiptData.soldBy}</p>
                                         <p className="text-center text-xs font-bold uppercase mt-1">Method: {receiptData.method}</p>
+                                        {receiptData.splitPayment && (
+                                            <div className="text-[9px] text-center text-slate-600">
+                                                Cash: {receiptData.splitPayment.cash.toLocaleString()} | Mobile: {receiptData.splitPayment.mobile.toLocaleString()} | Card: {receiptData.splitPayment.card.toLocaleString()}
+                                            </div>
+                                        )}
                                         {receiptData.drugInteractions && receiptData.drugInteractions.length > 0 && (
                                             <div className="bg-red-100 border border-red-300 p-2 rounded text-[9px] text-red-700 font-bold text-center">
                                                 ⚠️ Drug interactions noted on this sale
                                             </div>
                                         )}
+                                        <div id="receipt-qr" className="flex justify-center my-2"></div>
                                         <div className="border-b-2 border-black border-dashed my-2"></div>
                                         {receiptData.items.map(i => (
                                             <div className="flex justify-between text-xs" key={i.id}>
@@ -1046,6 +1298,7 @@
                                             </div>
                                         ))}
                                         <div className="border-b-2 border-black border-dashed my-2"></div>
+                                        {receiptData.tax > 0 && <div className="flex justify-between text-xs text-slate-600"><span>Tax ({receiptData.taxRate}%):</span><span>{receiptData.tax.toLocaleString()} {currency}</span></div>}
                                         {receiptData.discount > 0 && <div className="flex justify-between text-xs text-slate-600"><span>Subtotal:</span><span>{receiptData.subTotal.toLocaleString()} {currency}</span></div>}
                                         {receiptData.discount > 0 && <div className="flex justify-between text-xs text-slate-600"><span>Discount:</span><span>- {receiptData.discount.toLocaleString()} {currency}</span></div>}
                                         <div className="flex justify-between font-black text-base"><span>TOTAL:</span><span>{receiptData.total.toLocaleString()} {currency}</span></div>
@@ -1053,6 +1306,7 @@
                                         <div className="flex justify-between text-xs"><span>Change:</span><span>{receiptData.changeGiven.toLocaleString()} {currency}</span></div>
                                         <div className="border-b-2 border-black border-dashed my-2"></div>
                                         <p className="text-center text-xs font-bold mt-2">Thank you for your business!</p>
+                                        <p className="text-center text-[8px] text-slate-500">APEX Pharmacy OS v2.0</p>
                                     </div>
                                     <div className="flex gap-2">
                                         <button onClick={() => window.print()} className="flex-1 bg-emerald-600 text-white font-black py-4 rounded-xl hover:bg-emerald-500 shadow-lg transition-all">🖨️ Print</button>
@@ -1235,6 +1489,7 @@
                                         if (!item) return toast("Item not found", 'error');
                                         if (qty > item.stock) return toast(`Only ${item.stock} available`, 'warning');
                                         window.db.collection('inventory').doc(itemId).update({ stock: item.stock - qty });
+                                        logStockMovement(itemId, item.brandName, 'TRANSFER', -qty, `Transfer to ${toLocation}`, '');
                                         logAudit('STOCK_TRANSFER', { itemId, from: location, to: toLocation, quantity: qty });
                                         toast(`Transferred ${qty} units of ${item.brandName} to ${toLocation}`, 'success');
                                         setShowTransferModal(false);
@@ -1301,6 +1556,275 @@
                             </div>
                         )}
 
+                        {/* Stock Take Modal */}
+                        {showStockTakeModal && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowStockTakeModal(false))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh]">
+                                    <h3 className="text-xl font-black text-teal-500 uppercase mb-4 text-center">📋 Physical Stock Take</h3>
+                                    <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
+                                        {data.inventory.slice().sort((a,b) => (a.brandName||'').localeCompare(b.brandName||'')).map(item => (
+                                            <form key={item.id} onSubmit={(e) => {
+                                                e.preventDefault();
+                                                const fd = new FormData(e.target);
+                                                const counted = Number(fd.get('counted'));
+                                                const difference = counted - item.stock;
+                                                if (difference !== 0) {
+                                                    window.db.collection('inventory').doc(item.id).update({ stock: counted });
+                                                    logStockMovement(item.id, item.brandName, 'STOCK_TAKE', difference, 'Physical count adjustment', '');
+                                                }
+                                                toast(`${item.brandName}: Counted ${counted} (diff: ${difference > 0 ? '+' : ''}${difference})`, 'success');
+                                            }} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-3">
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-white font-bold text-xs truncate">{item.brandName}</p>
+                                                    <p className="text-[10px] text-slate-500">System: {item.stock} {item.batchNumber ? `• Batch: ${item.batchNumber}` : ''}</p>
+                                                </div>
+                                                <input name="counted" type="number" defaultValue={item.stock} className="w-20 p-2 bg-slate-800 rounded-lg text-white font-bold text-xs text-center outline-none border border-slate-700" />
+                                                <button type="submit" className="bg-teal-600 hover:bg-teal-500 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase">Save</button>
+                                            </form>
+                                        ))}
+                                    </div>
+                                    <button onClick={() => setShowStockTakeModal(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Purchase Order Modal */}
+                        {showPurchaseOrderModal && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowPurchaseOrderModal(false))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
+                                    <h3 className="text-xl font-black text-indigo-500 uppercase mb-6 text-center">📋 Purchase Order</h3>
+                                    <form onSubmit={(e) => {
+                                        e.preventDefault();
+                                        const fd = new FormData(e.target);
+                                        const items = fd.get('items').split('\n').filter(l => l.trim()).map(line => {
+                                            const parts = line.split(',');
+                                            return { name: parts[0]?.trim(), qty: Number(parts[1]) || 0, price: Number(parts[2]) || 0 };
+                                        });
+                                        window.db.collection('purchaseOrders').add({
+                                            supplier: fd.get('supplier'),
+                                            poNumber: fd.get('poNumber'),
+                                            items,
+                                            total: items.reduce((s,i) => s + (i.qty * i.price), 0),
+                                            status: 'PENDING',
+                                            createdAt: new Date().toISOString(),
+                                            createdBy: user.fullName || user.email,
+                                            location
+                                        });
+                                        toast("Purchase order created", 'success');
+                                        setShowPurchaseOrderModal(false);
+                                    }} className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <select name="supplier" required className="p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-indigo-500 input-focus">
+                                                <option value="">Select Supplier *</option>
+                                                {data.suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                            </select>
+                                            <input name="poNumber" placeholder="PO Number *" required className="p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-indigo-500 input-focus" />
+                                        </div>
+                                        <textarea name="items" placeholder="Items (format: Name, Qty, UnitPrice per line)" rows="5" required className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-indigo-500 input-focus font-mono text-xs"></textarea>
+                                        <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Create Purchase Order</button>
+                                    </form>
+                                    <div className="mt-6 border-t border-slate-800 pt-4">
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Pending Orders</h4>
+                                        <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar">
+                                            {data.purchaseOrders.filter(po => po.status === 'PENDING').map(po => (
+                                                <div key={po.id} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+                                                    <div>
+                                                        <p className="text-white font-bold text-xs">{po.poNumber}</p>
+                                                        <p className="text-[10px] text-slate-500">{po.supplier} • {po.items?.length} items</p>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <span className="text-indigo-400 font-bold text-xs">{po.total?.toLocaleString()} {currency}</span>
+                                                        <button onClick={() => { window.db.collection('purchaseOrders').doc(po.id).update({ status: 'RECEIVED', receivedAt: new Date().toISOString() }); toast("PO marked as received", 'success'); }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded-lg font-black text-[9px] uppercase">Receive</button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {data.purchaseOrders.filter(po => po.status === 'PENDING').length === 0 && <p className="text-center text-slate-500 text-xs">No pending orders</p>}
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setShowPurchaseOrderModal(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Backup/Restore Modal */}
+                        {showBackupModal && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowBackupModal(false))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
+                                    <h3 className="text-xl font-black text-emerald-500 uppercase mb-6 text-center">💾 Data Backup</h3>
+                                    <div className="space-y-4">
+                                        <div className="bg-black p-4 rounded-2xl border border-slate-800">
+                                            <p className="text-white font-bold text-sm mb-2">Export Backup</p>
+                                            <p className="text-xs text-slate-500 mb-3">Download all inventory, clients, and suppliers as JSON</p>
+                                            <button onClick={handleBackup} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Download Backup</button>
+                                        </div>
+                                        <div className="bg-black p-4 rounded-2xl border border-slate-800">
+                                            <p className="text-white font-bold text-sm mb-2">Restore from Backup</p>
+                                            <p className="text-xs text-slate-500 mb-3">Import JSON backup file (merges with existing data)</p>
+                                            <input type="file" accept=".json" onChange={handleRestore} className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-emerald-600 file:text-white hover:file:bg-emerald-500" />
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setShowBackupModal(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Shift Modal */}
+                        {showShiftModal && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowShiftModal(false))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
+                                    <h3 className="text-xl font-black text-amber-500 uppercase mb-6 text-center">🕐 Shift Management</h3>
+                                    {!currentShift ? (
+                                        <form onSubmit={(e) => {
+                                            e.preventDefault();
+                                            const fd = new FormData(e.target);
+                                            openShift(fd.get('openingFloat'));
+                                            setShowShiftModal(false);
+                                        }} className="space-y-4">
+                                            <p className="text-xs text-slate-500 text-center">No active shift. Open a new shift to start selling.</p>
+                                            <input name="openingFloat" type="number" placeholder="Opening Float (Cash in drawer) *" required className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-amber-500 input-focus" />
+                                            <button type="submit" className="w-full bg-amber-600 hover:bg-amber-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Open Shift</button>
+                                        </form>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            <div className="bg-black p-4 rounded-2xl border border-slate-800 space-y-2">
+                                                <div className="flex justify-between text-xs text-slate-400"><span>Opened:</span><span className="text-white">{new Date(currentShift.openedAt).toLocaleString()}</span></div>
+                                                <div className="flex justify-between text-xs text-slate-400"><span>Opening Float:</span><span className="text-white">{currentShift.openingFloat?.toLocaleString()} {currency}</span></div>
+                                                <div className="flex justify-between text-xs text-slate-400"><span>Total Sales:</span><span className="text-emerald-400 font-bold">{currentShift.totalSales?.toLocaleString()} {currency}</span></div>
+                                                <div className="flex justify-between text-xs text-slate-400"><span>Transactions:</span><span className="text-white">{currentShift.transactionCount || 0}</span></div>
+                                                <div className="flex justify-between text-xs text-slate-400 border-t border-slate-800 pt-2"><span>Expected Cash:</span><span className="text-blue-400 font-bold">{((currentShift.openingFloat || 0) + (currentShift.totalSales || 0)).toLocaleString()} {currency}</span></div>
+                                            </div>
+                                            <form onSubmit={(e) => {
+                                                e.preventDefault();
+                                                const fd = new FormData(e.target);
+                                                closeShift(fd.get('closingFloat'));
+                                                setShowShiftModal(false);
+                                            }} className="space-y-3">
+                                                <input name="closingFloat" type="number" placeholder="Closing Float (Cash counted) *" required className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-amber-500 input-focus" />
+                                                <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Close Shift</button>
+                                            </form>
+                                        </div>
+                                    )}
+                                    <button onClick={() => setShowShiftModal(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Prescription Modal */}
+                        {showPrescriptionModal && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowPrescriptionModal(false))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
+                                    <h3 className="text-xl font-black text-teal-500 uppercase mb-6 text-center">📝 Prescription Records</h3>
+                                    <form onSubmit={(e) => {
+                                        e.preventDefault();
+                                        const fd = new FormData(e.target);
+                                        window.db.collection('prescriptions').add({
+                                            patientName: fd.get('patientName'),
+                                            patientPhone: fd.get('patientPhone'),
+                                            prescriber: fd.get('prescriber'),
+                                            registrationNumber: fd.get('registrationNumber'),
+                                            medicines: fd.get('medicines'),
+                                            instructions: fd.get('instructions'),
+                                            issueDate: fd.get('issueDate'),
+                                            expiryDate: fd.get('expiryDate'),
+                                            createdAt: new Date().toISOString(),
+                                            createdBy: user.fullName || user.email,
+                                            location
+                                        });
+                                        toast("Prescription recorded", 'success');
+                                        e.target.reset();
+                                    }} className="space-y-3 mb-6">
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input name="patientName" placeholder="Patient Name *" required className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-teal-500 input-focus" />
+                                            <input name="patientPhone" placeholder="Patient Phone" className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-teal-500 input-focus" />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input name="prescriber" placeholder="Prescriber Name *" required className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-teal-500 input-focus" />
+                                            <input name="registrationNumber" placeholder="Reg. Number" className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-teal-500 input-focus" />
+                                        </div>
+                                        <textarea name="medicines" placeholder="Medicines (one per line)" rows="3" required className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-teal-500 input-focus"></textarea>
+                                        <textarea name="instructions" placeholder="Special Instructions" rows="2" className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-teal-500 input-focus"></textarea>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input name="issueDate" type="date" defaultValue={new Date().toISOString().split('T')[0]} className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-teal-500 input-focus" />
+                                            <input name="expiryDate" type="date" className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-teal-500 input-focus" />
+                                        </div>
+                                        <button type="submit" className="w-full bg-teal-600 hover:bg-teal-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Record Prescription</button>
+                                    </form>
+                                    <div className="border-t border-slate-800 pt-4">
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Recent Prescriptions</h4>
+                                        <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar">
+                                            {data.prescriptions.slice().sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(rx => (
+                                                <div key={rx.id} className="bg-black p-3 rounded-xl border border-slate-800">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="text-white font-bold text-xs">{rx.patientName}</span>
+                                                        <span className="text-[10px] text-slate-500">{new Date(rx.issueDate).toLocaleDateString()}</span>
+                                                    </div>
+                                                    <p className="text-[10px] text-slate-400">Dr. {rx.prescriber} • {rx.medicines?.split('\n')?.length || 0} items</p>
+                                                    {rx.expiryDate && new Date(rx.expiryDate) < new Date() && <span className="text-[9px] text-red-400 font-bold">EXPIRED</span>}
+                                                </div>
+                                            ))}
+                                            {data.prescriptions.length === 0 && <p className="text-center text-slate-500 text-xs">No prescriptions recorded</p>}
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setShowPrescriptionModal(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Settings Modal */}
+                        {showSettingsModal && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowSettingsModal(false))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
+                                    <h3 className="text-xl font-black text-white uppercase mb-6 text-center">⚙️ System Settings</h3>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Tax / VAT Rate (%)</label>
+                                            <input type="number" value={taxRate} onChange={(e) => setTaxRate(Number(e.target.value))} placeholder="0" className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Daily Sales Target ({currency})</label>
+                                            <input type="number" value={salesTarget} onChange={(e) => setSalesTarget(Number(e.target.value))} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Currency</label>
+                                            <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus">
+                                                <option value="TZS">TZS</option>
+                                                <option value="USD">USD</option>
+                                                <option value="KES">KES</option>
+                                                <option value="UGX">UGX</option>
+                                                <option value="RWF">RWF</option>
+                                            </select>
+                                        </div>
+                                        <button onClick={() => { setShowSettingsModal(false); toast("Settings saved", 'success'); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Save Settings</button>
+                                    </div>
+                                    <button onClick={() => setShowSettingsModal(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Customer History Modal */}
+                        {showCustomerHistory && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowCustomerHistory(null))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-lg p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh]">
+                                    <h3 className="text-xl font-black text-blue-500 uppercase mb-4 text-center">📋 Customer History</h3>
+                                    <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
+                                        {data.sales.filter(s => s.patientId === showCustomerHistory || (showCustomerHistory === 'walkin' && !s.patientId)).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).map((s, idx) => (
+                                            <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <span className="text-white font-bold text-xs">{new Date(s.timestamp).toLocaleString()}</span>
+                                                    <span className="text-emerald-400 font-bold text-xs">{s.total.toLocaleString()} {currency}</span>
+                                                </div>
+                                                <p className="text-[10px] text-slate-500">{s.items?.map(i => i.brandName).join(', ')}</p>
+                                            </div>
+                                        ))}
+                                        {data.sales.filter(s => s.patientId === showCustomerHistory || (showCustomerHistory === 'walkin' && !s.patientId)).length === 0 && (
+                                            <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No purchase history</p>
+                                        )}
+                                    </div>
+                                    <button onClick={() => setShowCustomerHistory(null)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Notification Center */}
                         {showNotificationCenter && (
                             <div className="fixed inset-0 z-[200] flex items-start justify-end p-4 pt-20 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowNotificationCenter(false))}>
@@ -1337,7 +1861,13 @@
                                                 <p className="text-blue-300 text-[10px] mt-1">Click to review</p>
                                             </div>
                                         )}
-                                        {notificationCount === 0 && (
+                                        {systemAlerts.openShifts > 0 && (
+                                            <div onClick={() => { setShowNotificationCenter(false); setShowShiftModal(true); }} className="bg-amber-950/30 border border-amber-800 p-3 rounded-xl cursor-pointer hover:bg-amber-900/30 transition-all">
+                                                <p className="text-amber-400 font-bold text-xs">🕐 {systemAlerts.openShifts} open shift(s)</p>
+                                                <p className="text-amber-300 text-[10px] mt-1">Click to manage</p>
+                                            </div>
+                                        )}
+                                        {notificationCount === 0 && systemAlerts.openShifts === 0 && (
                                             <div className="text-center py-8">
                                                 <p className="text-slate-500 font-bold text-xs uppercase">All clear — no alerts</p>
                                             </div>
@@ -1380,31 +1910,56 @@
                                     <div className="space-y-3 mb-6">
                                         <div className="flex justify-between text-sm text-slate-400">
                                             <span>Subtotal:</span>
-                                            <span className="font-bold text-white">{cart.reduce((s,i) => s + (i.currentPrice * i.qty), 0).toLocaleString()} {currency}</span>
+                                            <span className="font-bold text-white">{getCartTotal().toLocaleString()} {currency}</span>
                                         </div>
+                                        {taxRate > 0 && (
+                                            <div className="flex justify-between text-sm text-slate-400">
+                                                <span>Tax ({taxRate}%):</span>
+                                                <span className="font-bold text-white">{getCartTax().toLocaleString()} {currency}</span>
+                                            </div>
+                                        )}
                                         <div>
                                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Discount</label>
                                             <input type="number" value={checkoutDiscount} onChange={(e) => setCheckoutDiscount(Number(e.target.value))} className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus mt-1" placeholder="0" />
                                         </div>
                                         <div className="flex justify-between text-lg font-black text-emerald-400 border-t border-slate-800 pt-3">
                                             <span>TOTAL:</span>
-                                            <span>{Math.max(0, cart.reduce((s,i) => s + (i.currentPrice * i.qty), 0) - checkoutDiscount).toLocaleString()} {currency}</span>
+                                            <span>{getFinalTotal().toLocaleString()} {currency}</span>
                                         </div>
-                                        <div>
-                                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Amount Tendered</label>
-                                            <input type="number" value={amountTendered} onChange={(e) => setAmountTendered(Number(e.target.value))} className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus mt-1" placeholder="0" />
-                                        </div>
-                                        {amountTendered > 0 && (
-                                            <div className="flex justify-between text-sm font-bold text-blue-400">
-                                                <span>Change:</span>
-                                                <span>{Math.max(0, amountTendered - Math.max(0, cart.reduce((s,i) => s + (i.currentPrice * i.qty), 0) - checkoutDiscount)).toLocaleString()} {currency}</span>
+
+                                        {!showSplitPayment ? (
+                                            <>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Amount Tendered</label>
+                                                    <input type="number" value={amountTendered} onChange={(e) => setAmountTendered(Number(e.target.value))} className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus mt-1" placeholder="0" />
+                                                </div>
+                                                {amountTendered > 0 && (
+                                                    <div className="flex justify-between text-sm font-bold text-blue-400">
+                                                        <span>Change:</span>
+                                                        <span>{Math.max(0, amountTendered - getFinalTotal()).toLocaleString()} {currency}</span>
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="space-y-2 bg-slate-800/50 p-3 rounded-xl">
+                                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Split Payment</p>
+                                                <div className="flex gap-2">
+                                                    <input type="number" value={splitPayment.cash} onChange={(e) => setSplitPayment(p => ({...p, cash: Number(e.target.value)}))} placeholder="Cash" className="flex-1 p-2 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-700" />
+                                                    <input type="number" value={splitPayment.mobile} onChange={(e) => setSplitPayment(p => ({...p, mobile: Number(e.target.value)}))} placeholder="Mobile" className="flex-1 p-2 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-700" />
+                                                    <input type="number" value={splitPayment.card} onChange={(e) => setSplitPayment(p => ({...p, card: Number(e.target.value)}))} placeholder="Card" className="flex-1 p-2 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-700" />
+                                                </div>
+                                                <div className="flex justify-between text-xs font-bold text-slate-400">
+                                                    <span>Total Split:</span>
+                                                    <span>{(splitPayment.cash + splitPayment.mobile + splitPayment.card).toLocaleString()} {currency}</span>
+                                                </div>
                                             </div>
                                         )}
+
                                         <div>
                                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Client (for credit)</label>
                                             <select value={checkoutPatient} onChange={(e) => setCheckoutPatient(e.target.value)} className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus mt-1">
                                                 <option value="">Walk-in Customer</option>
-                                                {data.patients.map(p => <option key={p.id} value={p.id}>{p.name} {p.creditBalance > 0 ? `(Debt: ${p.creditBalance.toLocaleString()} ${currency})` : ''}</option>)}
+                                                {data.patients.map(p => <option key={p.id} value={p.id}>{p.name} {p.loyaltyPoints > 0 ? `⭐${p.loyaltyPoints}` : ''} {p.creditBalance > 0 ? `(Debt: ${p.creditBalance.toLocaleString()} ${currency})` : ''}</option>)}
                                             </select>
                                         </div>
                                     </div>
@@ -1423,6 +1978,12 @@
                                         <button onClick={() => finalizeSale('CARD')} className="bg-violet-600 hover:bg-violet-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">💳 Card</button>
                                         <button onClick={() => finalizeSale('DEBT')} className="bg-amber-600 hover:bg-amber-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">📋 Credit</button>
                                     </div>
+                                    <button onClick={() => setShowSplitPayment(!showSplitPayment)} className="mt-3 w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">
+                                        {showSplitPayment ? 'Single Payment' : '💰 Split Payment'}
+                                    </button>
+                                    {showSplitPayment && (
+                                        <button onClick={() => finalizeSale('SPLIT')} className="mt-2 w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Confirm Split Payment</button>
+                                    )}
                                     <button onClick={() => setCheckoutModal(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Cancel <span className="kbd-shortcut">Esc</span></button>
                                 </div>
                             </div>
@@ -1488,6 +2049,7 @@
                                                 stock: Number(fd.get('stock')), reorderPoint: Number(fd.get('reorderPoint') || 10),
                                                 barcode: fd.get('barcode'), expiryDate: fd.get('expiryDate'),
                                                 supplier: fd.get('supplier'), location: fd.get('location') || location,
+                                                batchNumber: fd.get('batchNumber'),
                                                 updatedAt: new Date().toISOString()
                                             };
                                             if (!editing.item.id) {
@@ -1518,9 +2080,12 @@
                                             </div>
                                             <div className="grid grid-cols-2 gap-3">
                                                 <input id="edit-barcode-input" name="barcode" defaultValue={editing.item.barcode} placeholder="Barcode" className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
+                                                <input name="batchNumber" defaultValue={editing.item.batchNumber} placeholder="Batch / Lot No" className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <input name="expiryDate" type="date" defaultValue={editing.item.expiryDate ? editing.item.expiryDate.split('T')[0] : ''} className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
                                                 <button type="button" onClick={() => { scannerTargetRef.current = 'INVENTORY'; setScannerActive(true); }} className="bg-slate-800 text-white py-3 rounded-xl font-bold text-xs hover:bg-slate-700 transition-all">📷 Scan</button>
                                             </div>
-                                            <input name="expiryDate" type="date" defaultValue={editing.item.expiryDate ? editing.item.expiryDate.split('T')[0] : ''} className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
                                             <select name="supplier" defaultValue={editing.item.supplier} className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus">
                                                 <option value="">Select Supplier</option>
                                                 {data.suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
@@ -1545,7 +2110,7 @@
                                                 updatedAt: new Date().toISOString()
                                             };
                                             if (!editing.item.id) {
-                                                window.db.collection('patients').add({ ...updated, creditBalance: 0, createdAt: new Date().toISOString() });
+                                                window.db.collection('patients').add({ ...updated, creditBalance: 0, loyaltyPoints: 0, createdAt: new Date().toISOString() });
                                                 toast("Client added", 'success');
                                             } else {
                                                 window.db.collection('patients').doc(editing.item.id).update(updated);
@@ -1635,7 +2200,7 @@
                             <div className="w-20 lg:w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 no-print">
                                 <div className="p-6 text-center border-b border-slate-800">
                                     <h1 className="text-2xl font-black text-emerald-500 italic tracking-tight">APEX</h1>
-                                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1 hidden lg:block">Pharmacy OS</p>
+                                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1 hidden lg:block">Pharmacy OS v2.0</p>
                                 </div>
                                 <div className="flex-1 overflow-y-auto no-scrollbar py-4 px-3 space-y-2">
                                     {navItems.filter(n => !n.a || hasAccess(n.a)).map(item => (
@@ -1650,6 +2215,15 @@
                                     ))}
                                 </div>
                                 <div className="p-4 border-t border-slate-800 space-y-2">
+                                    <button onClick={() => setShowShiftModal(true)} className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all ${currentShift ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-950/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+                                        <span className="text-lg">🕐</span><span className="hidden lg:block">{currentShift ? 'Shift Open' : 'Open Shift'}</span>
+                                    </button>
+                                    <button onClick={() => setShowPrescriptionModal(true)} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
+                                        <span className="text-lg">📝</span><span className="hidden lg:block">Rx Records</span>
+                                    </button>
+                                    <button onClick={() => setShowBackupModal(true)} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
+                                        <span className="text-lg">💾</span><span className="hidden lg:block">Backup</span>
+                                    </button>
                                     <button onClick={() => setShowAuditLog(true)} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
                                         <span className="text-lg">📋</span><span className="hidden lg:block">Audit</span>
                                     </button>
@@ -1683,15 +2257,26 @@
                                             <span className="kbd-shortcut">F3</span><span className="text-[10px] text-slate-600">Hold</span>
                                             <span className="kbd-shortcut">F4</span><span className="text-[10px] text-slate-600">Recall</span>
                                             <span className="kbd-shortcut">F5</span><span className="text-[10px] text-slate-600">Scan</span>
+                                            <span className="kbd-shortcut">F9</span><span className="text-[10px] text-slate-600">Help</span>
                                         </div>
                                     )}
                                 </div>
                                 <div className="flex items-center gap-3">
+                                    {/* Sales Target Progress */}
+                                    {view === 'POS' && (
+                                        <div className="hidden lg:flex items-center gap-2 bg-slate-800 px-3 py-2 rounded-xl">
+                                            <div className="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
+                                                <div className="h-full bg-emerald-500 rounded-full transition-all" style={{width: `${salesTargetProgress}%`}}></div>
+                                            </div>
+                                            <span className="text-[10px] text-slate-400 font-bold">{salesTargetProgress.toFixed(0)}%</span>
+                                        </div>
+                                    )}
                                     {/* Notification Bell */}
                                     <button onClick={() => setShowNotificationCenter(true)} className="relative text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-all">
                                         <span className="text-lg">🔔</span>
                                         {notificationCount > 0 && <span className="notification-dot"></span>}
                                     </button>
+                                    <button onClick={() => setShowSettingsModal(true)} className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-all text-lg">⚙️</button>
                                     <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl outline-none border border-slate-700">
                                         <option value="TZS">TZS</option>
                                         <option value="USD">USD</option>
@@ -1730,6 +2315,18 @@
                                                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Products</p>
                                                 <p className="text-2xl font-black text-amber-400">{data.inventory.length}</p>
                                             </div>
+                                        </div>
+
+                                        {/* Sales Target */}
+                                        <div className="glass-panel p-5 rounded-3xl">
+                                            <div className="flex justify-between items-center mb-3">
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider">Today's Sales Target</h3>
+                                                <span className="text-xs text-slate-500 font-bold">{todayRevenue.toLocaleString()} / {salesTarget.toLocaleString()} {currency}</span>
+                                            </div>
+                                            <div className="w-full h-4 bg-slate-800 rounded-full overflow-hidden">
+                                                <div className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-1000" style={{width: `${salesTargetProgress}%`}}></div>
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 mt-2 font-bold">{salesTargetProgress >= 100 ? '🎉 Target achieved!' : `${(salesTarget - todayRevenue).toLocaleString()} ${currency} remaining`}</p>
                                         </div>
 
                                         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1825,6 +2422,21 @@
                                                     <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 rounded-xl font-black text-xs transition-all">Add</button>
                                                 </form>
                                             </div>
+                                            {/* Favorites */}
+                                            {favorites.length > 0 && (
+                                                <div className="flex gap-2 mb-3 shrink-0 overflow-x-auto no-scrollbar">
+                                                    <span className="text-[10px] text-slate-500 font-bold uppercase self-center">⭐ Favorites:</span>
+                                                    {favorites.map(fid => {
+                                                        const favItem = data.inventory.find(i => i.id === fid);
+                                                        if (!favItem) return null;
+                                                        return (
+                                                            <button key={fid} onClick={() => addToCart(favItem)} className="px-3 py-1.5 bg-amber-500/20 text-amber-400 rounded-lg font-bold text-[10px] whitespace-nowrap hover:bg-amber-500/30 transition-all">
+                                                                {favItem.brandName}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                             <div className="flex gap-2 mb-4 shrink-0 overflow-x-auto no-scrollbar">
                                                 {['ALL', 'TABLETS', 'CAPSULES', 'SYRUP', 'INJECTION', 'CREAM', 'DEVICES', 'SUPPLIES'].map(cat => (
                                                     <button key={cat} onClick={() => setSearch(cat === 'ALL' ? '' : cat)} className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider whitespace-nowrap transition-all ${search === cat || (cat === 'ALL' && search === '') ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{cat}</button>
@@ -1832,9 +2444,11 @@
                                             </div>
                                             <div className="flex-1 overflow-y-auto no-scrollbar grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                                                 {processedInventory.filter(i => i.stock > 0 && (!i.expiryDate || new Date(i.expiryDate) >= new Date())).map(p => (
-                                                    <button key={p.id} onClick={() => addToCart(p)} className="bg-slate-800 p-4 rounded-2xl border border-slate-700 hover:border-emerald-500 transition-all text-left flex flex-col gap-1">
-                                                        <p className="text-white font-bold text-sm truncate">{p.brandName}</p>
+                                                    <button key={p.id} onClick={() => addToCart(p)} className="product-card relative bg-slate-800 p-4 rounded-2xl border border-slate-700 hover:border-emerald-500 transition-all text-left flex flex-col gap-1">
+                                                        <button onClick={(e) => { e.stopPropagation(); setFavorites(prev => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]); }} className={`favorite-btn text-lg ${favorites.includes(p.id) ? 'active' : 'text-slate-600 hover:text-amber-400'}`}>⭐</button>
+                                                        <p className="text-white font-bold text-sm truncate pr-6">{p.brandName}</p>
                                                         <p className="text-[10px] text-slate-500 truncate">{p.genericName}</p>
+                                                        {p.batchNumber && <span className="batch-badge w-fit">Batch: {p.batchNumber}</span>}
                                                         <div className="flex justify-between items-center mt-2">
                                                             <span className="text-emerald-400 font-black text-sm">{Number(p.price).toLocaleString()} {currency}</span>
                                                             <span className="text-[10px] text-slate-500 font-bold">{p.stock} left</span>
@@ -1889,11 +2503,17 @@
                                             <div className="border-t border-slate-800 pt-4 space-y-2">
                                                 <div className="flex justify-between text-sm text-slate-400">
                                                     <span>Subtotal:</span>
-                                                    <span className="font-bold text-white">{cart.reduce((s,i) => s + (i.currentPrice * i.qty), 0).toLocaleString()} {currency}</span>
+                                                    <span className="font-bold text-white">{getCartTotal().toLocaleString()} {currency}</span>
                                                 </div>
+                                                {taxRate > 0 && (
+                                                    <div className="flex justify-between text-sm text-slate-400">
+                                                        <span>Tax ({taxRate}%):</span>
+                                                        <span className="font-bold text-white">{getCartTax().toLocaleString()} {currency}</span>
+                                                    </div>
+                                                )}
                                                 <div className="flex justify-between text-lg font-black text-emerald-400">
                                                     <span>TOTAL:</span>
-                                                    <span>{cart.reduce((s,i) => s + (i.currentPrice * i.qty), 0).toLocaleString()} {currency}</span>
+                                                    <span>{getCartTotalWithTax().toLocaleString()} {currency}</span>
                                                 </div>
                                                 <button onClick={openCheckoutModal} className="w-full bg-gradient-to-r from-emerald-600 to-emerald-500 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg hover:shadow-emerald-500/25 transition-all">Checkout <span className="kbd-shortcut">F2</span></button>
                                             </div>
@@ -1922,7 +2542,9 @@
                                             <button onClick={() => setEditing({type: 'INVENTORY', item: {}})} className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all whitespace-nowrap">+ Add Product</button>
                                             <button onClick={() => setShowSupplierModal(true)} className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all whitespace-nowrap">Suppliers</button>
                                             <button onClick={() => setShowTransferModal(true)} className="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all whitespace-nowrap">Transfer</button>
-                                            <button onClick={() => exportToExcel(processedInventory.map(i => ({Brand: i.brandName, Generic: i.genericName, Category: i.category, Stock: i.stock, Price: i.price, Cost: i.costPrice, Expiry: i.expiryDate, Supplier: i.supplier})), 'Inventory')} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📊</button>
+                                            <button onClick={() => setShowStockTakeModal(true)} className="bg-teal-600 hover:bg-teal-500 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📋</button>
+                                            <button onClick={() => setShowPurchaseOrderModal(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📋 PO</button>
+                                            <button onClick={() => exportToExcel(processedInventory.map(i => ({Brand: i.brandName, Generic: i.genericName, Category: i.category, Stock: i.stock, Price: i.price, Cost: i.costPrice, Expiry: i.expiryDate, Supplier: i.supplier, Batch: i.batchNumber})), 'Inventory')} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📊</button>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -1944,6 +2566,7 @@
                                                             <div className="flex justify-between"><span>Price:</span><span className="text-emerald-400 font-bold">{Number(p.price).toLocaleString()} {currency}</span></div>
                                                             <div className="flex justify-between"><span>Cost:</span><span className="text-slate-500">{Number(p.costPrice).toLocaleString()} {currency}</span></div>
                                                             {p.expiryDate && <div className="flex justify-between"><span>Expiry:</span><span className={`font-bold ${isExpired ? 'text-red-400' : 'text-slate-500'}`}>{new Date(p.expiryDate).toLocaleDateString()}</span></div>}
+                                                            {p.batchNumber && <div className="flex justify-between"><span>Batch:</span><span className="batch-badge">{p.batchNumber}</span></div>}
                                                             {p.barcode && <div className="flex justify-between"><span>Barcode:</span><span className="text-slate-500 font-mono">{p.barcode}</span></div>}
                                                             {p.supplier && <div className="flex justify-between"><span>Supplier:</span><span className="text-slate-500">{p.supplier}</span></div>}
                                                         </div>
@@ -1964,7 +2587,7 @@
                                         <div className="flex flex-col md:flex-row gap-3">
                                             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search clients..." className="flex-1 p-4 bg-slate-800 rounded-2xl text-white font-bold text-sm outline-none border border-slate-700 focus:border-emerald-500 input-focus" />
                                             <button onClick={() => setEditing({type: 'PATIENT', item: {}})} className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all whitespace-nowrap">+ Add Client</button>
-                                            <button onClick={() => exportToExcel(data.patients.map(p => ({Name: p.name, Type: p.clientType, Phone: p.phone, Email: p.email, Age: p.age, Sex: p.sex, Debt: p.creditBalance || 0})), 'Clients')} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📊</button>
+                                            <button onClick={() => exportToExcel(data.patients.map(p => ({Name: p.name, Type: p.clientType, Phone: p.phone, Email: p.email, Age: p.age, Sex: p.sex, Debt: p.creditBalance || 0, Points: p.loyaltyPoints || 0})), 'Clients')} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📊</button>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1972,7 +2595,10 @@
                                                 <div key={p.id} className="bg-slate-800 p-5 rounded-3xl border border-slate-700 hover:border-emerald-500 transition-all">
                                                     <div className="flex justify-between items-start mb-3">
                                                         <div>
-                                                            <p className="text-white font-bold text-sm">{p.name}</p>
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="text-white font-bold text-sm">{p.name}</p>
+                                                                {p.loyaltyPoints > 0 && <span className="loyalty-badge">⭐ {p.loyaltyPoints}</span>}
+                                                            </div>
                                                             <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg ${p.clientType === 'CORPORATE' ? 'bg-blue-500/20 text-blue-400' : p.clientType === 'WALKIN' ? 'bg-slate-500/20 text-slate-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{p.clientType || 'PATIENT'}</span>
                                                         </div>
                                                         <div className="flex gap-2">
@@ -2000,7 +2626,10 @@
                                                             </div>
                                                         </div>
                                                     )}
-                                                    <button onClick={() => { setCheckoutPatient(p.id); handleSetView('POS'); toast(`Client ${p.name} selected for POS`, 'info'); }} className="w-full bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">Select for Sale</button>
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => { setCheckoutPatient(p.id); handleSetView('POS'); toast(`Client ${p.name} selected for POS`, 'info'); }} className="flex-1 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">Select for Sale</button>
+                                                        <button onClick={() => setShowCustomerHistory(p.id)} className="bg-slate-700 hover:bg-slate-600 text-white py-2 px-3 rounded-xl font-black text-[10px] uppercase transition-all">📋</button>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
@@ -2224,6 +2853,8 @@
                                                 <option value="CLIENTS">Client Report</option>
                                                 <option value="CLAIMS">Insurance Claims</option>
                                                 <option value="RETURNS">Returns Log</option>
+                                                <option value="MOVEMENTS">Stock Movements</option>
+                                                <option value="SHIFTS">Shift History</option>
                                             </select>
                                             <select value={reportPeriod} onChange={(e) => setReportPeriod(e.target.value)} className="p-4 bg-slate-800 rounded-2xl text-white font-bold text-sm outline-none border border-slate-700 focus:border-emerald-500 input-focus">
                                                 <option value="DAILY">Today</option>
@@ -2236,9 +2867,11 @@
                                                 let exportData = [];
                                                 if (reportTab === 'SALES') exportData = filteredSales.map(s => ({Date: new Date(s.timestamp).toLocaleString(), Total: s.total, Profit: s.profit, Method: s.method, Cashier: s.soldBy, Items: s.items?.length || 0}));
                                                 if (reportTab === 'INVENTORY') exportData = processedInventory.map(i => ({Brand: i.brandName, Generic: i.genericName, Stock: i.stock, Price: i.price, Cost: i.costPrice, Value: i.stock * i.price}));
-                                                if (reportTab === 'CLIENTS') exportData = data.patients.map(p => ({Name: p.name, Type: p.clientType, Phone: p.phone, Debt: p.creditBalance || 0}));
+                                                if (reportTab === 'CLIENTS') exportData = data.patients.map(p => ({Name: p.name, Type: p.clientType, Phone: p.phone, Debt: p.creditBalance || 0, Points: p.loyaltyPoints || 0}));
                                                 if (reportTab === 'CLAIMS') exportData = data.insuranceClaims.map(c => ({Provider: c.provider, Patient: c.patientName, Status: c.status, Amount: c.claimedAmount, Date: new Date(c.submittedAt).toLocaleString()}));
                                                 if (reportTab === 'RETURNS') exportData = data.returns.map(r => ({Date: new Date(r.timestamp).toLocaleString(), Item: r.itemName, Qty: r.returnQty, Amount: r.returnAmount, Reason: r.reason, ProcessedBy: r.processedBy}));
+                                                if (reportTab === 'MOVEMENTS') exportData = data.stockMovements.map(m => ({Date: new Date(m.timestamp).toLocaleString(), Item: m.itemName, Type: m.type, Qty: m.quantity, Reason: m.reason, User: m.userName}));
+                                                if (reportTab === 'SHIFTS') exportData = data.shifts.map(s => ({Opened: new Date(s.openedAt).toLocaleString(), Closed: s.closedAt ? new Date(s.closedAt).toLocaleString() : 'Open', User: s.userName, Float: s.openingFloat, Sales: s.totalSales, Status: s.status}));
                                                 exportToExcel(exportData, `${reportTab}_Report`);
                                             }} className="bg-slate-700 hover:bg-slate-600 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📊 Export</button>
                                         </div>
@@ -2294,7 +2927,10 @@
                                                                 <p className="text-white font-bold text-sm">{p.name}</p>
                                                                 <p className="text-[10px] text-slate-500">{p.phone} • {p.clientType || 'PATIENT'}</p>
                                                             </div>
-                                                            <span className={`font-bold text-sm ${(p.creditBalance || 0) > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{(p.creditBalance || 0).toLocaleString()} {currency}</span>
+                                                            <div className="text-right">
+                                                                <span className={`font-bold text-sm ${(p.creditBalance || 0) > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{(p.creditBalance || 0).toLocaleString()} {currency}</span>
+                                                                {p.loyaltyPoints > 0 && <p className="text-[10px] text-amber-400">⭐ {p.loyaltyPoints} pts</p>}
+                                                            </div>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -2343,68 +2979,22 @@
                                                 </div>
                                             </div>
                                         )}
-                                    </div>
-                                )}
 
-                                {/* ========== USERS VIEW ========== */}
-                                {view === 'USERS' && (
-                                    <div className="space-y-4 animate-fade-in">
-                                        <div className="flex flex-col md:flex-row gap-3">
-                                            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search personnel..." className="flex-1 p-4 bg-slate-800 rounded-2xl text-white font-bold text-sm outline-none border border-slate-700 focus:border-emerald-500 input-focus" />
-                                            <button onClick={() => setEditing({type: 'USER', item: {}})} className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all whitespace-nowrap">+ Add Personnel</button>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                            {data.users.filter(u => !search || (u.fullName || '').toLowerCase().includes(search.toLowerCase()) || (u.email || '').toLowerCase().includes(search.toLowerCase())).map(u => (
-                                                <div key={u.id} className="bg-slate-800 p-5 rounded-3xl border border-slate-700 hover:border-emerald-500 transition-all">
-                                                    <div className="flex justify-between items-start mb-3">
-                                                        <div>
-                                                            <p className="text-white font-bold text-sm">{u.fullName || u.email}</p>
-                                                            <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg ${u.role === 'MANAGER' ? 'bg-violet-500/20 text-violet-400' : u.role === 'PHARMACIST' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-500/20 text-slate-400'}`}>{u.role}</span>
+                                        {reportTab === 'MOVEMENTS' && (
+                                            <div className="glass-panel p-6 rounded-3xl">
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Stock Movements</h3>
+                                                <div className="space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">
+                                                    {data.stockMovements.slice().sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).map((m, idx) => (
+                                                        <div key={idx} className="bg-black p-4 rounded-2xl border border-slate-800">
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <span className="text-white font-bold text-sm">{m.itemName}</span>
+                                                                <span className={`font-black text-sm ${m.quantity > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{m.quantity > 0 ? '+' : ''}{m.quantity}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-[10px] text-slate-500">
+                                                                <span>{m.type} • {new Date(m.timestamp).toLocaleString()}</span>
+                                                                <span>{m.userName}</span>
+                                                            </div>
+                                                            <p className="text-[10px] text-slate-400 mt-1">{m.reason}</p>
                                                         </div>
-                                                        <button onClick={() => setEditing({type: 'USER', item: u})} className="text-slate-400 hover:text-white text-xs font-bold">✎</button>
-                                                    </div>
-                                                    <div className="space-y-1 text-xs text-slate-400 mb-3">
-                                                        <div className="flex justify-between"><span>Email:</span><span className="text-white">{u.email}</span></div>
-                                                        {u.phone && <div className="flex justify-between"><span>Phone:</span><span className="text-white">{u.phone}</span></div>}
-                                                        <div className="flex justify-between"><span>Status:</span><span className={`font-bold ${u.status === 'ACTIVE' ? 'text-emerald-400' : 'text-rose-400'}`}>{u.status || 'ACTIVE'}</span></div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        {data.users.filter(u => !search || (u.fullName || '').toLowerCase().includes(search.toLowerCase())).length === 0 && <p className="text-center py-12 text-slate-500 font-bold uppercase text-xs">No personnel found</p>}
-                                    </div>
-                                )}
-
-                            </div> {/* End scrollable content */}
-
-                            {/* Mobile Bottom Navigation */}
-                            {isMobile && (
-                                <div className="h-16 bg-slate-900 border-t border-slate-800 flex items-center justify-around px-2 shrink-0 no-print overflow-x-auto no-scrollbar">
-                                    {navItems.filter(n => !n.a || hasAccess(n.a)).map(item => (
-                                        <button key={item.v} onClick={() => handleSetView(item.v)} className={`flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl transition-all min-w-[3.5rem] ${view === item.v ? 'text-emerald-400' : 'text-slate-500'}`}>
-                                            <span className="text-lg">{item.i}</span>
-                                            <span className="text-[8px] font-bold uppercase tracking-wider">{item.n}</span>
-                                        </button>
-                                    ))}
-                                    <button onClick={handleLogout} className="flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl text-rose-500 min-w-[3.5rem]">
-                                        <span className="text-lg">🚪</span>
-                                        <span className="text-[8px] font-bold uppercase tracking-wider">Exit</span>
-                                    </button>
-                                </div>
-                            )}
-                        </div> {/* End main content area */}
-                    </div> /* End app container */
-                );
-            };
-
-            const root = ReactDOM.createRoot(document.getElementById('apex-root'));
-            root.render(<App />);
-        } catch (err) {
-            console.error("Fatal boot error:", err);
-            document.getElementById('error-text').style.display = 'block';
-            document.getElementById('error-text').innerText = "FATAL: " + err.message;
-        }
-    </script>
-</body>
-</html>
+                                                    ))}
+                                         
