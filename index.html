@@ -126,6 +126,7 @@
     </style>
 <base target="_blank">
 <base target="_blank">
+<base target="_blank">
 </head>
 <body>
     <div id="apex-root">
@@ -151,7 +152,7 @@
             const el = document.getElementById('error-text');
             if (el && el.style.display === 'none') {
                 el.style.display = 'block';
-                el.innerText = "⚠️ Boot timeout. Ensure stable internet for first-time CDN downloads.";
+                el.innerText = "鈿狅笍 Boot timeout. Ensure stable internet for first-time CDN downloads.";
             }
         }, 10000);
 
@@ -194,7 +195,7 @@
                     const container = document.getElementById('toast-root');
                     const toast = document.createElement('div');
                     toast.className = `toast toast-${type}`;
-                    toast.innerHTML = `<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">${type==='success'?'✓':type==='error'?'✕':type==='warning'?'⚠':'ℹ'}</span>${message}</div>`;
+                    toast.innerHTML = `<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">${type==='success'?'鉁�':type==='error'?'鉁�':type==='warning'?'鈿�':'鈩�'}</span>${message}</div>`;
                     container.appendChild(toast);
                     setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateY(10px)'; setTimeout(() => toast.remove(), 300); }, duration);
                 }, []);
@@ -376,12 +377,7 @@
                 const [favorites, setFavorites] = useLocalStorage('apex_favorites', []);
                 const [salesTarget, setSalesTarget] = useLocalStorage('apex_sales_target', 100000);
 
-                const [aiKey, setAiKey] = useState(localStorage.getItem('apex_gemini_key') || '');
-                const [showAiSettings, setShowAiSettings] = useState(false);
-                const [aiQuery, setAiQuery] = useState('');
-                const [aiResponse, setAiResponse] = useState('');
-                const [isAiLoading, setIsAiLoading] = useState(false);
-                const [aiProvider, setAiProvider] = useLocalStorage('apex_ai_provider', 'gemini');
+                // AI features removed per request
 
                 const [currentShift, setCurrentShift] = useState(null);
 
@@ -703,12 +699,12 @@
 
                 const handleDeletePersonnel = (userItem) => {
                     if (userItem.email?.toLowerCase() === 'manjebecaleb@gmail.com') return toast("Cannot delete master admin.", 'warning');
-                    if(!confirm("⚠️ Delete this personnel permanently?")) return;
+                    if(!confirm("鈿狅笍 Delete this personnel permanently?")) return;
                     setEditing(null); safeDelete('users', userItem.id); toast("Personnel deleted", 'success'); logAudit('DELETE_PERSONNEL', { userId: userItem.id });
                 };
 
                 const handleDeleteProduct = (id) => {
-                    if(!confirm("⚠️ Delete this item completely?")) return;
+                    if(!confirm("鈿狅笍 Delete this item completely?")) return;
                     if(!requireAdminConfirm('DELETE_PRODUCT')) return;
                     setEditing(null); 
                     safeDelete('inventory', id); 
@@ -759,7 +755,7 @@
 
                 const addToCart = (p) => {
                     if (p.stock <= 0) return toast("Item out of stock!", 'warning');
-                    if (p.expiryDate && isItemExpired(p.expiryDate)) return toast("⚠️ Cannot sell expired item!", 'error');
+                    if (p.expiryDate && isItemExpired(p.expiryDate)) return toast("鈿狅笍 Cannot sell expired item!", 'error');
                     setCart(prev => {
                         const ex = prev.find(i => i.id === p.id);
                         if (ex) {
@@ -785,7 +781,7 @@
                         const interactions = checkDrugInteractions(cart);
                         setDrugInteractions(interactions);
                         if (interactions.some(i => i.severity === 'SEVERE')) {
-                            toast(`⚠️ SEVERE drug interaction detected!`, 'error');
+                            toast(`鈿狅笍 SEVERE drug interaction detected!`, 'error');
                         }
                     } else {
                         setDrugInteractions([]);
@@ -811,7 +807,7 @@
                 const openCheckoutModal = () => {
                     if(cart.length === 0) return toast("Cart is empty", 'warning');
                     if (drugInteractions.some(i => i.severity === 'SEVERE')) {
-                        if (!confirm("⚠️ SEVERE drug interactions detected! Proceed anyway?")) return;
+                        if (!confirm("鈿狅笍 SEVERE drug interactions detected! Proceed anyway?")) return;
                     }
                     setAmountTendered(0); setCheckoutDiscount(0); setCheckoutPatient(''); setSplitPayment({ cash: 0, mobile: 0, card: 0 }); setShowSplitPayment(false); setCheckoutModal(true);
                 };
@@ -876,7 +872,7 @@
                             await safeUpdate('inventory', i.id, { stock: newStock });
                             logStockMovement(i.id, i.brandName, 'SALE', -i.qty, 'POS Sale', saleData.timestamp);
                             if (i.reorderPoint && newStock <= i.reorderPoint) {
-                                toast(`⚠️ ${i.brandName} below reorder point (${i.reorderPoint})!`, 'warning');
+                                toast(`鈿狅笍 ${i.brandName} below reorder point (${i.reorderPoint})!`, 'warning');
                             }
                         }
                     }
@@ -917,7 +913,7 @@
                     }
 
                     logAudit('RETURN_PROCESSED', { saleId, itemId, returnQty, amount: returnAmount });
-                    toast(`Return processed: ${returnQty}x ${item.brandName} — ${returnAmount.toLocaleString()} ${currency}`, 'success');
+                    toast(`Return processed: ${returnQty}x ${item.brandName} 鈥� ${returnAmount.toLocaleString()} ${currency}`, 'success');
                 };
 
                 const addMedicalHistory = (patientId, record) => {
@@ -965,52 +961,7 @@
                     setShowInsuranceModal(false);
                 };
 
-                const handleAiSubmit = async (e) => {
-                    e.preventDefault();
-                    if (!isOnline) return toast("Online required for AI", 'warning');
-                    if (!aiKey.trim()) { setShowAiSettings(true); return toast("Enter API key first", 'warning'); }
-                    if (typeof marked === 'undefined') return toast("Markdown parser not loaded", 'error');
-
-                    setIsAiLoading(true); setAiResponse('');
-
-                    try {
-                        const systemPrompt = `You are an expert Clinical Pharmacist in Tanzania. Provide medical reference based on Tanzania STG, NEMLIT, and local protocols. Use Markdown formatting. Never provide direct patient advice. Query: ${aiQuery}`;
-
-                        let res, json;
-
-                        if (aiProvider === 'gemini') {
-                            res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${aiKey.trim()}`, {
-                                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }] }] })
-                            });
-                            json = await res.json();
-                        } else if (aiProvider === 'openrouter') {
-                            res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-                                method: 'POST', headers: { 'Authorization': `Bearer ${aiKey.trim()}`, 'Content-Type': 'application/json', 'HTTP-Referer': window.location.href },
-                                body: JSON.stringify({ model: 'meta-llama/llama-3.1-70b-instruct', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: aiQuery }] })
-                            });
-                            const orJson = await res.json();
-                            json = { candidates: [{ content: { parts: [{ text: orJson.choices?.[0]?.message?.content || 'No response' }] } }] };
-                        }
-
-                        if (!res.ok) throw new Error(json.error?.message || `API failed: ${res.status}`);
-                        if (!json.candidates?.[0]?.content?.parts?.[0]?.text) {
-                            if (json.promptFeedback?.blockReason) throw new Error(`Blocked: ${json.promptFeedback.blockReason}`);
-                            throw new Error("Empty AI response");
-                        }
-
-                        const rawHtml = marked.parse(json.candidates[0].content.parts[0].text);
-                        const cleanHtml = (typeof DOMPurify !== 'undefined' && DOMPurify.sanitize) 
-                            ? DOMPurify.sanitize(rawHtml, { ALLOWED_TAGS: ['p','br','strong','em','ul','ol','li','h1','h2','h3','h4','code','pre','blockquote','table','thead','tbody','tr','th','td','a'], ALLOWED_ATTR: ['href'] })
-                            : (() => { const d = document.createElement('div'); d.innerHTML = rawHtml; return d.textContent || ''; })();
-                        setAiResponse(cleanHtml);
-                        setAiQuery('');
-                    } catch (err) {
-                        console.error("AI Error:", err);
-                        setAiResponse(`<div class="p-4 bg-rose-950/30 border border-rose-800 rounded-xl"><p class="text-rose-400 font-bold text-sm">⚠️ AI Error</p><p class="text-rose-300 text-xs mt-1">${err.message}</p></div>`);
-                    }
-                    setIsAiLoading(false);
-                };
+                
 
                 const initSignaturePad = () => {
                     const canvas = sigCanvasRef.current;
@@ -1229,6 +1180,29 @@
                 const inventoryExpectedProfit = inventoryTotalValue - inventoryTotalCost;
                 const totalNetProfit = data.sales.reduce((a,b) => a + Number(b.profit || 0), 0) - data.expenses.reduce((a,b) => a + Number(b.amount || 0), 0);
 
+                // Inventory turnover rate (COGS / Average Inventory)
+                const totalCOGS = data.sales.reduce((a,b) => a + (b.items?.reduce((s,i) => s + (Number(i.costPrice||0) * Number(i.qty||0)), 0) || 0), 0);
+                const avgInventory = inventoryTotalCost > 0 ? inventoryTotalCost : 1;
+                const inventoryTurnover = totalCOGS / avgInventory;
+
+                // Daily transaction metrics
+                const todayTransactionCount = todaySales.length;
+                const avgTransactionValue = todayTransactionCount > 0 ? todayRevenue / todayTransactionCount : 0;
+
+                // Top margin products
+                const marginProducts = useMemo(() => {
+                    const stats = {};
+                    data.sales.forEach(s => {
+                        s.items?.forEach(i => {
+                            if(!stats[i.id]) stats[i.id] = { name: i.brandName, margin: 0, qty: 0, revenue: 0, cost: 0 };
+                            stats[i.id].qty += Number(i.qty);
+                            stats[i.id].revenue += (Number(i.currentPrice) * Number(i.qty));
+                            stats[i.id].cost += (Number(i.costPrice || 0) * Number(i.qty));
+                        });
+                    });
+                    return Object.values(stats).map(s => ({...s, margin: s.revenue > 0 ? ((s.revenue - s.cost) / s.revenue * 100) : 0})).sort((a,b) => b.margin - a.margin);
+                }, [data.sales]);
+
                 const itemAnalytics = useMemo(() => {
                     const stats = {};
                     data.sales.forEach(s => {
@@ -1279,11 +1253,21 @@
                         revs = labels.map(d => (data.sales || []).filter(s => s.timestamp && s.timestamp.split('T')[0] === d).reduce((sum, s) => sum + (s.total || 0), 0));
                         profs = labels.map(d => (data.sales || []).filter(s => s.timestamp && s.timestamp.split('T')[0] === d).reduce((sum, s) => sum + (s.profit || 0), 0));
                         losses = labels.map(d => (data.expenses || []).filter(e => (e.timestamp || e.date) && (e.timestamp || e.date).split('T')[0] === d).reduce((sum, e) => sum + Number(e.amount || 0), 0));
+                        netProfits = labels.map(d => {
+                            const daySales = (data.sales || []).filter(s => s.timestamp && s.timestamp.split('T')[0] === d).reduce((sum, s) => sum + (s.profit || 0), 0);
+                            const dayExpenses = (data.expenses || []).filter(e => (e.timestamp || e.date) && (e.timestamp || e.date).split('T')[0] === d).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+                            return daySales - dayExpenses;
+                        });
                     } else {
                         labels = [...Array(6)].map((_, i) => { const d = new Date(); d.setMonth(d.getMonth() - i); return d.toLocaleString('default', { month: 'short', year: 'numeric' }); }).reverse();
                         revs = labels.map(m => (data.sales || []).filter(s => s.timestamp && new Date(s.timestamp).toLocaleString('default', { month: 'short', year: 'numeric' }) === m).reduce((sum, s) => sum + (s.total || 0), 0));
                         profs = labels.map(m => (data.sales || []).filter(s => s.timestamp && new Date(s.timestamp).toLocaleString('default', { month: 'short', year: 'numeric' }) === m).reduce((sum, s) => sum + (s.profit || 0), 0));
                         losses = labels.map(m => (data.expenses || []).filter(e => (e.timestamp || e.date) && new Date(e.timestamp || e.date).toLocaleString('default', { month: 'short', year: 'numeric' }) === m).reduce((sum, e) => sum + Number(e.amount || 0), 0));
+                        netProfits = labels.map(m => {
+                            const monthSales = (data.sales || []).filter(s => s.timestamp && new Date(s.timestamp).toLocaleString('default', { month: 'short', year: 'numeric' }) === m).reduce((sum, s) => sum + (s.profit || 0), 0);
+                            const monthExpenses = (data.expenses || []).filter(e => (e.timestamp || e.date) && new Date(e.timestamp || e.date).toLocaleString('default', { month: 'short', year: 'numeric' }) === m).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+                            return monthSales - monthExpenses;
+                        });
                     }
                     if (chartInstance.current) { chartInstance.current.destroy(); chartInstance.current = null; }
                     if (!chartRef.current) return;
@@ -1291,8 +1275,9 @@
                         type: 'bar',
                         data: { labels, datasets: [
                             { label: 'Revenue', data: revs, backgroundColor: '#10b981', borderRadius: 6 },
-                            { label: 'Profit', data: profs, backgroundColor: '#3b82f6', borderRadius: 6 },
-                            { label: 'Losses', data: losses, backgroundColor: '#f43f5e', borderRadius: 6 }
+                            { label: 'Gross Profit', data: profs, backgroundColor: '#3b82f6', borderRadius: 6 },
+                            { label: 'Expenses', data: losses, backgroundColor: '#f43f5e', borderRadius: 6 },
+                            { label: 'Net Profit', data: netProfits, backgroundColor: '#8b5cf6', borderRadius: 6 }
                         ]},
                         options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#1e293b' }, ticks: { color: '#64748b' } }, x: { grid: { display: false }, ticks: { color: '#64748b' } } }, plugins: { legend: { labels: { color: '#cbd5e1', font: { family: 'Plus Jakarta Sans' } } } } }
                     });
@@ -1315,7 +1300,7 @@
                 if (!user) {
                     return (
                         <div className="h-screen flex items-center justify-center bg-black p-4 relative">
-                            <div className={`status-badge ${isOnline ? 'bg-online' : 'bg-offline'}`}>{isOnline ? '🔵 Online' : '🔴 Offline'}</div>
+                            <div className={`status-badge ${isOnline ? 'bg-online' : 'bg-offline'}`}>{isOnline ? '馃數 Online' : '馃敶 Offline'}</div>
                             <div className="bg-slate-900 p-10 rounded-[3rem] shadow-2xl w-full max-w-sm text-center border border-slate-800/50">
                                 <h1 className="text-5xl font-black text-emerald-500 mb-2 italic tracking-tight">APEX</h1>
                                 <p className="text-slate-500 text-[10px] font-bold uppercase mb-10 tracking-[0.3em]">Enterprise Pharmacy OS v2.0</p>
@@ -1324,21 +1309,21 @@
                                     <input name="password" type="password" placeholder="Password" required className="w-full p-4 bg-slate-800 rounded-2xl outline-none border border-slate-700 text-center font-bold text-sm text-white focus:border-emerald-500 transition-all input-focus" />
                                     <button type="submit" className="w-full bg-gradient-to-r from-emerald-600 to-emerald-500 text-white py-5 rounded-[2rem] font-black shadow-lg hover:shadow-emerald-500/25 transition-all mt-2">AUTHENTICATE</button>
                                 </form>
-                                <p className="text-slate-600 text-[9px] font-bold uppercase mt-8 tracking-widest border-t border-slate-800 pt-5">🔒 Session-only Security<br/>Data encrypted at rest</p>
+                                <p className="text-slate-600 text-[9px] font-bold uppercase mt-8 tracking-widest border-t border-slate-800 pt-5">馃敀 Session-only Security<br/>Data encrypted at rest</p>
                             </div>
                         </div>
                     );
                 }
 
                 const navItems = [
-                    { n: 'Dashboard', i: '📊', v: 'DASHBOARD' },
-                    { n: 'POS', i: '🛒', v: 'POS' },
-                    { n: 'Inventory', i: '📦', v: 'STOO', a: 'TECHNICIAN' },
-                    { n: 'Clients', i: '👥', v: 'PATIENTS' },
-                    { n: 'Clinical AI', i: '🧠', v: 'AI_CLINICAL' },
-                    { n: 'Finance', i: '💰', v: 'FINANCE', a: 'MANAGER' },
-                    { n: 'Reports', i: '📈', v: 'REPORTS', a: 'MANAGER' },
-                    { n: 'Staff', i: '👤', v: 'USERS', a: 'MANAGER' }
+                    { n: 'Dashboard', i: '馃搳', v: 'DASHBOARD' },
+                    { n: 'POS', i: '馃洅', v: 'POS' },
+                    { n: 'Inventory', i: '馃摝', v: 'STOO', a: 'TECHNICIAN' },
+                    { n: 'Clients', i: '馃懃', v: 'PATIENTS' },
+                    
+                    { n: 'Finance', i: '馃挵', v: 'FINANCE', a: 'MANAGER' },
+                    { n: 'Reports', i: '馃搱', v: 'REPORTS', a: 'MANAGER' },
+                    { n: 'Staff', i: '馃懁', v: 'USERS', a: 'MANAGER' }
                 ];
 
                 const getStatusBadgeClass = () => {
@@ -1351,7 +1336,7 @@
                 return (
                     <div className={`flex h-screen overflow-hidden bg-slate-950 ${isMobile ? 'flex-col' : ''}`}>
                         <div className={`status-badge ${getStatusBadgeClass()} no-print`}>
-                            {syncStatus === 'SYNCING' ? '🟡 Syncing...' : isOnline ? '🔵 Online' : '🔴 Offline'}
+                            {syncStatus === 'SYNCING' ? '馃煛 Syncing...' : isOnline ? '馃數 Online' : '馃敶 Offline'}
                         </div>
 
                         {/* ========== MODALS ========== */}
@@ -1376,7 +1361,7 @@
                         {showShortcutHelp && (
                             <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowShortcutHelp(false))}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-lg p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh]">
-                                    <h3 className="text-xl font-black text-emerald-500 uppercase mb-6 text-center">⌨️ Keyboard Shortcuts</h3>
+                                    <h3 className="text-xl font-black text-emerald-500 uppercase mb-6 text-center">鈱笍 Keyboard Shortcuts</h3>
                                     <div className="grid grid-cols-2 gap-3 overflow-y-auto no-scrollbar">
                                         {[
                                             ['F1', 'POS / Search Focus'],
@@ -1425,10 +1410,10 @@
                                             <div key={hc.id} className="bg-black p-4 rounded-2xl border border-slate-800 flex justify-between items-center hover:border-blue-500 transition-all">
                                                 <div>
                                                     <p className="text-white font-bold">{hc.name}</p>
-                                                    <p className="text-[10px] text-slate-500">{hc.items.length} items • {new Date(hc.id).toLocaleTimeString()}</p>
+                                                    <p className="text-[10px] text-slate-500">{hc.items.length} items 鈥� {new Date(hc.id).toLocaleTimeString()}</p>
                                                 </div>
                                                 <div className="flex gap-2">
-                                                    <button onClick={()=>{ setHeldCarts(prev=>prev.filter(c=>c.id!==hc.id)); toast("Sale discarded", 'info'); }} className="text-rose-500 font-black px-2 hover:text-rose-400 text-lg">✖</button>
+                                                    <button onClick={()=>{ setHeldCarts(prev=>prev.filter(c=>c.id!==hc.id)); toast("Sale discarded", 'info'); }} className="text-rose-500 font-black px-2 hover:text-rose-400 text-lg">鉁�</button>
                                                     <button onClick={()=>{ handleRecallCart(hc); setViewHeldCarts(false); }} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-black text-xs shadow-lg transition-all">Recall</button>
                                                 </div>
                                             </div>
@@ -1457,7 +1442,7 @@
                                         )}
                                         {receiptData.drugInteractions && receiptData.drugInteractions.length > 0 && (
                                             <div className="bg-red-100 border border-red-300 p-2 rounded text-[9px] text-red-700 font-bold text-center">
-                                                ⚠️ Drug interactions noted on this sale
+                                                鈿狅笍 Drug interactions noted on this sale
                                             </div>
                                         )}
                                         <div id="receipt-qr" className="flex justify-center my-2"></div>
@@ -1480,7 +1465,7 @@
                                         <p className="text-center text-[8px] text-slate-500">APEX Pharmacy OS v2.0</p>
                                     </div>
                                     <div className="flex gap-2">
-                                        <button onClick={() => window.print()} className="flex-1 bg-emerald-600 text-white font-black py-4 rounded-xl hover:bg-emerald-500 shadow-lg transition-all">🖨️ Print</button>
+                                        <button onClick={() => window.print()} className="flex-1 bg-emerald-600 text-white font-black py-4 rounded-xl hover:bg-emerald-500 shadow-lg transition-all">馃枿锔� Print</button>
                                         <button onClick={() => setReceiptData(null)} className="flex-1 bg-slate-200 text-slate-800 font-black py-4 rounded-xl hover:bg-slate-300 transition-all">Close</button>
                                     </div>
                                 </div>
@@ -1587,7 +1572,7 @@
                                                         <p className="text-white font-bold text-xs">{s.name}</p>
                                                         <p className="text-[10px] text-slate-500">{s.contact}</p>
                                                     </div>
-                                                    <button onClick={() => { setEditing({type: 'SUPPLIER', item: s}); }} className="text-purple-400 hover:text-purple-300 text-xs font-bold">✎</button>
+                                                    <button onClick={() => { setEditing({type: 'SUPPLIER', item: s}); }} className="text-purple-400 hover:text-purple-300 text-xs font-bold">鉁�</button>
                                                 </div>
                                             ))}
                                             {data.suppliers.length === 0 && <p className="text-center text-slate-500 text-xs">No suppliers yet</p>}
@@ -1610,7 +1595,7 @@
                                                     <span className="font-bold text-emerald-400">{log.action}</span>
                                                     <span className="text-slate-500">{new Date(log.timestamp).toLocaleString()}</span>
                                                 </div>
-                                                <p className="text-slate-300">{log.userName} ({log.userRole}) — {log.location}</p>
+                                                <p className="text-slate-300">{log.userName} ({log.userRole}) 鈥� {log.location}</p>
                                                 <p className="text-slate-500 mt-1">{log.details}</p>
                                             </div>
                                         ))}
@@ -1699,7 +1684,7 @@
                                                             <div key={item.id} className="flex justify-between items-center bg-slate-900 p-2 rounded-xl">
                                                                 <div>
                                                                     <p className="text-white text-xs font-bold">{item.brandName}</p>
-                                                                    <p className="text-[10px] text-slate-500">Sold: {item.qty} • Already returned: {alreadyReturned} • Remaining: {remaining}</p>
+                                                                    <p className="text-[10px] text-slate-500">Sold: {item.qty} 鈥� Already returned: {alreadyReturned} 鈥� Remaining: {remaining}</p>
                                                                 </div>
                                                                 <form onSubmit={(e) => {
                                                                     e.preventDefault();
@@ -1731,7 +1716,7 @@
                         {showStockTakeModal && (
                             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowStockTakeModal(false))}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh]">
-                                    <h3 className="text-xl font-black text-teal-500 uppercase mb-4 text-center">📋 Physical Stock Take</h3>
+                                    <h3 className="text-xl font-black text-teal-500 uppercase mb-4 text-center">馃搵 Physical Stock Take</h3>
                                     <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
                                         {data.inventory.slice().sort((a,b) => (a.brandName||'').localeCompare(b.brandName||'')).map(item => (
                                             <form key={item.id} onSubmit={(e) => {
@@ -1747,7 +1732,7 @@
                                             }} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-3">
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-white font-bold text-xs truncate">{item.brandName}</p>
-                                                    <p className="text-[10px] text-slate-500">System: {item.stock} {item.batchNumber ? `• Batch: ${item.batchNumber}` : ''}</p>
+                                                    <p className="text-[10px] text-slate-500">System: {item.stock} {item.batchNumber ? `鈥� Batch: ${item.batchNumber}` : ''}</p>
                                                 </div>
                                                 <input name="counted" type="number" defaultValue={item.stock} className="w-20 p-2 bg-slate-800 rounded-lg text-white font-bold text-xs text-center outline-none border border-slate-700" />
                                                 <button type="submit" className="bg-teal-600 hover:bg-teal-500 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase">Save</button>
@@ -1763,7 +1748,7 @@
                         {showPurchaseOrderModal && (
                             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowPurchaseOrderModal(false))}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
-                                    <h3 className="text-xl font-black text-indigo-500 uppercase mb-6 text-center">📋 Purchase Order</h3>
+                                    <h3 className="text-xl font-black text-indigo-500 uppercase mb-6 text-center">馃搵 Purchase Order</h3>
                                     <form onSubmit={(e) => {
                                         e.preventDefault();
                                         const fd = new FormData(e.target);
@@ -1801,7 +1786,7 @@
                                                 <div key={po.id} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center">
                                                     <div>
                                                         <p className="text-white font-bold text-xs">{po.poNumber}</p>
-                                                        <p className="text-[10px] text-slate-500">{po.supplier} • {po.items?.length} items</p>
+                                                        <p className="text-[10px] text-slate-500">{po.supplier} 鈥� {po.items?.length} items</p>
                                                     </div>
                                                     <div className="flex gap-2">
                                                         <span className="text-indigo-400 font-bold text-xs">{po.total?.toLocaleString()} {currency}</span>
@@ -1821,7 +1806,7 @@
                         {showBackupModal && (
                             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowBackupModal(false))}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
-                                    <h3 className="text-xl font-black text-emerald-500 uppercase mb-6 text-center">💾 Data Backup</h3>
+                                    <h3 className="text-xl font-black text-emerald-500 uppercase mb-6 text-center">馃捑 Data Backup</h3>
                                     <div className="space-y-4">
                                         <div className="bg-black p-4 rounded-2xl border border-slate-800">
                                             <p className="text-white font-bold text-sm mb-2">Export Backup</p>
@@ -1843,7 +1828,7 @@
                         {showShiftModal && (
                             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowShiftModal(false))}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
-                                    <h3 className="text-xl font-black text-amber-500 uppercase mb-6 text-center">🕐 Shift Management</h3>
+                                    <h3 className="text-xl font-black text-amber-500 uppercase mb-6 text-center">馃晲 Shift Management</h3>
                                     {!currentShift ? (
                                         <form onSubmit={(e) => {
                                             e.preventDefault();
@@ -1884,7 +1869,7 @@
                         {showPrescriptionModal && (
                             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowPrescriptionModal(false))}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
-                                    <h3 className="text-xl font-black text-teal-500 uppercase mb-6 text-center">📝 Prescription Records</h3>
+                                    <h3 className="text-xl font-black text-teal-500 uppercase mb-6 text-center">馃摑 Prescription Records</h3>
                                     <form onSubmit={(e) => {
                                         e.preventDefault();
                                         const fd = new FormData(e.target);
@@ -1929,7 +1914,7 @@
                                                         <span className="text-white font-bold text-xs">{rx.patientName}</span>
                                                         <span className="text-[10px] text-slate-500">{new Date(rx.issueDate).toLocaleDateString()}</span>
                                                     </div>
-                                                    <p className="text-[10px] text-slate-400">Dr. {rx.prescriber} • {rx.medicines?.split('\n')?.length || 0} items</p>
+                                                    <p className="text-[10px] text-slate-400">Dr. {rx.prescriber} 鈥� {rx.medicines?.split('\n')?.length || 0} items</p>
                                                     {rx.expiryDate && new Date(rx.expiryDate) < new Date() && <span className="text-[9px] text-red-400 font-bold">EXPIRED</span>}
                                                 </div>
                                             ))}
@@ -1945,7 +1930,7 @@
                         {showSettingsModal && (
                             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowSettingsModal(false))}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
-                                    <h3 className="text-xl font-black text-white uppercase mb-6 text-center">⚙️ System Settings</h3>
+                                    <h3 className="text-xl font-black text-white uppercase mb-6 text-center">鈿欙笍 System Settings</h3>
                                     <div className="space-y-4">
                                         <div>
                                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Tax / VAT Rate (%)</label>
@@ -1976,7 +1961,7 @@
                         {showCustomerHistory && (
                             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowCustomerHistory(null))}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-lg p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh]">
-                                    <h3 className="text-xl font-black text-blue-500 uppercase mb-4 text-center">📋 Customer History</h3>
+                                    <h3 className="text-xl font-black text-blue-500 uppercase mb-4 text-center">馃搵 Customer History</h3>
                                     <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
                                         {(data.sales || []).filter(s => s.patientId === showCustomerHistory || (showCustomerHistory === 'walkin' && !s.patientId)).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).map((s) => (
                                             <div key={s.id} className="bg-black p-3 rounded-xl border border-slate-800">
@@ -2000,47 +1985,47 @@
                         {showNotificationCenter && (
                             <div className="fixed inset-0 z-[200] flex items-start justify-end p-4 pt-20 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowNotificationCenter(false))}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-sm p-6 rounded-[2rem] shadow-2xl flex flex-col animate-slide-up max-h-[70vh] mr-4 mt-4">
-                                    <h3 className="text-lg font-black text-white uppercase mb-4 text-center">🔔 Notifications</h3>
+                                    <h3 className="text-lg font-black text-white uppercase mb-4 text-center">馃敂 Notifications</h3>
                                     <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
                                         {systemAlerts.reorderNeeded > 0 && (
                                             <div onClick={() => { setShowNotificationCenter(false); setShowReorderModal(true); }} className="bg-orange-950/30 border border-orange-800 p-3 rounded-xl cursor-pointer hover:bg-orange-900/30 transition-all">
-                                                <p className="text-orange-400 font-bold text-xs">⚠️ {systemAlerts.reorderNeeded} items below reorder point</p>
+                                                <p className="text-orange-400 font-bold text-xs">鈿狅笍 {systemAlerts.reorderNeeded} items below reorder point</p>
                                                 <p className="text-orange-300 text-[10px] mt-1">Click to view reorder list</p>
                                             </div>
                                         )}
                                         {systemAlerts.outOfStock > 0 && (
                                             <div className="bg-rose-950/30 border border-rose-800 p-3 rounded-xl">
-                                                <p className="text-rose-400 font-bold text-xs">🚫 {systemAlerts.outOfStock} items out of stock</p>
+                                                <p className="text-rose-400 font-bold text-xs">馃毇 {systemAlerts.outOfStock} items out of stock</p>
                                                 <p className="text-rose-300 text-[10px] mt-1">Restock immediately</p>
                                             </div>
                                         )}
                                         {systemAlerts.expired > 0 && (
                                             <div className="bg-red-950/30 border border-red-800 p-3 rounded-xl">
-                                                <p className="text-red-400 font-bold text-xs">☠️ {systemAlerts.expired} items expired</p>
+                                                <p className="text-red-400 font-bold text-xs">鈽狅笍 {systemAlerts.expired} items expired</p>
                                                 <p className="text-red-300 text-[10px] mt-1">Remove from shelves immediately</p>
                                             </div>
                                         )}
                                         {systemAlerts.expiringSoon > 0 && (
                                             <div className="bg-yellow-950/30 border border-yellow-800 p-3 rounded-xl">
-                                                <p className="text-yellow-400 font-bold text-xs">⏳ {systemAlerts.expiringSoon} items expiring within 30 days</p>
+                                                <p className="text-yellow-400 font-bold text-xs">鈴� {systemAlerts.expiringSoon} items expiring within 30 days</p>
                                                 <p className="text-yellow-300 text-[10px] mt-1">Plan promotions or returns</p>
                                             </div>
                                         )}
                                         {systemAlerts.pendingClaims > 0 && (
                                             <div onClick={() => { setShowNotificationCenter(false); handleSetView('REPORTS'); setReportTab('CLAIMS'); }} className="bg-blue-950/30 border border-blue-800 p-3 rounded-xl cursor-pointer hover:bg-blue-900/30 transition-all">
-                                                <p className="text-blue-400 font-bold text-xs">🏥 {systemAlerts.pendingClaims} pending insurance claims</p>
+                                                <p className="text-blue-400 font-bold text-xs">馃彞 {systemAlerts.pendingClaims} pending insurance claims</p>
                                                 <p className="text-blue-300 text-[10px] mt-1">Click to review</p>
                                             </div>
                                         )}
                                         {systemAlerts.openShifts > 0 && (
                                             <div onClick={() => { setShowNotificationCenter(false); setShowShiftModal(true); }} className="bg-amber-950/30 border border-amber-800 p-3 rounded-xl cursor-pointer hover:bg-amber-900/30 transition-all">
-                                                <p className="text-amber-400 font-bold text-xs">🕐 {systemAlerts.openShifts} open shift(s)</p>
+                                                <p className="text-amber-400 font-bold text-xs">馃晲 {systemAlerts.openShifts} open shift(s)</p>
                                                 <p className="text-amber-300 text-[10px] mt-1">Click to manage</p>
                                             </div>
                                         )}
                                         {notificationCount === 0 && (
                                             <div className="text-center py-8">
-                                                <p className="text-slate-500 font-bold text-xs uppercase">All clear — no alerts</p>
+                                                <p className="text-slate-500 font-bold text-xs uppercase">All clear 鈥� no alerts</p>
                                             </div>
                                         )}
                                     </div>
@@ -2050,28 +2035,7 @@
                         )}
 
                         {/* AI Settings Modal */}
-                        {showAiSettings && (
-                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowAiSettings(false))}>
-                                <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
-                                    <h3 className="text-xl font-black text-violet-500 uppercase mb-6 text-center">AI Configuration</h3>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Provider</label>
-                                            <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value)} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-violet-500 input-focus">
-                                                <option value="gemini">Google Gemini</option>
-                                                <option value="openrouter">OpenRouter</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">API Key</label>
-                                            <input type="password" value={aiKey} onChange={(e) => { setAiKey(e.target.value); localStorage.setItem('apex_gemini_key', e.target.value); }} placeholder="Enter API Key" className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-violet-500 input-focus" />
-                                        </div>
-                                        <button onClick={() => { setShowAiSettings(false); toast("AI settings saved", 'success'); }} className="w-full bg-violet-600 hover:bg-violet-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Save Settings</button>
-                                    </div>
-                                    <button onClick={() => setShowAiSettings(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
-                                </div>
-                            </div>
-                        )}
+                        
 
                         {/* Checkout Modal */}
                         {checkoutModal && (
@@ -2130,7 +2094,7 @@
                                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Client (for credit)</label>
                                             <select value={checkoutPatient} onChange={(e) => setCheckoutPatient(e.target.value)} className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus mt-1">
                                                 <option value="">Walk-in Customer</option>
-                                                {data.patients.map(p => <option key={p.id} value={p.id}>{p.name} {p.loyaltyPoints > 0 ? `⭐${p.loyaltyPoints}` : ''} {p.creditBalance > 0 ? `(Debt: ${p.creditBalance.toLocaleString()} ${currency})` : ''}</option>)}
+                                                {data.patients.map(p => <option key={p.id} value={p.id}>{p.name} {p.loyaltyPoints > 0 ? `猸�${p.loyaltyPoints}` : ''} {p.creditBalance > 0 ? `(Debt: ${p.creditBalance.toLocaleString()} ${currency})` : ''}</option>)}
                                             </select>
                                         </div>
                                     </div>
@@ -2144,13 +2108,13 @@
                                         </div>
                                     )}
                                     <div className="grid grid-cols-2 gap-3">
-                                        <button onClick={() => finalizeSale('CASH')} className="bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">💵 Cash</button>
-                                        <button onClick={() => finalizeSale('MOBILE')} className="bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">📱 Mobile</button>
-                                        <button onClick={() => finalizeSale('CARD')} className="bg-violet-600 hover:bg-violet-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">💳 Card</button>
-                                        <button onClick={() => finalizeSale('DEBT')} className="bg-amber-600 hover:bg-amber-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">📋 Credit</button>
+                                        <button onClick={() => finalizeSale('CASH')} className="bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">馃挼 Cash</button>
+                                        <button onClick={() => finalizeSale('MOBILE')} className="bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">馃摫 Mobile</button>
+                                        <button onClick={() => finalizeSale('CARD')} className="bg-violet-600 hover:bg-violet-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">馃挸 Card</button>
+                                        <button onClick={() => finalizeSale('DEBT')} className="bg-amber-600 hover:bg-amber-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">馃搵 Credit</button>
                                     </div>
                                     <button onClick={() => setShowSplitPayment(!showSplitPayment)} className="mt-3 w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">
-                                        {showSplitPayment ? 'Single Payment' : '💰 Split Payment'}
+                                        {showSplitPayment ? 'Single Payment' : '馃挵 Split Payment'}
                                     </button>
                                     {showSplitPayment && (
                                         <button onClick={() => finalizeSale('SPLIT')} className="mt-2 w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Confirm Split Payment</button>
@@ -2164,7 +2128,7 @@
                         {medicalHistoryModal && (
                             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setMedicalHistoryModal(null))}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh]">
-                                    <h3 className="text-xl font-black text-teal-500 uppercase mb-4 text-center">Medical History — {medicalHistoryModal.name}</h3>
+                                    <h3 className="text-xl font-black text-teal-500 uppercase mb-4 text-center">Medical History 鈥� {medicalHistoryModal.name}</h3>
                                     <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 mb-4">
                                         {data.medicalHistory.filter(h => h.patientId === medicalHistoryModal.id).sort((a,b) => new Date(b.date) - new Date(a.date)).map((h) => (
                                             <div key={h.id} className="bg-black p-4 rounded-2xl border border-slate-800">
@@ -2212,7 +2176,7 @@
                                             const fd = new FormData(e.target);
                                             const price = Number(fd.get('price'));
                                             const costPrice = Number(fd.get('costPrice'));
-                                            if (price < costPrice && !confirm(`⚠️ Selling price (${price}) is less than cost (${costPrice}). This will create a loss. Continue?`)) return;
+                                            if (price < costPrice && !confirm(`鈿狅笍 Selling price (${price}) is less than cost (${costPrice}). This will create a loss. Continue?`)) return;
                                             const updated = {
                                                 brandName: fd.get('brandName'), genericName: fd.get('genericName'),
                                                 category: fd.get('category'), subcategory: fd.get('subcategory'),
@@ -2255,7 +2219,7 @@
                                             </div>
                                             <div className="grid grid-cols-2 gap-3">
                                                 <input name="expiryDate" type="date" defaultValue={editing.item.expiryDate ? editing.item.expiryDate.split('T')[0] : ''} className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
-                                                <button type="button" onClick={() => { scannerTargetRef.current = 'INVENTORY'; setScannerActive(true); }} className="bg-slate-800 text-white py-3 rounded-xl font-bold text-xs hover:bg-slate-700 transition-all">📷 Scan</button>
+                                                <button type="button" onClick={() => { scannerTargetRef.current = 'INVENTORY'; setScannerActive(true); }} className="bg-slate-800 text-white py-3 rounded-xl font-bold text-xs hover:bg-slate-700 transition-all">馃摲 Scan</button>
                                             </div>
                                             <select name="supplier" defaultValue={editing.item.supplier} className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus">
                                                 <option value="">Select Supplier</option>
@@ -2263,7 +2227,7 @@
                                             </select>
                                             <div className="flex gap-2">
                                                 <button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">{editing.item.id ? 'Update Product' : 'Add Product'}</button>
-                                                {editing.item.id && <button type="button" onClick={() => handleDeleteProduct(editing.item.id)} className="bg-rose-600 hover:bg-rose-500 text-white py-3 px-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">🗑️</button>}
+                                                {editing.item.id && <button type="button" onClick={() => handleDeleteProduct(editing.item.id)} className="bg-rose-600 hover:bg-rose-500 text-white py-3 px-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">馃棏锔�</button>}
                                             </div>
                                         </form>
                                     )}
@@ -2355,7 +2319,7 @@
                                             </select>
                                             <div className="flex gap-2">
                                                 <button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">{editing.item.id ? 'Update Personnel' : 'Add Personnel'}</button>
-                                                {editing.item.id && <button type="button" onClick={() => handleDeletePersonnel(editing.item)} className="bg-rose-600 hover:bg-rose-500 text-white py-3 px-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">🗑️</button>}
+                                                {editing.item.id && <button type="button" onClick={() => handleDeletePersonnel(editing.item)} className="bg-rose-600 hover:bg-rose-500 text-white py-3 px-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">馃棏锔�</button>}
                                             </div>
                                         </form>
                                     )}
@@ -2387,22 +2351,22 @@
                                 </div>
                                 <div className="p-4 border-t border-slate-800 space-y-2">
                                     <button onClick={() => setShowShiftModal(true)} className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all ${currentShift ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-950/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
-                                        <span className="text-lg">🕐</span><span className="hidden lg:block">{currentShift ? 'Shift Open' : 'Open Shift'}</span>
+                                        <span className="text-lg">馃晲</span><span className="hidden lg:block">{currentShift ? 'Shift Open' : 'Open Shift'}</span>
                                     </button>
                                     <button onClick={() => setShowPrescriptionModal(true)} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
-                                        <span className="text-lg">📝</span><span className="hidden lg:block">Rx Records</span>
+                                        <span className="text-lg">馃摑</span><span className="hidden lg:block">Rx Records</span>
                                     </button>
                                     <button onClick={() => setShowBackupModal(true)} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
-                                        <span className="text-lg">💾</span><span className="hidden lg:block">Backup</span>
+                                        <span className="text-lg">馃捑</span><span className="hidden lg:block">Backup</span>
                                     </button>
                                     <button onClick={() => setShowAuditLog(true)} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
-                                        <span className="text-lg">📋</span><span className="hidden lg:block">Audit</span>
+                                        <span className="text-lg">馃搵</span><span className="hidden lg:block">Audit</span>
                                     </button>
                                     <button onClick={() => setShowAiSettings(true)} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
-                                        <span className="text-lg">⚙️</span><span className="hidden lg:block">AI Settings</span>
+                                        <span className="text-lg">鈿欙笍</span><span className="hidden lg:block">AI Settings</span>
                                     </button>
                                     <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 transition-all">
-                                        <span className="text-lg">🚪</span><span className="hidden lg:block">Logout</span>
+                                        <span className="text-lg">馃毆</span><span className="hidden lg:block">Logout</span>
                                     </button>
                                     <div className="hidden lg:block text-center pt-2">
                                         <p className="text-[9px] text-slate-600 font-bold">{user.fullName || user.email}</p>
@@ -2418,7 +2382,7 @@
                             <div className="h-16 bg-slate-900/50 border-b border-slate-800 flex items-center justify-between px-4 lg:px-6 shrink-0 no-print">
                                 <div className="flex items-center gap-3">
                                     {viewHistory.length > 0 && (
-                                        <button onClick={handleGoBack} className="text-slate-400 hover:text-white font-bold text-sm">← Back</button>
+                                        <button onClick={handleGoBack} className="text-slate-400 hover:text-white font-bold text-sm">鈫� Back</button>
                                     )}
                                     <h2 className="text-sm font-black text-white uppercase tracking-wider">{view}</h2>
                                     {view === 'POS' && (
@@ -2444,10 +2408,10 @@
                                     )}
                                     {/* Notification Bell */}
                                     <button onClick={() => setShowNotificationCenter(true)} className="relative text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-all">
-                                        <span className="text-lg">🔔</span>
+                                        <span className="text-lg">馃敂</span>
                                         {notificationCount > 0 && <span className="notification-dot"></span>}
                                     </button>
-                                    <button onClick={() => setShowSettingsModal(true)} className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-all text-lg">⚙️</button>
+                                    <button onClick={() => setShowSettingsModal(true)} className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-all text-lg">鈿欙笍</button>
                                     <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl outline-none border border-slate-700">
                                         <option value="TZS">TZS</option>
                                         <option value="USD">USD</option>
@@ -2469,7 +2433,7 @@
                                 {/* ========== DASHBOARD VIEW ========== */}
                                 {view === 'DASHBOARD' && (
                                     <div className="space-y-6 animate-fade-in">
-                                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                                             <div className="glass-panel p-5 rounded-3xl">
                                                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total Sales</p>
                                                 <p className="text-2xl font-black text-emerald-400">{data.sales.reduce((a,b) => a + Number(b.total), 0).toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p>
@@ -2483,27 +2447,47 @@
                                                 <p className="text-2xl font-black text-violet-400">{inventoryTotalValue.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p>
                                             </div>
                                             <div className="glass-panel p-5 rounded-3xl">
+                                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Inv. Selling Price</p>
+                                                <p className="text-2xl font-black text-cyan-400">{inventoryTotalValue.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p>
+                                                <p className="text-[9px] text-slate-600 mt-1">Cost: {inventoryTotalCost.toLocaleString()} {currency}</p>
+                                            </div>
+                                            <div className="glass-panel p-5 rounded-3xl">
                                                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Products</p>
                                                 <p className="text-2xl font-black text-amber-400">{data.inventory.length}</p>
                                             </div>
                                         </div>
 
                                         {/* Sales Target */}
-                                        <div className="glass-panel p-5 rounded-3xl">
-                                            <div className="flex justify-between items-center mb-3">
-                                                <h3 className="text-sm font-black text-white uppercase tracking-wider">Today's Sales Target</h3>
-                                                <span className="text-xs text-slate-500 font-bold">{todayRevenue.toLocaleString()} / {salesTarget.toLocaleString()} {currency}</span>
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                            <div className="glass-panel p-5 rounded-3xl">
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <h3 className="text-sm font-black text-white uppercase tracking-wider">Today's Sales Target</h3>
+                                                    <span className="text-xs text-slate-500 font-bold">{todayRevenue.toLocaleString()} / {salesTarget.toLocaleString()} {currency}</span>
+                                                </div>
+                                                <div className="w-full h-4 bg-slate-800 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-1000" style={{width: `${salesTargetProgress}%`}}></div>
+                                                </div>
+                                                <p className="text-[10px] text-slate-500 mt-2 font-bold">{salesTargetProgress >= 100 ? '🎯 Target achieved!' : `${(salesTarget - todayRevenue).toLocaleString()} ${currency} remaining`}</p>
                                             </div>
-                                            <div className="w-full h-4 bg-slate-800 rounded-full overflow-hidden">
-                                                <div className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-1000" style={{width: `${salesTargetProgress}%`}}></div>
+                                            <div className="glass-panel p-5 rounded-3xl">
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider mb-3">Today's Transactions</h3>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Count</p>
+                                                        <p className="text-2xl font-black text-blue-400">{todayTransactionCount}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Avg Value</p>
+                                                        <p className="text-2xl font-black text-cyan-400">{avgTransactionValue.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <p className="text-[10px] text-slate-500 mt-2 font-bold">{salesTargetProgress >= 100 ? '🎉 Target achieved!' : `${(salesTarget - todayRevenue).toLocaleString()} ${currency} remaining`}</p>
                                         </div>
 
                                         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                                             <div onClick={() => setShowReorderModal(true)} className="glass-panel p-4 rounded-3xl cursor-pointer hover:border-orange-500 transition-all border border-transparent">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center text-orange-400 text-lg">⚠️</div>
+                                                    <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center text-orange-400 text-lg">鈿狅笍</div>
                                                     <div>
                                                         <p className="text-2xl font-black text-orange-400">{systemAlerts.reorderNeeded}</p>
                                                         <p className="text-[10px] font-bold text-slate-500 uppercase">Reorder Needed</p>
@@ -2512,7 +2496,7 @@
                                             </div>
                                             <div className="glass-panel p-4 rounded-3xl border border-transparent">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-xl bg-rose-500/20 flex items-center justify-center text-rose-400 text-lg">🚫</div>
+                                                    <div className="w-10 h-10 rounded-xl bg-rose-500/20 flex items-center justify-center text-rose-400 text-lg">馃毇</div>
                                                     <div>
                                                         <p className="text-2xl font-black text-rose-400">{systemAlerts.outOfStock}</p>
                                                         <p className="text-[10px] font-bold text-slate-500 uppercase">Out of Stock</p>
@@ -2521,7 +2505,7 @@
                                             </div>
                                             <div className="glass-panel p-4 rounded-3xl border border-transparent">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center text-red-400 text-lg">☠️</div>
+                                                    <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center text-red-400 text-lg">鈽狅笍</div>
                                                     <div>
                                                         <p className="text-2xl font-black text-red-400">{systemAlerts.expired}</p>
                                                         <p className="text-[10px] font-bold text-slate-500 uppercase">Expired Items</p>
@@ -2530,7 +2514,7 @@
                                             </div>
                                             <div className="glass-panel p-4 rounded-3xl border border-transparent">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center text-yellow-400 text-lg">⏳</div>
+                                                    <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center text-yellow-400 text-lg">鈴�</div>
                                                     <div>
                                                         <p className="text-2xl font-black text-yellow-400">{systemAlerts.expiringSoon}</p>
                                                         <p className="text-[10px] font-bold text-slate-500 uppercase">Expiring Soon</p>
@@ -2539,7 +2523,7 @@
                                             </div>
                                             <div onClick={() => setShowInsuranceModal(true)} className="glass-panel p-4 rounded-3xl cursor-pointer hover:border-blue-500 transition-all border border-transparent">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-400 text-lg">🏥</div>
+                                                    <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-400 text-lg">馃彞</div>
                                                     <div>
                                                         <p className="text-2xl font-black text-blue-400">{systemAlerts.pendingClaims}</p>
                                                         <p className="text-[10px] font-bold text-slate-500 uppercase">Pending Claims</p>
@@ -2548,7 +2532,7 @@
                                             </div>
                                             <div className="glass-panel p-4 rounded-3xl border border-transparent">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-lg">👥</div>
+                                                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-lg">馃懃</div>
                                                     <div>
                                                         <p className="text-2xl font-black text-emerald-400">{data.patients.length}</p>
                                                         <p className="text-[10px] font-bold text-slate-500 uppercase">Clients</p>
@@ -2557,25 +2541,48 @@
                                             </div>
                                         </div>
 
-                                        <div className="glass-panel p-6 rounded-3xl">
-                                            <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Top Selling Products</h3>
-                                            <div className="space-y-3">
-                                                {itemAnalytics.slice(0, 10).map((item, idx) => (
-                                                    <div key={idx} className="flex items-center justify-between bg-black p-3 rounded-xl">
-                                                        <div className="flex items-center gap-3">
-                                                            <span className="text-emerald-500 font-black text-xs w-6">#{idx+1}</span>
-                                                            <div>
-                                                                <p className="text-white font-bold text-sm">{item.name}</p>
-                                                                <p className="text-[10px] text-slate-500">{item.cat}</p>
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                            <div className="glass-panel p-6 rounded-3xl">
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Top Selling Products</h3>
+                                                <div className="space-y-3">
+                                                    {itemAnalytics.slice(0, 10).map((item, idx) => (
+                                                        <div key={idx} className="flex items-center justify-between bg-black p-3 rounded-xl">
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="text-emerald-500 font-black text-xs w-6">#{idx+1}</span>
+                                                                <div>
+                                                                    <p className="text-white font-bold text-sm">{item.name}</p>
+                                                                    <p className="text-[10px] text-slate-500">{item.cat}</p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="text-white font-bold text-sm">{item.qty} sold</p>
+                                                                <p className="text-[10px] text-emerald-400">{item.revenue.toLocaleString()} {currency}</p>
                                                             </div>
                                                         </div>
-                                                        <div className="text-right">
-                                                            <p className="text-white font-bold text-sm">{item.qty} sold</p>
-                                                            <p className="text-[10px] text-emerald-400">{item.revenue.toLocaleString()} {currency}</p>
+                                                    ))}
+                                                    {itemAnalytics.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No sales data yet</p>}
+                                                </div>
+                                            </div>
+                                            <div className="glass-panel p-6 rounded-3xl">
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Top Margin Products</h3>
+                                                <div className="space-y-3">
+                                                    {marginProducts.slice(0, 10).map((item, idx) => (
+                                                        <div key={idx} className="flex items-center justify-between bg-black p-3 rounded-xl">
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="text-pink-500 font-black text-xs w-6">#{idx+1}</span>
+                                                                <div>
+                                                                    <p className="text-white font-bold text-sm">{item.name}</p>
+                                                                    <p className="text-[10px] text-slate-500">{item.qty} units sold</p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="text-pink-400 font-bold text-sm">{item.margin.toFixed(1)}%</p>
+                                                                <p className="text-[10px] text-emerald-400">{item.revenue.toLocaleString()} {currency}</p>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                ))}
-                                                {itemAnalytics.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No sales data yet</p>}
+                                                    ))}
+                                                    {marginProducts.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No sales data yet</p>}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -2589,14 +2596,14 @@
                                             <div className="flex gap-2 mb-4 shrink-0">
                                                 <form onSubmit={handleBarcodeSubmit} className="flex-1 flex gap-2">
                                                     <input value={barcodeInput} onChange={(e) => setBarcodeInput(e.target.value)} placeholder="Scan barcode or type name... (F1)" className="flex-1 p-3 bg-slate-800 rounded-xl text-white font-bold text-sm outline-none border border-slate-700 focus:border-emerald-500 input-focus" />
-                                                    <button type="button" onClick={() => { scannerTargetRef.current = 'POS'; setScannerActive(true); }} className="bg-slate-700 hover:bg-slate-600 text-white px-4 rounded-xl font-bold text-xs transition-all" title="F5">📷</button>
+                                                    <button type="button" onClick={() => { scannerTargetRef.current = 'POS'; setScannerActive(true); }} className="bg-slate-700 hover:bg-slate-600 text-white px-4 rounded-xl font-bold text-xs transition-all" title="F5">馃摲</button>
                                                     <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 rounded-xl font-black text-xs transition-all">Add</button>
                                                 </form>
                                             </div>
                                             {/* Favorites */}
                                             {favorites.length > 0 && (
                                                 <div className="flex gap-2 mb-3 shrink-0 overflow-x-auto no-scrollbar">
-                                                    <span className="text-[10px] text-slate-500 font-bold uppercase self-center">⭐ Favorites:</span>
+                                                    <span className="text-[10px] text-slate-500 font-bold uppercase self-center">猸� Favorites:</span>
                                                     {favorites.map(fid => {
                                                         const favItem = data.inventory.find(i => i.id === fid);
                                                         if (!favItem) return null;
@@ -2616,7 +2623,7 @@
                                             <div className="flex-1 overflow-y-auto no-scrollbar grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                                                 {processedInventory.filter(i => i.stock > 0 && (!i.expiryDate || !isItemExpired(i.expiryDate))).map(p => (
                                                     <button key={p.id} onClick={() => addToCart(p)} className="product-card relative bg-slate-800 p-4 rounded-2xl border border-slate-700 hover:border-emerald-500 transition-all text-left flex flex-col gap-1">
-                                                        <button onClick={(e) => { e.stopPropagation(); setFavorites(prev => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]); }} className={`favorite-btn text-lg ${favorites.includes(p.id) ? 'active' : 'text-slate-600 hover:text-amber-400'}`}>⭐</button>
+                                                        <button onClick={(e) => { e.stopPropagation(); setFavorites(prev => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]); }} className={`favorite-btn text-lg ${favorites.includes(p.id) ? 'active' : 'text-slate-600 hover:text-amber-400'}`}>猸�</button>
                                                         <p className="text-white font-bold text-sm truncate pr-6">{p.brandName}</p>
                                                         <p className="text-[10px] text-slate-500 truncate">{p.genericName}</p>
                                                         {p.batchNumber && <span className="batch-badge w-fit">Batch: {p.batchNumber}</span>}
@@ -2646,7 +2653,7 @@
                                                 <div className="mb-3 space-y-2">
                                                     {drugInteractions.map((int, idx) => (
                                                         <div key={idx} className={`p-2 rounded-xl text-[10px] font-bold ${int.severity === 'SEVERE' ? 'interaction-severe text-red-200' : int.severity === 'MODERATE' ? 'interaction-moderate text-orange-200' : 'interaction-mild text-yellow-200'}`}>
-                                                            ⚠️ {int.severity}: {int.drugs[0]} + {int.drugs[1]}
+                                                            鈿狅笍 {int.severity}: {int.drugs[0]} + {int.drugs[1]}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -2657,10 +2664,10 @@
                                                     <div key={item.id} className="bg-black p-3 rounded-xl border border-slate-800">
                                                         <div className="flex justify-between items-start mb-2">
                                                             <p className="text-white font-bold text-xs truncate pr-2">{item.brandName}</p>
-                                                            <button onClick={() => removeFromCart(item.id)} className="text-rose-500 hover:text-rose-400 text-xs font-black">✕</button>
+                                                            <button onClick={() => removeFromCart(item.id)} className="text-rose-500 hover:text-rose-400 text-xs font-black">鉁�</button>
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            <button onClick={() => updateCartItem(item.id, 'qty', item.qty - 1)} className="w-6 h-6 bg-slate-800 rounded-lg text-white font-bold text-xs hover:bg-slate-700">−</button>
+                                                            <button onClick={() => updateCartItem(item.id, 'qty', item.qty - 1)} className="w-6 h-6 bg-slate-800 rounded-lg text-white font-bold text-xs hover:bg-slate-700">鈭�</button>
                                                             <input type="number" value={item.qty} onChange={(e) => updateCartItem(item.id, 'qty', e.target.value)} className="w-12 bg-slate-800 rounded-lg text-white font-bold text-xs text-center outline-none border border-slate-700 py-1" />
                                                             <button onClick={() => updateCartItem(item.id, 'qty', item.qty + 1)} className="w-6 h-6 bg-slate-800 rounded-lg text-white font-bold text-xs hover:bg-slate-700">+</button>
                                                             <input type="number" value={item.currentPrice} onChange={(e) => updateCartItem(item.id, 'currentPrice', e.target.value)} className="flex-1 bg-slate-800 rounded-lg text-emerald-400 font-bold text-xs text-right outline-none border border-slate-700 py-1 px-2" />
@@ -2713,9 +2720,9 @@
                                             <button onClick={() => setEditing({type: 'INVENTORY', item: {}})} className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all whitespace-nowrap">+ Add Product</button>
                                             <button onClick={() => setShowSupplierModal(true)} className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all whitespace-nowrap">Suppliers</button>
                                             <button onClick={() => setShowTransferModal(true)} className="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all whitespace-nowrap">Transfer</button>
-                                            <button onClick={() => setShowStockTakeModal(true)} className="bg-teal-600 hover:bg-teal-500 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📋</button>
-                                            <button onClick={() => setShowPurchaseOrderModal(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📋 PO</button>
-                                            <button onClick={() => exportToExcel(processedInventory.map(i => ({Brand: i.brandName, Generic: i.genericName, Category: i.category, Stock: i.stock, Price: i.price, Cost: i.costPrice, Expiry: i.expiryDate, Supplier: i.supplier, Batch: i.batchNumber})), 'Inventory')} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📊</button>
+                                            <button onClick={() => setShowStockTakeModal(true)} className="bg-teal-600 hover:bg-teal-500 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">馃搵</button>
+                                            <button onClick={() => setShowPurchaseOrderModal(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">馃搵 PO</button>
+                                            <button onClick={() => exportToExcel(processedInventory.map(i => ({Brand: i.brandName, Generic: i.genericName, Category: i.category, Stock: i.stock, Price: i.price, Cost: i.costPrice, Expiry: i.expiryDate, Supplier: i.supplier, Batch: i.batchNumber})), 'Inventory')} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">馃搳</button>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -2730,10 +2737,10 @@
                                                                 <p className="text-white font-bold text-sm">{p.brandName}</p>
                                                                 <p className="text-[10px] text-slate-500">{p.genericName}</p>
                                                             </div>
-                                                            <button onClick={() => setEditing({type: 'INVENTORY', item: p})} className="text-slate-400 hover:text-white text-xs font-bold">✎</button>
+                                                            <button onClick={() => setEditing({type: 'INVENTORY', item: p})} className="text-slate-400 hover:text-white text-xs font-bold">鉁�</button>
                                                         </div>
                                                         <div className="space-y-1 text-xs text-slate-400 mb-3">
-                                                            <div className="flex justify-between"><span>Stock:</span><span className={`font-bold ${isOOS ? 'text-rose-400' : isLow ? 'text-orange-400' : 'text-white'}`}>{p.stock} {isLow && !isOOS ? '⚠️' : ''}</span></div>
+                                                            <div className="flex justify-between"><span>Stock:</span><span className={`font-bold ${isOOS ? 'text-rose-400' : isLow ? 'text-orange-400' : 'text-white'}`}>{p.stock} {isLow && !isOOS ? '鈿狅笍' : ''}</span></div>
                                                             <div className="flex justify-between"><span>Price:</span><span className="text-emerald-400 font-bold">{Number(p.price).toLocaleString()} {currency}</span></div>
                                                             <div className="flex justify-between"><span>Cost:</span><span className="text-slate-500">{Number(p.costPrice).toLocaleString()} {currency}</span></div>
                                                             {p.expiryDate && <div className="flex justify-between"><span>Expiry:</span><span className={`font-bold ${isExpired ? 'text-red-400' : 'text-slate-500'}`}>{new Date(p.expiryDate).toLocaleDateString()}</span></div>}
@@ -2758,7 +2765,7 @@
                                         <div className="flex flex-col md:flex-row gap-3">
                                             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search clients..." className="flex-1 p-4 bg-slate-800 rounded-2xl text-white font-bold text-sm outline-none border border-slate-700 focus:border-emerald-500 input-focus" />
                                             <button onClick={() => setEditing({type: 'PATIENT', item: {}})} className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all whitespace-nowrap">+ Add Client</button>
-                                            <button onClick={() => exportToExcel(data.patients.map(p => ({Name: p.name, Type: p.clientType, Phone: p.phone, Email: p.email, Age: p.age, Sex: p.sex, Debt: p.creditBalance || 0, Points: p.loyaltyPoints || 0})), 'Clients')} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📊</button>
+                                            <button onClick={() => exportToExcel(data.patients.map(p => ({Name: p.name, Type: p.clientType, Phone: p.phone, Email: p.email, Age: p.age, Sex: p.sex, Debt: p.creditBalance || 0, Points: p.loyaltyPoints || 0})), 'Clients')} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">馃搳</button>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -2768,13 +2775,13 @@
                                                         <div>
                                                             <div className="flex items-center gap-2">
                                                                 <p className="text-white font-bold text-sm">{p.name}</p>
-                                                                {p.loyaltyPoints > 0 && <span className="loyalty-badge">⭐ {p.loyaltyPoints}</span>}
+                                                                {p.loyaltyPoints > 0 && <span className="loyalty-badge">猸� {p.loyaltyPoints}</span>}
                                                             </div>
                                                             <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg ${p.clientType === 'CORPORATE' ? 'bg-blue-500/20 text-blue-400' : p.clientType === 'WALKIN' ? 'bg-slate-500/20 text-slate-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{p.clientType || 'PATIENT'}</span>
                                                         </div>
                                                         <div className="flex gap-2">
-                                                            <button onClick={() => setEditing({type: 'PATIENT', item: p})} className="text-slate-400 hover:text-white text-xs font-bold">✎</button>
-                                                            <button onClick={() => setMedicalHistoryModal(p)} className="text-teal-400 hover:text-teal-300 text-xs font-bold">📋</button>
+                                                            <button onClick={() => setEditing({type: 'PATIENT', item: p})} className="text-slate-400 hover:text-white text-xs font-bold">鉁�</button>
+                                                            <button onClick={() => setMedicalHistoryModal(p)} className="text-teal-400 hover:text-teal-300 text-xs font-bold">馃搵</button>
                                                         </div>
                                                     </div>
                                                     <div className="space-y-1 text-xs text-slate-400 mb-3">
@@ -2799,7 +2806,7 @@
                                                     )}
                                                     <div className="flex gap-2">
                                                         <button onClick={() => { setCheckoutPatient(p.id); handleSetView('POS'); toast(`Client ${p.name} selected for POS`, 'info'); }} className="flex-1 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">Select for Sale</button>
-                                                        <button onClick={() => setShowCustomerHistory(p.id)} className="bg-slate-700 hover:bg-slate-600 text-white py-2 px-3 rounded-xl font-black text-[10px] uppercase transition-all">📋</button>
+                                                        <button onClick={() => setShowCustomerHistory(p.id)} className="bg-slate-700 hover:bg-slate-600 text-white py-2 px-3 rounded-xl font-black text-[10px] uppercase transition-all">馃搵</button>
                                                     </div>
                                                 </div>
                                             ))}
@@ -2809,42 +2816,7 @@
                                 )}
 
                                 {/* ========== AI CLINICAL VIEW ========== */}
-                                {view === 'AI_CLINICAL' && (
-                                    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in h-full flex flex-col">
-                                        <div className="glass-panel p-6 rounded-3xl">
-                                            <div className="flex justify-between items-center mb-4">
-                                                <h3 className="text-lg font-black text-violet-400 uppercase tracking-wider">🧠 Clinical AI Assistant</h3>
-                                                <button onClick={() => setShowAiSettings(true)} className="text-[10px] bg-slate-800 text-slate-400 hover:text-white px-3 py-2 rounded-xl font-bold transition-all">⚙️ Settings</button>
-                                            </div>
-                                            <p className="text-xs text-slate-500 mb-4">Powered by Tanzania STG, NEMLIT & local protocols. For reference only — never replace clinical judgment.</p>
-                                            <form onSubmit={handleAiSubmit} className="flex gap-2 mb-4">
-                                                <input value={aiQuery} onChange={(e) => setAiQuery(e.target.value)} placeholder="Ask about drug dosing, interactions, STG guidelines..." className="flex-1 p-4 bg-black rounded-2xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-violet-500 input-focus" />
-                                                <button type="submit" disabled={isAiLoading} className="bg-violet-600 hover:bg-violet-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all disabled:opacity-50">
-                                                    {isAiLoading ? '...' : 'Ask'}
-                                                </button>
-                                            </form>
-                                        </div>
-
-                                        {aiResponse && (
-                                            <div className="glass-panel p-6 rounded-3xl flex-1 overflow-y-auto no-scrollbar">
-                                                <div className="markdown-body text-sm text-slate-300" dangerouslySetInnerHTML={{__html: aiResponse}}></div>
-                                            </div>
-                                        )}
-
-                                        {!aiResponse && !isAiLoading && (
-                                            <div className="glass-panel p-8 rounded-3xl text-center">
-                                                <p className="text-slate-500 font-bold text-sm uppercase tracking-wider">Ask a clinical question to get started</p>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-6">
-                                                    {['Metformin dosing in renal impairment', 'First-line hypertension per Tanzania STG', 'Artemether-lumefantrine pediatric dosing', 'Drug interactions with warfarin'].map(q => (
-                                                        <button key={q} onClick={() => { setAiQuery(q); }} className="bg-slate-800 p-4 rounded-2xl text-left text-xs text-slate-400 hover:text-white hover:border-violet-500 border border-slate-700 transition-all font-bold">
-                                                            {q}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+                                
 
                                 {/* ========== FINANCE VIEW ========== */}
                                 {view === 'FINANCE' && (
@@ -2924,8 +2896,8 @@
                                                     {[...data.sales, ...data.expenses.map(e => ({...e, total: e.amount, method: 'EXPENSE', soldBy: e.addedBy, timestamp: e.timestamp || e.date}))].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 20).map((t, idx) => (
                                                         <div key={t.id || t.timestamp + idx} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center">
                                                             <div>
-                                                                <p className="text-white font-bold text-xs">{t.method === 'EXPENSE' ? `📉 ${t.description}` : `💰 Sale — ${t.items?.length || 0} items`}</p>
-                                                                <p className="text-[10px] text-slate-500">{new Date(t.timestamp).toLocaleString()} • {t.soldBy || t.addedBy}</p>
+                                                                <p className="text-white font-bold text-xs">{t.method === 'EXPENSE' ? `馃搲 ${t.description}` : `馃挵 Sale 鈥� ${t.items?.length || 0} items`}</p>
+                                                                <p className="text-[10px] text-slate-500">{new Date(t.timestamp).toLocaleString()} 鈥� {t.soldBy || t.addedBy}</p>
                                                             </div>
                                                             <span className={`font-black text-sm ${t.method === 'EXPENSE' ? 'text-rose-400' : 'text-emerald-400'}`}>{t.method === 'EXPENSE' ? '-' : '+'}{Number(t.total).toLocaleString()} {currency}</span>
                                                         </div>
@@ -2934,7 +2906,7 @@
                                             </div>
                                         </div>
 
-                                        <button onClick={handleDeleteAllFinance} className="w-full bg-rose-950/30 border border-rose-800 text-rose-400 hover:bg-rose-900/50 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">⚠️ Wipe All Financial Data</button>
+                                        <button onClick={handleDeleteAllFinance} className="w-full bg-rose-950/30 border border-rose-800 text-rose-400 hover:bg-rose-900/50 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">鈿狅笍 Wipe All Financial Data</button>
                                     </div>
                                 )}
 
@@ -2948,7 +2920,7 @@
                                                     <div key={s.id} className="bg-black p-4 rounded-2xl border border-slate-800 flex justify-between items-center">
                                                         <div>
                                                             <p className="text-white font-bold text-sm">{new Date(s.timestamp).toLocaleString()}</p>
-                                                            <p className="text-[10px] text-slate-500">{s.soldBy} • {s.method} • {s.items?.length || 0} items</p>
+                                                            <p className="text-[10px] text-slate-500">{s.soldBy} 鈥� {s.method} 鈥� {s.items?.length || 0} items</p>
                                                         </div>
                                                         <span className="text-emerald-400 font-black text-sm">{s.total.toLocaleString()} {currency}</span>
                                                     </div>
@@ -2970,7 +2942,7 @@
                                                     <div key={e.id} className="bg-black p-4 rounded-2xl border border-slate-800 flex justify-between items-center">
                                                         <div>
                                                             <p className="text-white font-bold text-sm">{e.description}</p>
-                                                            <p className="text-[10px] text-slate-500">{e.category} • {new Date(e.timestamp || e.date).toLocaleString()} • {e.addedBy}</p>
+                                                            <p className="text-[10px] text-slate-500">{e.category} 鈥� {new Date(e.timestamp || e.date).toLocaleString()} 鈥� {e.addedBy}</p>
                                                         </div>
                                                         <span className="text-rose-400 font-black text-sm">-{e.amount.toLocaleString()} {currency}</span>
                                                     </div>
@@ -3044,7 +3016,7 @@
                                                 if (reportTab === 'MOVEMENTS') exportData = data.stockMovements.map(m => ({Date: new Date(m.timestamp).toLocaleString(), Item: m.itemName, Type: m.type, Qty: m.quantity, Reason: m.reason, User: m.userName}));
                                                 if (reportTab === 'SHIFTS') exportData = data.shifts.map(s => ({Opened: new Date(s.openedAt).toLocaleString(), Closed: s.closedAt ? new Date(s.closedAt).toLocaleString() : 'Open', User: s.userName, Float: s.openingFloat, Sales: s.totalSales, Status: s.status}));
                                                 exportToExcel(exportData, `${reportTab}_Report`);
-                                            }} className="bg-slate-700 hover:bg-slate-600 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">📊 Export</button>
+                                            }} className="bg-slate-700 hover:bg-slate-600 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">馃搳 Export</button>
                                         </div>
 
                                         {reportTab === 'SALES' && (
@@ -3058,7 +3030,7 @@
                                                                 <span className="text-emerald-400 font-black text-sm">{s.total.toLocaleString()} {currency}</span>
                                                             </div>
                                                             <div className="flex justify-between text-[10px] text-slate-500">
-                                                                <span>{s.soldBy} • {s.method} • {s.items?.length || 0} items</span>
+                                                                <span>{s.soldBy} 鈥� {s.method} 鈥� {s.items?.length || 0} items</span>
                                                                 <span className="text-blue-400">Profit: {s.profit.toLocaleString()} {currency}</span>
                                                             </div>
                                                         </div>
@@ -3076,7 +3048,7 @@
                                                         <div key={i.id} className="bg-black p-4 rounded-2xl border border-slate-800 flex justify-between items-center">
                                                             <div>
                                                                 <p className="text-white font-bold text-sm">{i.brandName}</p>
-                                                                <p className="text-[10px] text-slate-500">{i.genericName} • Stock: {i.stock}</p>
+                                                                <p className="text-[10px] text-slate-500">{i.genericName} 鈥� Stock: {i.stock}</p>
                                                             </div>
                                                             <div className="text-right">
                                                                 <p className="text-emerald-400 font-bold text-sm">{(i.stock * i.price).toLocaleString()} {currency}</p>
@@ -3096,11 +3068,11 @@
                                                         <div key={p.id} className="bg-black p-4 rounded-2xl border border-slate-800 flex justify-between items-center">
                                                             <div>
                                                                 <p className="text-white font-bold text-sm">{p.name}</p>
-                                                                <p className="text-[10px] text-slate-500">{p.phone} • {p.clientType || 'PATIENT'}</p>
+                                                                <p className="text-[10px] text-slate-500">{p.phone} 鈥� {p.clientType || 'PATIENT'}</p>
                                                             </div>
                                                             <div className="text-right">
                                                                 <span className={`font-bold text-sm ${(p.creditBalance || 0) > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{(p.creditBalance || 0).toLocaleString()} {currency}</span>
-                                                                {p.loyaltyPoints > 0 && <p className="text-[10px] text-amber-400">⭐ {p.loyaltyPoints} pts</p>}
+                                                                {p.loyaltyPoints > 0 && <p className="text-[10px] text-amber-400">猸� {p.loyaltyPoints} pts</p>}
                                                             </div>
                                                         </div>
                                                     ))}
@@ -3119,7 +3091,7 @@
                                                                 <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${c.status === 'PENDING' ? 'bg-amber-500/20 text-amber-400' : c.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>{c.status}</span>
                                                             </div>
                                                             <div className="flex justify-between text-[10px] text-slate-500">
-                                                                <span>{c.provider} • {c.policyNumber}</span>
+                                                                <span>{c.provider} 鈥� {c.policyNumber}</span>
                                                                 <span className="text-blue-400 font-bold">{c.claimedAmount?.toLocaleString()} {currency}</span>
                                                             </div>
                                                         </div>
@@ -3140,7 +3112,7 @@
                                                                 <span className="text-rose-400 font-black text-sm">{r.returnQty} units</span>
                                                             </div>
                                                             <div className="flex justify-between text-[10px] text-slate-500">
-                                                                <span>{new Date(r.timestamp).toLocaleString()} • {r.processedBy}</span>
+                                                                <span>{new Date(r.timestamp).toLocaleString()} 鈥� {r.processedBy}</span>
                                                                 <span className="text-rose-400 font-bold">-{r.returnAmount?.toLocaleString()} {currency}</span>
                                                             </div>
                                                             <p className="text-[10px] text-slate-400 mt-1">Reason: {r.reason || 'Not specified'}</p>
@@ -3162,7 +3134,7 @@
                                                                 <span className={`font-black text-sm ${m.quantity > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{m.quantity > 0 ? '+' : ''}{m.quantity}</span>
                                                             </div>
                                                             <div className="flex justify-between text-[10px] text-slate-500">
-                                                                <span>{m.type} • {new Date(m.timestamp).toLocaleString()}</span>
+                                                                <span>{m.type} 鈥� {new Date(m.timestamp).toLocaleString()}</span>
                                                                 <span>{m.userName}</span>
                                                             </div>
                                                             <p className="text-[10px] text-slate-400 mt-1">{m.reason}</p>
@@ -3217,7 +3189,7 @@
                                                             <p className="text-white font-bold text-sm">{u.fullName || u.email}</p>
                                                             <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg ${u.role === 'MANAGER' ? 'bg-violet-500/20 text-violet-400' : u.role === 'PHARMACIST' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-500/20 text-slate-400'}`}>{u.role}</span>
                                                         </div>
-                                                        <button onClick={() => setEditing({type: 'USER', item: u})} className="text-slate-400 hover:text-white text-xs font-bold">✎</button>
+                                                        <button onClick={() => setEditing({type: 'USER', item: u})} className="text-slate-400 hover:text-white text-xs font-bold">鉁�</button>
                                                     </div>
                                                     <div className="space-y-1 text-xs text-slate-400 mb-3">
                                                         <div className="flex justify-between"><span>Email:</span><span className="text-white">{u.email}</span></div>
@@ -3237,7 +3209,7 @@
                             {isMobile && (
                                 <div className="h-16 bg-slate-900 border-t border-slate-800 flex items-center justify-around px-2 shrink-0 no-print overflow-x-auto no-scrollbar">
                                     <button onClick={() => setDrawerOpen(true)} className={`flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl transition-all min-w-[3.5rem] ${drawerOpen ? 'text-emerald-400' : 'text-slate-500'}`}>
-                                        <span className="text-lg">☰</span>
+                                        <span className="text-lg">鈽�</span>
                                         <span className="text-[8px] font-bold uppercase tracking-wider">Menu</span>
                                     </button>
                                     {navItems.filter(n => !n.a || hasAccess(n.a)).slice(0, 4).map(item => (
@@ -3247,7 +3219,7 @@
                                         </button>
                                     ))}
                                     <button onClick={handleLogout} className="flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl text-rose-500 min-w-[3.5rem]">
-                                        <span className="text-lg">🚪</span>
+                                        <span className="text-lg">馃毆</span>
                                         <span className="text-[8px] font-bold uppercase tracking-wider">Exit</span>
                                     </button>
                                 </div>
@@ -3302,19 +3274,19 @@
                                         <div className="space-y-2 mb-6">
                                             <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider px-2">Quick Actions</p>
                                             <button onClick={() => { setDrawerOpen(false); setShowShiftModal(true); }} className="w-full flex items-center gap-4 px-5 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-amber-400 bg-amber-950/20 border border-amber-900/30 transition-all">
-                                                <span className="text-lg">🕐</span>
+                                                <span className="text-lg">馃晲</span>
                                                 <span>{currentShift ? 'Close Shift' : 'Open Shift'}</span>
                                             </button>
                                             <button onClick={() => { setDrawerOpen(false); setShowPrescriptionModal(true); }} className="w-full flex items-center gap-4 px-5 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-teal-400 bg-teal-950/20 border border-teal-900/30 transition-all">
-                                                <span className="text-lg">📝</span>
+                                                <span className="text-lg">馃摑</span>
                                                 <span>Prescriptions</span>
                                             </button>
                                             <button onClick={() => { setDrawerOpen(false); setShowBackupModal(true); }} className="w-full flex items-center gap-4 px-5 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 transition-all">
-                                                <span className="text-lg">💾</span>
+                                                <span className="text-lg">馃捑</span>
                                                 <span>Backup Data</span>
                                             </button>
                                             <button onClick={() => { setDrawerOpen(false); setShowAuditLog(true); }} className="w-full flex items-center gap-4 px-5 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-amber-400 bg-amber-950/20 border border-amber-900/30 transition-all">
-                                                <span className="text-lg">📋</span>
+                                                <span className="text-lg">馃搵</span>
                                                 <span>Audit Log</span>
                                             </button>
                                         </div>
@@ -3325,19 +3297,19 @@
                                                 <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider px-2">Alerts</p>
                                                 {systemAlerts.reorderNeeded > 0 && (
                                                     <div onClick={() => { setDrawerOpen(false); setShowReorderModal(true); }} className="flex items-center justify-between px-4 py-3 bg-orange-950/20 border border-orange-900/30 rounded-xl">
-                                                        <span className="text-orange-400 text-xs font-bold">⚠️ Reorder Needed</span>
+                                                        <span className="text-orange-400 text-xs font-bold">鈿狅笍 Reorder Needed</span>
                                                         <span className="text-orange-400 font-black text-sm">{systemAlerts.reorderNeeded}</span>
                                                     </div>
                                                 )}
                                                 {systemAlerts.outOfStock > 0 && (
                                                     <div className="flex items-center justify-between px-4 py-3 bg-rose-950/20 border border-rose-900/30 rounded-xl">
-                                                        <span className="text-rose-400 text-xs font-bold">🚫 Out of Stock</span>
+                                                        <span className="text-rose-400 text-xs font-bold">馃毇 Out of Stock</span>
                                                         <span className="text-rose-400 font-black text-sm">{systemAlerts.outOfStock}</span>
                                                     </div>
                                                 )}
                                                 {systemAlerts.expired > 0 && (
                                                     <div className="flex items-center justify-between px-4 py-3 bg-red-950/20 border border-red-900/30 rounded-xl">
-                                                        <span className="text-red-400 text-xs font-bold">☠️ Expired</span>
+                                                        <span className="text-red-400 text-xs font-bold">鈽狅笍 Expired</span>
                                                         <span className="text-red-400 font-black text-sm">{systemAlerts.expired}</span>
                                                     </div>
                                                 )}
@@ -3347,7 +3319,7 @@
                                         {/* User Info */}
                                         <div className="text-center pt-4 border-t border-slate-800">
                                             <p className="text-xs text-slate-400 font-bold">{user.fullName || user.email}</p>
-                                            <p className="text-[10px] text-slate-600 uppercase tracking-wider">{user.role} • {location}</p>
+                                            <p className="text-[10px] text-slate-600 uppercase tracking-wider">{user.role} 鈥� {location}</p>
                                         </div>
                                     </div>
                                 </div>
