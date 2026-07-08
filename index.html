@@ -1465,12 +1465,120 @@
             };
 
             
-            // ==================== TANZANIA STG 2021 REFERENCE ====================
-            const STGReferenceModal = ({ onClose, toast }) => {
-                const [activeTab, setActiveTab] = useState('OVERVIEW');
-                const [searchTerm, setSearchTerm] = useState('');
+                        // ==================== TANZANIA STG 2021 REFERENCE DATA ====================
+            const STG_DATA = {
+                overview: {
+                    title: "Tanzania STG/NEMLIT 2021 (Sixth Edition)",
+                    description: "Standard Treatment Guidelines & National Essential Medicines List. Covers emergency care, communicable diseases (malaria, HIV, TB), NCDs, maternal health, and essential medicines stratified by level of care (A, B, C, D, S).",
+                    features: [
+                        "20+ chapters covering disease conditions",
+                        "5 care levels: A (dispensary) to S (tertiary)",
+                        "WHO AWaRe antibiotic classification adopted",
+                        "101 new medicines added in 2021 revision",
+                        "Weight-based pediatric dosing tables",
+                        "Pregnancy and lactation safety guidance",
+                        "HIV/TB co-infection management protocols",
+                        "Emergency and resuscitation protocols"
+                    ]
+                },
+                emergency: [
+                    { condition: "Anaphylaxis", treatment: "Adrenaline 0.3-0.5mg IM (1:1000), repeat q5min", notes: "IM preferred over SC. Anterolateral thigh. Have resuscitation equipment ready." },
+                    { condition: "Cardiac Arrest", treatment: "Adrenaline 1mg IV q3-5min + CPR", notes: "High-quality CPR, early defibrillation for shockable rhythms." },
+                    { condition: "Severe Asthma", treatment: "Salbutamol 0.15mg/kg nebulized + Hydrocortisone 100-200mg IV", notes: "Oxygen, continuous nebulization, consider magnesium sulfate." },
+                    { condition: "Status Epilepticus", treatment: "Diazepam 0.3-0.5mg/kg IV/PR (max 10mg)", notes: "If no IV access: rectal diazepam 0.5mg/kg. Airway protection." },
+                    { condition: "Eclampsia", treatment: "MgSO4 4g IV loading + 1g/hr infusion", notes: "Monitor: RR>12, urine >100mL/4h, DTR present. Deliver after stabilization." },
+                    { condition: "Hypoglycemia", treatment: "Dextrose 50% 50mL IV (or 10% 5mL/kg children)", notes: "If no IV: glucagon 1mg IM/SC. Recheck glucose in 15 min." },
+                    { condition: "Septic Shock", treatment: "IV fluids 30mL/kg bolus + Ceftriaxone 2g IV", notes: "Within 1 hour: cultures, fluids, antibiotics. Vasopressors if MAP <65 after fluids." },
+                    { condition: "Severe Malaria", treatment: "Artesunate 2.4mg/kg IV at 0, 12, 24h then daily", notes: "If unavailable: Quinine IV loading 20mg/kg then 10mg/kg q8h. Monitor glucose." }
+                ],
+                malaria: [
+                    { category: "Uncomplicated (Adult)", treatment: "ALU 4 tabs at 0, 8, 24, 36, 48, 60h", notes: "Take with fatty food. Complete all 6 doses." },
+                    { category: "Uncomplicated (Child <5kg)", treatment: "Quinine PO 10mg/kg q8h x7 days", notes: "ALU contraindicated <5kg. Quinine first-line in 1st trimester pregnancy." },
+                    { category: "Uncomplicated (Child 5-14kg)", treatment: "ALU 1 tab per dose, 6-dose course", notes: "Weight bands: 5-14kg=1; 15-24kg=2; 25-34kg=3; >=35kg=4 tabs" },
+                    { category: "Severe Malaria", treatment: "Artesunate IV 2.4mg/kg at 0, 12, 24h then daily", notes: "Preferred over quinine. Follow with full oral course." },
+                    { category: "Severe Malaria (Alt)", treatment: "Quinine IV: 20mg/kg loading over 4h, then 10mg/kg q8h", notes: "Switch to oral when able. Monitor blood glucose." },
+                    { category: "Malaria in Pregnancy", treatment: "1st trimester: Quinine + Clindamycin; 2nd/3rd: ALU", notes: "IPTp with SP: 2nd trimester start, then monthly until delivery." },
+                    { category: "P. vivax Radical Cure", treatment: "Primaquine 15mg daily x14 days", notes: "Check G6PD status first. Contraindicated in G6PD deficiency." }
+                ],
+                hiv: [
+                    { category: "Adult First-Line", regimen: "TDF/3TC/DTG (300/300/50mg) once daily", notes: "Preferred regimen. Monitor renal function (TDF)." },
+                    { category: "Adult Alternative", regimen: "TDF/3TC/EFV (300/300/600mg) once daily at bedtime", notes: "EFV causes CNS side effects. Contraindicated 1st trimester." },
+                    { category: "Pediatric (>=20kg)", regimen: "TDF/3TC/DTG adult FDC once daily", notes: "Children 20-30kg: use pediatric DTG formulations." },
+                    { category: "Pediatric (3-10kg)", regimen: "AZT/3TC/NVP syrup, weight-based dosing", notes: "NVP lead-in: 2 weeks BID then OD. Monitor for anemia, rash." },
+                    { category: "Second-Line (Adult)", regimen: "AZT/3TC + LPV/r or ATV/r", notes: "Switch after confirmed treatment failure. PI-based regimen." },
+                    { category: "PEP (Occupational)", regimen: "TDF/3TC/DTG x 28 days", notes: "Start within 72 hours of exposure. Baseline and follow-up HIV testing." },
+                    { category: "PrEP", regimen: "TDF/FTC (300/200mg) once daily", notes: "For HIV-negative individuals at substantial risk. Monthly follow-up." },
+                    { category: "PMTCT (Infant)", regimen: "NVP syrup daily from birth to 6 weeks", notes: "If mother on ART >4 weeks: 6 weeks only." }
+                ],
+                tb: [
+                    { category: "New TB Case (Adult)", regimen: "RHZE FDC x2 months intensive, then RH FDC x4 months", notes: "Weight bands: 21-30kg=2; 31-50kg=3; 51-74kg=4; >=75kg=5 tabs." },
+                    { category: "New TB Case (Child)", regimen: "Pediatric RHZE FDC (R60/H30/Z150/E100)", notes: "Use weight-band table. Daily dosing. Give on empty stomach." },
+                    { category: "TB/HIV Co-infection", regimen: "Start ART within 8 weeks of TB treatment", notes: "Avoid starting ART and TB drugs simultaneously if possible." },
+                    { category: "DR-TB (MDR-TB)", regimen: "Fluoroquinolone + Injectable + 2-3 second-line drugs", notes: "Minimum 20 months treatment. Directly observed therapy." },
+                    { category: "TB Preventive Therapy", regimen: "INH 300mg daily x6 months (adults); 10mg/kg (children)", notes: "Give pyridoxine 10mg (adults) or 5mg (children) with INH." },
+                    { category: "Leprosy (PB)", regimen: "Rifampicin 600mg monthly + Dapsone 100mg daily x6 months", notes: "Paucibacillary. Single skin lesion: single dose ROM." },
+                    { category: "Leprosy (MB)", regimen: "Rifampicin 600mg monthly + Clofazimine + Dapsone x12 months", notes: "Multibacillary. Monthly supervised + daily self-administered." }
+                ],
+                pneumonia: [
+                    { category: "Non-severe (Child)", treatment: "Amoxicillin 25mg/kg PO q12h x5 days", notes: "First-line. If no improvement in 48h, refer." },
+                    { category: "Severe (Child)", treatment: "Ampicillin 50mg/kg IV q6h + Gentamicin 7.5mg/kg IV OD", notes: "Add oxygen if SpO2 <90%. Consider HIV testing if no improvement." },
+                    { category: "Very Severe", treatment: "Ceftriaxone 50mg/kg IV OD + Gentamicin", notes: "Intensive care. Consider TB, HIV, malnutrition." },
+                    { category: "Pneumonia (Adult)", treatment: "Amoxicillin 500mg PO q8h x5-7 days", notes: "First-line for community-acquired. Severe: Ceftriaxone + Azithromycin." },
+                    { category: "PCP", treatment: "Cotrimoxazole 160/800mg (DS) q12h x21 days", notes: "HIV patients with CD4 <200. Add prednisone if severe." }
+                ],
+                diarrhea: [
+                    { category: "No Dehydration (Plan A)", treatment: "Continue feeding + extra fluids at home", notes: "ORS, soup, rice water. Teach mother when to return. Zinc supplementation." },
+                    { category: "Some Dehydration (Plan B)", treatment: "ORS 75mL/kg over 4 hours at clinic", notes: "Reassess after 4h. If worse, switch to Plan C. Continue breastfeeding." },
+                    { category: "Severe Dehydration (Plan C)", treatment: "IV RL or NS: 30mL/kg over 30 min (<1yr) or 1hr (>1yr)", notes: "Then 70mL/kg over next 5 hours. Reassess every 1-2 hours." },
+                    { category: "Zinc Supplementation", treatment: "<6mo: 10mg daily; >=6mo: 20mg daily x10-14 days", notes: "All children with diarrhea. Reduces severity and duration." },
+                    { category: "Dysentery (Bloody)", treatment: "Ciprofloxacin 500mg PO q12h x3 days (adults)", notes: "Also treat for amoebiasis if indicated. Monitor for HUS in children." },
+                    { category: "Cholera", treatment: "ORS aggressively + Doxycycline 300mg single dose (adults)", notes: "Massive fluid replacement is life-saving. Azithromycin alternative." }
+                ],
+                obstetric: [
+                    { category: "Active Management 3rd Stage", treatment: "Oxytocin 10 IU IM after delivery of anterior shoulder", notes: "Controlled cord traction. Uterine massage. Monitor for PPH." },
+                    { category: "PPH Prevention", treatment: "Oxytocin 10 IU IM after delivery", notes: "If oxytocin unavailable: Misoprostol 600mcg PO or 800mcg SL/PR." },
+                    { category: "PPH Treatment", treatment: "Oxytocin 40 IU in 1L NS at 60 drops/min + uterine massage", notes: "If no response: Misoprostol 800mcg SL/PR. Consider balloon tamponade." },
+                    { category: "Eclampsia", treatment: "MgSO4 4g IV loading + 1g/hr infusion + deliver", notes: "Monitor: RR>12, urine >100mL/4h, DTR present. Deliver after stabilization." },
+                    { category: "Pre-eclampsia (Severe)", treatment: "MgSO4 prophylaxis + controlled delivery", notes: "BP control with Hydralazine or Labetalol. Betamethasone if <34 weeks." },
+                    { category: "Incomplete Abortion", treatment: "Misoprostol 400mcg SL/PR x 2 doses 3h apart", notes: "Or manual vacuum aspiration (MVA). Post-procedure contraception counseling." },
+                    { category: "Post-Abortion Sepsis", treatment: "Ampicillin + Gentamicin + Metronidazole IV", notes: "Urgent uterine evacuation + broad-spectrum antibiotics. ICU if severe." }
+                ],
+                diabetes: [
+                    { category: "Type 2 First-Line", treatment: "Metformin 500mg with dinner, titrate up", notes: "Start low, go slow. Contraindicated if eGFR<30. Take with food." },
+                    { category: "Type 2 (Metformin CI)", treatment: "Glibenclamide 5mg before breakfast", notes: "Hypoglycemia risk. Monitor blood glucose. Contraindicated in pregnancy." },
+                    { category: "Type 1 / DKA", treatment: "Regular Insulin 0.1 U/kg/hr IV infusion + fluids", notes: "DKA: 0.1 U/kg bolus then 0.1 U/kg/hr. Monitor glucose hourly." },
+                    { category: "DKA", treatment: "IV fluids + Insulin + K+ replacement", notes: "No bicarbonate unless pH <6.9. Cerebral edema risk in children." },
+                    { category: "Hypoglycemia", treatment: "15-20g fast-acting carbs (glucose tablets, juice)", notes: "Recheck in 15 min. If unconscious: glucagon 1mg IM or IV dextrose." },
+                    { category: "Diabetic Foot Ulcer", treatment: "Debridement + offloading + antibiotics if infected", notes: "Amoxicillin-clavulanate or cloxacillin for mild. MRSA coverage if severe." }
+                ],
+                cvd: [
+                    { category: "Hypertension First-Line", treatment: "Amlodipine 5mg once daily", notes: "Start 2.5-5mg, titrate to 10mg max. Side effects: edema, flushing." },
+                    { category: "Hypertension (ACE-I)", treatment: "Enalapril 5-10mg once daily", notes: "Monitor renal function and K+. Cough side effect. Contraindicated pregnancy." },
+                    { category: "Hypertension (ARB)", treatment: "Losartan 50mg once daily", notes: "No cough side effect. Monitor K+ and renal function. Contraindicated pregnancy." },
+                    { category: "Heart Failure", treatment: "Enalapril + Furosemide + Spironolactone", notes: "ACE-I/ARB + diuretic + aldosterone antagonist. Beta-blocker once stable." },
+                    { category: "Acute Coronary Syndrome", treatment: "Aspirin 300mg chew + Clopidogrel + Morphine + O2", notes: "MONA: Morphine, Oxygen, Nitrates, Aspirin. Transfer for PCI if available." },
+                    { category: "Atrial Fibrillation", treatment: "Digoxin 0.125-0.25mg daily or Atenolol 50mg daily", notes: "Anticoagulate if CHA2DS2-VASc >=2 (men) or >=3 (women)." },
+                    { category: "Stroke (Ischemic)", treatment: "Aspirin 300mg daily (if no hemorrhage confirmed)", notes: "BP management, rehabilitation. Thrombolysis if within 4.5 hours." }
+                ],
+                nemlit: [
+                    { level: "A", description: "Health Centre / Dispensary", examples: "Paracetamol, Amoxicillin, ORS, Zinc, Albendazole, Cotrimoxazole" },
+                    { level: "B", description: "District Hospital", examples: "Ceftriaxone, Ciprofloxacin, Diazepam, Metronidazole IV, Hydralazine" },
+                    { level: "C", description: "Regional Referral Hospital", examples: "Morphine, Artesunate IV, Fluconazole IV, Azithromycin, Nifedipine" },
+                    { level: "D", description: "Zonal / Specialized Hospital", examples: "Piperacillin-tazobactam, Carbamazepine, Haloperidol, Amiodarone" },
+                    { level: "S", description: "National / Tertiary (Specialist)", examples: "Meropenem, Vancomycin, Amphotericin B, Colistin, Linezolid" }
+                ],
+                aware: [
+                    { group: "ACCESS", description: "First/second-line antibiotics for common infections", examples: "Amoxicillin, Ampicillin, Benzyl Penicillin, Cotrimoxazole, Metronidazole, Gentamicin" },
+                    { group: "WATCH", description: "Broad-spectrum antibiotics for specific indications", examples: "Ceftriaxone, Ciprofloxacin, Azithromycin, Clarithromycin, Cefixime" },
+                    { group: "RESERVE", description: "Last-resort antibiotics for MDR infections", examples: "Meropenem, Vancomycin, Colistin, Amikacin, Linezolid, Clindamycin" }
+                ]
+            };
 
-                const stgTabs = [
+            const STGReferenceModal = ({ onClose }) => {
+                const [activeTab, setActiveTab] = React.useState('OVERVIEW');
+                const [searchTerm, setSearchTerm] = React.useState('');
+
+                const tabs = [
                     { id: 'OVERVIEW', label: 'Overview' },
                     { id: 'EMERGENCY', label: 'Emergency' },
                     { id: 'MALARIA', label: 'Malaria' },
@@ -1478,357 +1586,184 @@
                     { id: 'TB', label: 'TB & Leprosy' },
                     { id: 'PNEUMONIA', label: 'Pneumonia' },
                     { id: 'DIARRHEA', label: 'Diarrhea' },
-                    { id: 'PREGNANCY', label: 'Obstetric' },
+                    { id: 'OBSTETRIC', label: 'Obstetric' },
                     { id: 'DIABETES', label: 'Diabetes' },
                     { id: 'CVD', label: 'Cardiovascular' },
-                    { id: 'NEMLIT', label: 'NEMLIT Levels' },
-                    { id: 'AWaRe', label: 'AWaRe Antibiotics' }
-                ];
-
-                const emergencyProtocols = [
-                    { condition: 'Anaphylaxis', firstLine: 'Adrenaline (Epinephrine) 0.3-0.5mg IM (1:1000), repeat every 5 min', notes: 'IM preferred over SC. Anterolateral thigh. Have resuscitation equipment ready.' },
-                    { condition: 'Cardiac Arrest', firstLine: 'Adrenaline 1mg IV every 3-5 min + CPR', notes: 'High-quality CPR, early defibrillation for shockable rhythms.' },
-                    { condition: 'Severe Asthma', firstLine: 'Salbutamol 0.15mg/kg nebulized + Hydrocortisone 100-200mg IV', notes: 'Oxygen, continuous nebulization, consider magnesium sulfate if no response.' },
-                    { condition: 'Status Epilepticus', firstLine: 'Diazepam 0.3-0.5mg/kg IV/PR (max 10mg), repeat once in 10 min', notes: 'If no IV access: rectal diazepam 0.5mg/kg. Airway protection.' },
-                    { condition: 'Eclampsia', firstLine: 'Magnesium Sulfate 4g IV loading + 1g/hr infusion', notes: 'Monitor: RR>12, urine output >100mL/4h, deep tendon reflexes present.' },
-                    { condition: 'Hypoglycemia', firstLine: 'Dextrose 50% 50mL IV (or 10% 5mL/kg in children)', notes: 'If no IV: glucagon 1mg IM/SC. Recheck glucose in 15 min.' },
-                    { condition: 'Septic Shock', firstLine: 'IV fluids 30mL/kg bolus + Ceftriaxone 2g IV', notes: 'Within 1 hour: cultures, fluids, antibiotics. Vasopressors if MAP <65 after fluids.' },
-                    { condition: 'Severe Malaria', firstLine: 'Artesunate 2.4mg/kg IV at 0, 12, 24h then daily', notes: 'If unavailable: Quinine IV loading 20mg/kg then 10mg/kg q8h. Monitor glucose.' }
-                ];
-
-                const malariaGuidelines = [
-                    { category: 'Uncomplicated Malaria (Adult)', treatment: 'Artemether-Lumefantrine (ALU) 4 tabs at 0, 8, 24, 36, 48, 60h', notes: 'Take with fatty food. Complete all 6 doses. Not for prophylaxis.' },
-                    { category: 'Uncomplicated Malaria (Child <5kg)', treatment: 'Quinine PO 10mg/kg q8h x7 days', notes: 'ALU contraindicated <5kg. Quinine first-line in 1st trimester pregnancy.' },
-                    { category: 'Uncomplicated Malaria (Child 5-14kg)', treatment: 'ALU 1 tablet per dose, 6-dose course', notes: 'Weight band: 5-14kg=1 tab; 15-24kg=2 tabs; 25-34kg=3 tabs; >=35kg=4 tabs' },
-                    { category: 'Severe Malaria', treatment: 'Artesunate IV 2.4mg/kg at 0, 12, 24h then daily', notes: 'Preferred over quinine. Follow with full oral course. Monitor for delayed hemolysis.' },
-                    { category: 'Severe Malaria (Quinine alternative)', treatment: 'Quinine IV: 20mg/kg loading over 4h, then 10mg/kg q8h', notes: 'Switch to oral when able. Monitor blood glucose (hypoglycemia risk).' },
-                    { category: 'Malaria in Pregnancy', treatment: '1st trimester: Quinine PO + Clindamycin; 2nd/3rd: ALU', notes: 'IPTp with SP: 2nd trimester start, then monthly until delivery.' },
-                    { category: 'P. vivax Radical Cure', treatment: 'Primaquine 15mg daily x14 days', notes: 'Check G6PD status first. Contraindicated in G6PD deficiency.' }
-                ];
-
-                const hivGuidelines = [
-                    { category: 'Adult First-Line ART', regimen: 'TDF/3TC/DTG (300/300/50mg) once daily', notes: 'Preferred regimen. Take with or without food. Monitor renal function (TDF).' },
-                    { category: 'Adult Alternative ART', regimen: 'TDF/3TC/EFV (300/300/600mg) once daily at bedtime', notes: 'EFV causes CNS side effects - take at bedtime. Contraindicated 1st trimester.' },
-                    { category: 'Pediatric First-Line (>=20kg)', regimen: 'TDF/3TC/DTG adult FDC once daily', notes: 'Children 20-30kg: use pediatric DTG formulations or consult weight-band table.' },
-                    { category: 'Pediatric Alternative (3-10kg)', regimen: 'AZT/3TC/NVP syrup, weight-based dosing', notes: 'NVP lead-in: 2 weeks BID then OD. Monitor for anemia (AZT), rash (NVP).' },
-                    { category: 'Second-Line (Adult)', regimen: 'AZT/3TC + LPV/r or ATV/r', notes: 'Switch after confirmed treatment failure. PI-based regimen.' },
-                    { category: 'PEP (Occupational)', regimen: 'TDF/3TC/DTG x 28 days', notes: 'Start within 72 hours of exposure. Baseline and follow-up HIV testing.' },
-                    { category: 'PrEP', regimen: 'TDF/FTC (300/200mg) once daily', notes: 'For HIV-negative individuals at substantial risk. Monthly follow-up required.' },
-                    { category: 'PMTCT (Infant)', regimen: 'NVP syrup daily from birth to 6 weeks', notes: 'If mother on ART >4 weeks: 6 weeks only. If not: extend per guidelines.' }
-                ];
-
-                const tbGuidelines = [
-                    { category: 'New TB Case (Adult)', regimen: 'RHZE FDC x2 months intensive, then RH FDC x4 months', notes: 'Weight bands: 21-30kg=2 tabs; 31-50kg=3 tabs; 51-74kg=4 tabs; >=75kg=5 tabs.' },
-                    { category: 'New TB Case (Child)', regimen: 'Pediatric RHZE FDC (R60/H30/Z150/E100)', notes: 'Use weight-band table. Daily dosing. Give on empty stomach.' },
-                    { category: 'TB/HIV Co-infection', regimen: 'Start ART within 8 weeks of TB treatment', notes: 'Avoid starting ART and TB drugs simultaneously if possible. EFV preferred NNRTI.' },
-                    { category: 'DR-TB (MDR-TB)', regimen: 'Fluoroquinolone + Injectable + 2-3 second-line drugs', notes: 'Minimum 20 months treatment. Directly observed therapy. Monthly sputum monitoring.' },
-                    { category: 'TB Preventive Therapy', regimen: 'INH 300mg daily x6 months (adults); 10mg/kg (children)', notes: 'Give pyridoxine 10mg (adults) or 5mg (children) with INH to prevent neuropathy.' },
-                    { category: 'Leprosy (PB)', regimen: 'Rifampicin 600mg monthly + Dapsone 100mg daily x6 months', notes: 'Paucibacillary. Single skin lesion: single dose ROM (Rifampicin + Ofloxacin + Minocycline).' },
-                    { category: 'Leprosy (MB)', regimen: 'Rifampicin 600mg monthly + Clofazimine + Dapsone x12 months', notes: 'Multibacillary. Monthly supervised + daily self-administered.' }
-                ];
-
-                const pneumoniaGuidelines = [
-                    { category: 'Non-severe Pneumonia (Child)', treatment: 'Amoxicillin 25mg/kg PO q12h x5 days', notes: 'First-line. If no improvement in 48h, refer. Continue feeding/breastfeeding.' },
-                    { category: 'Severe Pneumonia (Child)', treatment: 'Ampicillin 50mg/kg IV q6h + Gentamicin 7.5mg/kg IV OD', notes: 'Add oxygen if SpO2 <90%. If no improvement in 48h, consider HIV testing.' },
-                    { category: 'Very Severe Pneumonia', treatment: 'Ceftriaxone 50mg/kg IV OD + Gentamicin', notes: 'Intensive care. Consider TB, HIV, malnutrition. Fluids carefully to avoid overload.' },
-                    { category: 'Pneumonia (Adult)', treatment: 'Amoxicillin 500mg PO q8h x5-7 days', notes: 'First-line for community-acquired. If severe: Ceftriaxone 1-2g IV + Azithromycin.' },
-                    { category: 'Pneumocystis Pneumonia (PCP)', treatment: 'Cotrimoxazole 160/800mg (DS) q12h x21 days', notes: 'HIV patients with CD4 <200. Add prednisone if severe (PaO2 <70mmHg).' }
-                ];
-
-                const diarrheaGuidelines = [
-                    { category: 'No Dehydration (Plan A)', treatment: 'Continue feeding + extra fluids at home', notes: 'ORS, soup, rice water. Teach mother when to return. Zinc supplementation.' },
-                    { category: 'Some Dehydration (Plan B)', treatment: 'ORS 75mL/kg over 4 hours at clinic', notes: 'Reassess after 4h. If worse, switch to Plan C. Continue breastfeeding.' },
-                    { category: 'Severe Dehydration (Plan C)', treatment: 'IV Ringer's Lactate or NS: 30mL/kg over 30 min (<1yr) or 1hr (>1yr)', notes: 'Then 70mL/kg over next 5 hours. Reassess every 1-2 hours. If IV not possible: NG tube.' },
-                    { category: 'Zinc Supplementation', treatment: '<6 months: 10mg daily; >=6 months: 20mg daily x10-14 days', notes: 'All children with diarrhea. Reduces severity and duration. Give 2h before/after antibiotics.' },
-                    { category: 'Dysentery (Bloody)', treatment: 'Ciprofloxacin 500mg PO q12h x3 days (adults); 15mg/kg q12h (children)', notes: 'Also treat for amoebiasis if indicated. Monitor for HUS in children.' },
-                    { category: 'Cholera', treatment: 'ORS aggressively + Doxycycline 300mg single dose (adults)', notes: 'Massive fluid replacement is life-saving. Azithromycin alternative for children/pregnant.' }
-                ];
-
-                const obstetricGuidelines = [
-                    { category: 'Active Management 3rd Stage', treatment: 'Oxytocin 10 IU IM after delivery of anterior shoulder', notes: 'Controlled cord traction. Uterine massage. Monitor for PPH.' },
-                    { category: 'PPH Prevention', treatment: 'Oxytocin 10 IU IM after delivery', notes: 'If oxytocin unavailable: Misoprostol 600mcg PO or 800mcg SL/PR.' },
-                    { category: 'PPH Treatment', treatment: 'Oxytocin 40 IU in 1L NS at 60 drops/min + uterine massage', notes: 'If no response: Misoprostol 800mcg SL/PR. Consider balloon tamponade.' },
-                    { category: 'Eclampsia', treatment: 'MgSO4 4g IV loading + 1g/hr infusion + deliver', notes: 'Monitor: RR>12, urine >100mL/4h, DTR present. Deliver after stabilization.' },
-                    { category: 'Pre-eclampsia (Severe)', treatment: 'MgSO4 prophylaxis + controlled delivery', notes: 'BP control with Hydralazine or Labetalol. Betamethasone if <34 weeks.' },
-                    { category: 'Incomplete Abortion', treatment: 'Misoprostol 400mcg SL/PR x 2 doses 3h apart', notes: 'Or manual vacuum aspiration (MVA). Post-procedure contraception counseling.' },
-                    { category: 'Post-Abortion Sepsis', treatment: 'Ampicillin + Gentamicin + Metronidazole IV', notes: 'Urgent uterine evacuation + broad-spectrum antibiotics. ICU if severe.' }
-                ];
-
-                const diabetesGuidelines = [
-                    { category: 'Type 2 Diabetes First-Line', treatment: 'Metformin 500mg with dinner, titrate up', notes: 'Start low, go slow. Contraindicated if eGFR<30. Take with food.' },
-                    { category: 'Type 2 Diabetes (Metformin contraindicated)', treatment: 'Glibenclamide 5mg before breakfast', notes: 'Hypoglycemia risk. Monitor blood glucose. Contraindicated in pregnancy.' },
-                    { category: 'Type 1 Diabetes / DKA', treatment: 'Regular Insulin 0.1 U/kg/hr IV infusion + fluids', notes: 'DKA: 0.1 U/kg bolus then 0.1 U/kg/hr. Monitor glucose hourly. K+ replacement.' },
-                    { category: 'Diabetic Ketoacidosis', treatment: 'IV fluids + Insulin + K+ replacement', notes: 'No bicarbonate unless pH <6.9. Cerebral edema risk in children.' },
-                    { category: 'Hypoglycemia (Diabetic)', treatment: '15-20g fast-acting carbs (glucose tablets, juice)', notes: 'Recheck in 15 min. If unconscious: glucagon 1mg IM or IV dextrose.' },
-                    { category: 'Diabetic Foot Ulcer', treatment: 'Debridement + offloading + antibiotics if infected', notes: 'Amoxicillin-clavulanate or cloxacillin for mild. MRSA coverage if severe.' }
-                ];
-
-                const cvdGuidelines = [
-                    { category: 'Hypertension First-Line', treatment: 'Amlodipine 5mg once daily', notes: 'Start 2.5-5mg, titrate to 10mg max. Side effects: edema, flushing.' },
-                    { category: 'Hypertension (ACE-I preferred)', treatment: 'Enalapril 5-10mg once daily', notes: 'Monitor renal function and K+. Cough side effect. Contraindicated pregnancy.' },
-                    { category: 'Hypertension (ARB alternative)', treatment: 'Losartan 50mg once daily', notes: 'No cough side effect. Monitor K+ and renal function. Contraindicated pregnancy.' },
-                    { category: 'Heart Failure', treatment: 'Enalapril + Furosemide + Spironolactone', notes: 'ACE-I/ARB + diuretic + aldosterone antagonist. Beta-blocker once stable.' },
-                    { category: 'Acute Coronary Syndrome', treatment: 'Aspirin 300mg chew + Clopidogrel + Morphine + O2', notes: 'MONA: Morphine, Oxygen, Nitrates, Aspirin. Transfer for PCI if available.' },
-                    { category: 'Atrial Fibrillation (Rate Control)', treatment: 'Digoxin 0.125-0.25mg daily or Atenolol 50mg daily', notes: 'Anticoagulate if CHA2DS2-VASc >=2 (men) or >=3 (women).' },
-                    { category: 'Stroke (Ischemic)', treatment: 'Aspirin 300mg daily (if no hemorrhage confirmed)', notes: 'BP management, rehabilitation. Thrombolysis if within 4.5 hours at specialist center.' }
-                ];
-
-                const nemlitLevels = [
-                    { level: 'A', description: 'Health Centre / Dispensary', examples: 'Paracetamol, Amoxicillin, ORS, Zinc, Albendazole, Cotrimoxazole, Aspirin, Metformin' },
-                    { level: 'B', description: 'District Hospital', examples: 'Ceftriaxone, Ciprofloxacin, Diazepam, Metronidazole IV, Hydralazine, Oxytocin' },
-                    { level: 'C', description: 'Regional Referral Hospital', examples: 'Morphine, Artesunate IV, Fluconazole IV, Azithromycin, Nifedipine SR, Labetalol' },
-                    { level: 'D', description: 'Zonal / Specialized Hospital', examples: 'Piperacillin-tazobactam, Carbamazepine, Haloperidol, Amiodarone, Esmolol' },
-                    { level: 'S', description: 'National / Tertiary (Specialist)', examples: 'Meropenem, Vancomycin, Amphotericin B, Colistin, Darunavir, Raltegravir, Linezolid' }
-                ];
-
-                const awareCategories = [
-                    { group: 'ACCESS', description: 'First/second-line antibiotics for common infections', examples: 'Amoxicillin, Ampicillin, Benzyl Penicillin, Cotrimoxazole, Metronidazole, Gentamicin, Doxycycline, Cloxacillin, Erythromycin' },
-                    { group: 'WATCH', description: 'Broad-spectrum antibiotics for specific indications', examples: 'Ceftriaxone, Ciprofloxacin, Azithromycin, Clarithromycin, Cefixime, Cefuroxime' },
-                    { group: 'RESERVE', description: 'Last-resort antibiotics for MDR infections', examples: 'Meropenem, Vancomycin, Colistin, Amikacin, Linezolid, Clindamycin, Cefepime' }
+                    { id: 'NEMLIT', label: 'NEMLIT' },
+                    { id: 'AWARE', label: 'AWaRe' }
                 ];
 
                 const renderContent = () => {
-                    const filterData = (data) => {
-                        if (!searchTerm) return data;
-                        return data.filter(item => 
-                            Object.values(item).some(val => 
-                                String(val).toLowerCase().includes(searchTerm.toLowerCase())
-                            )
-                        );
-                    };
+                    const data = STG_DATA;
+                    const s = searchTerm.toLowerCase();
+                    const filter = (items) => s ? items.filter(i => Object.values(i).some(v => String(v).toLowerCase().includes(s))) : items;
 
                     switch(activeTab) {
                         case 'OVERVIEW':
-                            return (
-                                <div className="space-y-4">
-                                    <div className="bg-emerald-950/30 border border-emerald-800 p-4 rounded-2xl">
-                                        <h4 className="text-emerald-400 font-black text-sm uppercase mb-2">Tanzania STG/NEMLIT 2021 (Sixth Edition)</h4>
-                                        <p className="text-slate-300 text-xs leading-relaxed">
-                                            The Standard Treatment Guidelines (STG) and National Essential Medicines List (NEMLIT) 
-                                            2021 is the official reference for healthcare workers in Tanzania. It covers emergency care, 
-                                            communicable diseases (malaria, HIV, TB), NCDs, maternal health, and essential medicines 
-                                            stratified by level of care (A, B, C, D, S).
-                                        </p>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-white font-bold text-xs">20+ Chapters</p>
-                                            <p className="text-[10px] text-slate-500">Disease conditions covered</p>
-                                        </div>
-                                        <div className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-white font-bold text-xs">5 Care Levels</p>
-                                            <p className="text-[10px] text-slate-500">A (dispensary) to S (tertiary)</p>
-                                        </div>
-                                        <div className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-white font-bold text-xs">AWaRe Classification</p>
-                                            <p className="text-[10px] text-slate-500">Access, Watch, Reserve antibiotics</p>
-                                        </div>
-                                        <div className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-white font-bold text-xs">101 New Medicines</p>
-                                            <p className="text-[10px] text-slate-500">Added in 2021 revision</p>
-                                        </div>
-                                    </div>
-                                    <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700">
-                                        <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Key Features</p>
-                                        <ul className="text-xs text-slate-300 space-y-1">
-                                            <li>• Syndromic approach to common conditions</li>
-                                            <li>• Weight-based pediatric dosing tables</li>
-                                            <li>• Pregnancy and lactation safety guidance</li>
-                                            <li>• HIV/TB co-infection management protocols</li>
-                                            <li>• Antimicrobial stewardship (AWaRe)</li>
-                                            <li>• Emergency and resuscitation protocols</li>
-                                        </ul>
-                                    </div>
-                                </div>
+                            return React.createElement('div', { className: 'space-y-4' },
+                                React.createElement('div', { className: 'bg-emerald-950/30 border border-emerald-800 p-4 rounded-2xl' },
+                                    React.createElement('h4', { className: 'text-emerald-400 font-black text-sm uppercase mb-2' }, data.overview.title),
+                                    React.createElement('p', { className: 'text-slate-300 text-xs leading-relaxed' }, data.overview.description)
+                                ),
+                                React.createElement('div', { className: 'bg-slate-800/50 p-3 rounded-xl border border-slate-700' },
+                                    React.createElement('p', { className: 'text-[10px] text-slate-500 uppercase font-bold mb-2' }, 'Key Features'),
+                                    React.createElement('ul', { className: 'text-xs text-slate-300 space-y-1' },
+                                        data.overview.features.map((f, i) => React.createElement('li', { key: i }, '• ' + f))
+                                    )
+                                )
                             );
                         case 'EMERGENCY':
-                            return (
-                                <div className="space-y-2">
-                                    {filterData(emergencyProtocols).map((item, idx) => (
-                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-emerald-400 font-bold text-xs">{item.condition}</p>
-                                            <p className="text-white text-xs mt-1"><span className="text-slate-500">First Line:</span> {item.firstLine}</p>
-                                            <p className="text-[10px] text-slate-500 mt-1">{item.notes}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filter(data.emergency).map((item, idx) =>
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.condition),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'First Line: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
                             );
                         case 'MALARIA':
-                            return (
-                                <div className="space-y-2">
-                                    {filterData(malariaGuidelines).map((item, idx) => (
-                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-emerald-400 font-bold text-xs">{item.category}</p>
-                                            <p className="text-white text-xs mt-1"><span className="text-slate-500">Treatment:</span> {item.treatment}</p>
-                                            <p className="text-[10px] text-slate-500 mt-1">{item.notes}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filter(data.malaria).map((item, idx) =>
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
                             );
                         case 'HIV':
-                            return (
-                                <div className="space-y-2">
-                                    {filterData(hivGuidelines).map((item, idx) => (
-                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-emerald-400 font-bold text-xs">{item.category}</p>
-                                            <p className="text-white text-xs mt-1"><span className="text-slate-500">Regimen:</span> {item.regimen}</p>
-                                            <p className="text-[10px] text-slate-500 mt-1">{item.notes}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filter(data.hiv).map((item, idx) =>
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Regimen: '), item.regimen),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
                             );
                         case 'TB':
-                            return (
-                                <div className="space-y-2">
-                                    {filterData(tbGuidelines).map((item, idx) => (
-                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-emerald-400 font-bold text-xs">{item.category}</p>
-                                            <p className="text-white text-xs mt-1"><span className="text-slate-500">Regimen:</span> {item.regimen}</p>
-                                            <p className="text-[10px] text-slate-500 mt-1">{item.notes}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filter(data.tb).map((item, idx) =>
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Regimen: '), item.regimen),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
                             );
                         case 'PNEUMONIA':
-                            return (
-                                <div className="space-y-2">
-                                    {filterData(pneumoniaGuidelines).map((item, idx) => (
-                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-emerald-400 font-bold text-xs">{item.category}</p>
-                                            <p className="text-white text-xs mt-1"><span className="text-slate-500">Treatment:</span> {item.treatment}</p>
-                                            <p className="text-[10px] text-slate-500 mt-1">{item.notes}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filter(data.pneumonia).map((item, idx) =>
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
                             );
                         case 'DIARRHEA':
-                            return (
-                                <div className="space-y-2">
-                                    {filterData(diarrheaGuidelines).map((item, idx) => (
-                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-emerald-400 font-bold text-xs">{item.category}</p>
-                                            <p className="text-white text-xs mt-1"><span className="text-slate-500">Treatment:</span> {item.treatment}</p>
-                                            <p className="text-[10px] text-slate-500 mt-1">{item.notes}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filter(data.diarrhea).map((item, idx) =>
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
                             );
-                        case 'PREGNANCY':
-                            return (
-                                <div className="space-y-2">
-                                    {filterData(obstetricGuidelines).map((item, idx) => (
-                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-emerald-400 font-bold text-xs">{item.category}</p>
-                                            <p className="text-white text-xs mt-1"><span className="text-slate-500">Treatment:</span> {item.treatment}</p>
-                                            <p className="text-[10px] text-slate-500 mt-1">{item.notes}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                        case 'OBSTETRIC':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filter(data.obstetric).map((item, idx) =>
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
                             );
                         case 'DIABETES':
-                            return (
-                                <div className="space-y-2">
-                                    {filterData(diabetesGuidelines).map((item, idx) => (
-                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-emerald-400 font-bold text-xs">{item.category}</p>
-                                            <p className="text-white text-xs mt-1"><span className="text-slate-500">Treatment:</span> {item.treatment}</p>
-                                            <p className="text-[10px] text-slate-500 mt-1">{item.notes}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filter(data.diabetes).map((item, idx) =>
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
                             );
                         case 'CVD':
-                            return (
-                                <div className="space-y-2">
-                                    {filterData(cvdGuidelines).map((item, idx) => (
-                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <p className="text-emerald-400 font-bold text-xs">{item.category}</p>
-                                            <p className="text-white text-xs mt-1"><span className="text-slate-500">Treatment:</span> {item.treatment}</p>
-                                            <p className="text-[10px] text-slate-500 mt-1">{item.notes}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filter(data.cvd).map((item, idx) =>
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
                             );
                         case 'NEMLIT':
-                            return (
-                                <div className="space-y-2">
-                                    <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700 mb-3">
-                                        <p className="text-[10px] text-slate-500 uppercase font-bold">NEMLIT Care Levels</p>
-                                        <p className="text-xs text-slate-300 mt-1">Medicines are stratified by facility level to ensure appropriate access</p>
-                                    </div>
-                                    {filterData(nemlitLevels).map((item, idx) => (
-                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <span className="text-emerald-400 font-black text-sm">Level {item.level}</span>
-                                                <span className="text-[10px] text-slate-500 font-bold">{item.description}</span>
-                                            </div>
-                                            <p className="text-[10px] text-slate-400">{item.examples}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filter(data.nemlit).map((item, idx) =>
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('div', { className: 'flex justify-between items-center mb-1' },
+                                            React.createElement('span', { className: 'text-emerald-400 font-black text-sm' }, 'Level ' + item.level),
+                                            React.createElement('span', { className: 'text-[10px] text-slate-500 font-bold' }, item.description)
+                                        ),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-400' }, item.examples)
+                                    )
+                                )
                             );
-                        case 'AWaRe':
-                            return (
-                                <div className="space-y-2">
-                                    <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700 mb-3">
-                                        <p className="text-[10px] text-slate-500 uppercase font-bold">WHO AWaRe Classification</p>
-                                        <p className="text-xs text-slate-300 mt-1">Antibiotics categorized to promote rational use and combat resistance</p>
-                                    </div>
-                                    {filterData(awareCategories).map((item, idx) => (
-                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <span className={`font-black text-sm ${item.group === 'ACCESS' ? 'text-emerald-400' : item.group === 'WATCH' ? 'text-amber-400' : 'text-rose-400'}`}>{item.group} Group</span>
-                                            </div>
-                                            <p className="text-xs text-slate-300 mb-1">{item.description}</p>
-                                            <p className="text-[10px] text-slate-500">{item.examples}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                        case 'AWARE':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filter(data.aware).map((item, idx) =>
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('div', { className: 'flex justify-between items-center mb-1' },
+                                            React.createElement('span', { className: 'font-black text-sm ' + (item.group === 'ACCESS' ? 'text-emerald-400' : item.group === 'WATCH' ? 'text-amber-400' : 'text-rose-400') }, item.group + ' Group')
+                                        ),
+                                        React.createElement('p', { className: 'text-xs text-slate-300 mb-1' }, item.description),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500' }, item.examples)
+                                    )
+                                )
                             );
                         default:
                             return null;
                     }
                 };
 
-                return (
-                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => { if(e.target === e.currentTarget) onClose(); }}>
-                        <div className="bg-slate-900 border border-slate-800 w-full max-w-4xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[95vh] overflow-hidden">
-                            <div className="flex items-center justify-center gap-3 mb-4">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-black text-lg">STG</div>
-                                <div className="text-center">
-                                    <h3 className="text-xl font-black text-emerald-400 uppercase">Tanzania STG 2021 Reference</h3>
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Standard Treatment Guidelines & NEMLIT - Sixth Edition</p>
-                                </div>
-                            </div>
-
-                            <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-2">
-                                <input 
-                                    value={searchTerm} 
-                                    onChange={(e) => setSearchTerm(e.target.value)} 
-                                    placeholder="Search guidelines..." 
-                                    className="px-3 py-2 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-emerald-500 input-focus w-40 shrink-0"
-                                />
-                                {stgTabs.map(tab => (
-                                    <button 
-                                        key={tab.id} 
-                                        onClick={() => { setActiveTab(tab.id); setSearchTerm(''); }}
-                                        className={`px-3 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
-                                    >
-                                        {tab.label}
-                                    </button>
-                                ))}
-                            </div>
-
-                            <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-                                {renderContent()}
-                            </div>
-
-                            <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between items-center">
-                                <p className="text-[10px] text-slate-600">Source: Ministry of Health Tanzania, STG/NEMLIT 2021 (Sixth Edition)</p>
-                                <button onClick={onClose} className="text-slate-500 hover:text-white font-bold text-xs uppercase transition-all">Close <span className="kbd-shortcut">Esc</span></button>
-                            </div>
-                        </div>
-                    </div>
+                return React.createElement('div', {
+                    className: 'fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay',
+                    onClick: (e) => { if(e.target === e.currentTarget) onClose(); }
+                },
+                    React.createElement('div', { className: 'bg-slate-900 border border-slate-800 w-full max-w-4xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[95vh] overflow-hidden' },
+                        React.createElement('div', { className: 'flex items-center justify-center gap-3 mb-4' },
+                            React.createElement('div', { className: 'w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-black text-lg' }, 'STG'),
+                            React.createElement('div', { className: 'text-center' },
+                                React.createElement('h3', { className: 'text-xl font-black text-emerald-400 uppercase' }, 'Tanzania STG 2021 Reference'),
+                                React.createElement('p', { className: 'text-[10px] text-slate-500 font-bold uppercase tracking-wider' }, 'Standard Treatment Guidelines & NEMLIT - Sixth Edition')
+                            )
+                        ),
+                        React.createElement('div', { className: 'flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-2' },
+                            React.createElement('input', {
+                                value: searchTerm,
+                                onChange: (e) => setSearchTerm(e.target.value),
+                                placeholder: 'Search guidelines...',
+                                className: 'px-3 py-2 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-emerald-500 input-focus w-40 shrink-0'
+                            }),
+                            tabs.map(tab => React.createElement('button', {
+                                key: tab.id,
+                                onClick: () => { setActiveTab(tab.id); setSearchTerm(''); },
+                                className: 'px-3 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider whitespace-nowrap transition-all ' + (activeTab === tab.id ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white')
+                            }, tab.label))
+                        ),
+                        React.createElement('div', { className: 'flex-1 overflow-y-auto no-scrollbar space-y-2' },
+                            renderContent()
+                        ),
+                        React.createElement('div', { className: 'mt-4 pt-4 border-t border-slate-800 flex justify-between items-center' },
+                            React.createElement('p', { className: 'text-[10px] text-slate-600' }, 'Source: Ministry of Health Tanzania, STG/NEMLIT 2021 (Sixth Edition)'),
+                            React.createElement('button', { onClick: onClose, className: 'text-slate-500 hover:text-white font-bold text-xs uppercase transition-all' }, 'Close ')
+                        )
+                    )
                 );
             };
 
