@@ -1571,26 +1571,256 @@
                     { group: "ACCESS", description: "First/second-line antibiotics for common infections", examples: "Amoxicillin, Ampicillin, Benzyl Penicillin, Cotrimoxazole, Metronidazole, Gentamicin" },
                     { group: "WATCH", description: "Broad-spectrum antibiotics for specific indications", examples: "Ceftriaxone, Ciprofloxacin, Azithromycin, Clarithromycin, Cefixime" },
                     { group: "RESERVE", description: "Last-resort antibiotics for MDR infections", examples: "Meropenem, Vancomycin, Colistin, Amikacin, Linezolid, Clindamycin" }
-                ]
+                ],
+                // ===== CHAPTER 2: ANAESTHESIA =====
+const anaesthesiaGuidelines = [
+    { category: 'General Anaesthesia', treatment: 'Ketamine 1-2 mg/kg IV or 5-10 mg/kg IM', notes: 'Dissociative anaesthesia. Airway reflexes partially maintained. Avoid in raised ICP. Emergence reactions common in adults.' },
+    { category: 'Local Anaesthesia', treatment: 'Lidocaine 1-2% with adrenaline 1:200,000', notes: 'Max dose 7 mg/kg (plain) or 9 mg/kg (with adrenaline). Test dose first. Bupivacaine 0.25-0.5% for longer procedures.' },
+    { category: 'Sedation (Conscious)', treatment: 'Midazolam 0.05-0.1 mg/kg IV titrated', notes: 'Monitor respiratory rate and SpO2. Flumazenil 0.2mg IV available for reversal. Avoid in COPD.' },
+    { category: 'Sedation in Children', treatment: 'Ketamine 3-5 mg/kg IM or 1-2 mg/kg IV', notes: 'Atropine 0.02 mg/kg to reduce secretions. Monitor airway patency. Recovery may take 1-2 hours.' },
+    { category: 'Anaesthesia in Diabetes', treatment: 'Morning surgery preferred. Check glucose pre-op.', notes: 'Hold oral hypoglycemics morning of surgery. Give half usual insulin dose. Monitor glucose q1-2h.' },
+    { category: 'Anaesthesia in Hypertension', treatment: 'Continue antihypertensives up to day of surgery', notes: 'Avoid hypotension. Controlled BP <160/100 before elective surgery. Labetalol/esmolol for intraoperative control.' },
+    { category: 'Anaesthesia in Asthma', treatment: 'Continue bronchodilators. Deep extubation preferred.', notes: 'Pre-op salbutamol. Avoid histamine-releasing drugs (morphine, atracurium). Ketamine bronchodilates.' },
+    { category: 'Anaesthesia in Sickle Cell', treatment: 'Adequate hydration, oxygenation, avoid hypothermia', notes: 'Tourniquet use controversial. Transfuse to Hb >10 g/dL if major surgery. Avoid acidosis.' }
+];
+
+// ===== CHAPTER 3: HAEMATOLOGY & BLOOD TRANSFUSION =====
+const haematologyGuidelines = [
+    { category: 'Iron Deficiency Anaemia (Adult)', treatment: 'Ferrous sulfate 200mg + folic acid 0.4mg daily x3-6 months', notes: 'Take with vitamin C. Side effects: constipation, dark stools. Treat underlying cause (menorrhagia, hookworm).' },
+    { category: 'Iron Deficiency Anaemia (Child)', treatment: 'Ferrous sulfate: <2yr=25mg Fe, 2-5yr=60mg Fe, >5yr=adult dose', notes: 'Elemental iron 3-6 mg/kg/day in divided doses. FATAL in overdose. Keep ALL iron away from children.' },
+    { category: 'Megaloblastic Anaemia', treatment: 'Folic acid 5mg daily + vitamin B12 1000mcg IM weekly x4', notes: 'B12 deficiency: neurological symptoms may not reverse if delayed. Do NOT give folate alone if B12 deficient.' },
+    { category: 'Sickle Cell Disease (Pain Crisis)', treatment: 'Paracetamol + NSAID + morphine PRN (WHO ladder)', notes: 'Hydration 1.5x maintenance. Oxygen if hypoxic. Treat infection if present. Hydroxyurea for frequent crises.' },
+    { category: 'Sickle Cell (Acute Chest Syndrome)', treatment: 'Oxygen + antibiotics (ceftriaxone + macrolide) + exchange transfusion if severe', notes: 'Leading cause of death in SCD. Bronchodilators, incentive spirometry. Transfuse if PaO2 <70mmHg.' },
+    { category: 'Sickle Cell (Stroke Prevention)', treatment: 'Chronic transfusion to maintain HbS <30%', notes: 'Annual TCD screening in children 2-16 years. Hydroxyurea alternative if transfusion not feasible.' },
+    { category: 'G6PD Deficiency (Acute Haemolysis)', treatment: 'Stop offending drug. Hydration. Blood transfusion if Hb <7 g/dL', notes: 'Avoid: primaquine, dapsone, sulfa drugs, nitrofurantoin, nalidixic acid, methylene blue. Dark urine (haemoglobinuria).' },
+    { category: 'Blood Transfusion (Whole Blood)', treatment: '10-15 mL/kg over 2-4 hours', notes: 'Cross-match before elective transfusion. Monitor for transfusion reactions (fever, urticaria, dyspnoea, hypotension).' },
+    { category: 'Blood Transfusion (Severe Anaemia)', treatment: 'Packed cells 10 mL/kg over 3-4 hours', notes: 'Give frusemide 1 mg/kg with transfusion if heart failure risk. Do NOT exceed 5 mL/kg/hour in children with heart failure.' },
+    { category: 'DVT / Pulmonary Embolism', treatment: 'Enoxaparin 1 mg/kg SC q12h + warfarin (overlap 5 days)', notes: 'Warfarin target INR 2-3. Contraindicated in pregnancy (use LMWH). Compression stockings for chronic prevention.' }
+];
+
+// ===== CHAPTER 4: NOTIFIABLE DISEASES =====
+const notifiableGuidelines = [
+    { category: 'Cholera', treatment: 'ORS aggressively + Doxycycline 300mg single dose (adults)', notes: 'Massive fluid replacement is life-saving. Azithromycin 1g single dose alternative for children/pregnant. Report within 24 hours.' },
+    { category: 'Anthrax (Cutaneous)', treatment: 'Ciprofloxacin 500mg PO q12h x7-10 days', notes: 'Penicillin V or doxycycline alternatives. Report immediately. Inhalational anthrax: ciprofloxacin 400mg IV q12h + 2 other antibiotics.' },
+    { category: 'Plague (Bubonic)', treatment: 'Streptomycin 1g IM q12h x10 days or Gentamicin', notes: 'Report within 24 hours. Isolate patient. Pneumonic plague: add chloramphenicol for meningitis coverage.' },
+    { category: 'Bacterial Meningitis', treatment: 'Ceftriaxone 2g IV q12h x10-14 days + Vancomycin if resistant pneumococcus suspected', notes: 'Dexamethasone 0.15 mg/kg q6h x2-4 days (start before or with first antibiotic). LP for diagnosis but do NOT delay antibiotics.' },
+    { category: 'Tick-Borne Relapsing Fever', treatment: 'Doxycycline 100mg PO q12h x7 days or Erythromycin 500mg q6h', notes: 'Jarisch-Herxheimer reaction common after first dose. Monitor for 2 hours. Treat with paracetamol.' },
+    { category: 'Measles', treatment: 'Vitamin A 200,000 IU (day 1, 2, and 14). Supportive care.', notes: 'Report within 7 days. Check vaccination status. Complications: pneumonia, diarrhoea, encephalitis. Isolate for 4 days after rash onset.' },
+    { category: 'Poliomyelitis (Suspected)', treatment: 'Supportive care. No specific antiviral.', notes: 'Report immediately within 24 hours. Stool specimens x2 (24h apart) for virology. Maintain vaccination coverage >80%.' },
+    { category: 'Viral Hepatitis (Acute)', treatment: 'Supportive care. No specific antiviral for hepatitis A/E.', notes: 'Hepatitis B: tenofovir if chronic. Report hepatitis A-E. Vaccinate contacts for hepatitis A/B.' },
+    { category: 'COVID-19 (Mild-Moderate)', treatment: 'Supportive care. Paracetamol, hydration, rest.', notes: 'Isolate for 10 days from symptom onset. Monitor for severe disease (dyspnoea, SpO2 <94%). Oxygen if hypoxic.' },
+    { category: 'COVID-19 (Severe/Critical)', treatment: 'Oxygen + Dexamethasone 6mg daily x10 days + prophylactic heparin', notes: 'Remdesivir if available and within 7 days of symptoms. ICU for mechanical ventilation if needed.' }
+];
+
+// ===== CHAPTER 5: ORAL & DENTAL CONDITIONS =====
+const oralDentalGuidelines = [
+    { category: 'Periodontal Disease (Gingivitis)', treatment: 'Chlorhexidine 0.2% mouthwash + scaling', notes: 'Improve oral hygiene. Metronidazole 400mg q8h x5 days if severe. Treat underlying diabetes.' },
+    { category: 'Dental Caries', treatment: 'Filling/extraction + analgesia', notes: 'Prevention: fluoride toothpaste, reduce sugar. Paracetamol 1g or ibuprofen 400mg for pain. Amoxicillin 500mg q8h if abscess.' },
+    { category: 'Odontogenic Infection (Dental Abscess)', treatment: 'Amoxicillin 500mg q8h x5 days + metronidazole 400mg q8h', notes: 'Drainage essential. Incision and drainage if fluctuant. Extract offending tooth if non-restorable.' },
+    { category: 'Orofacial Fungal Infection (Oral Thrush)', treatment: 'Nystatin suspension 5mL qid (swish and swallow) x7-14 days', notes: 'Fluconazole 200mg daily x7-14 days if severe or immunocompromised. Treat underlying HIV if recurrent.' },
+    { category: 'Aphthous Ulcer', treatment: 'Topical triamcinolone acetonide 0.1% paste or chlorhexidine mouthwash', notes: 'Avoid spicy/acidic foods. Most resolve in 7-14 days. Investigate for nutritional deficiencies if recurrent.' },
+    { category: 'Post-Extraction Bleeding', treatment: 'Apply pressure with gauze for 30 min. Tranexamic acid mouthwash.', notes: 'If persistent: suture socket, check coagulation. Avoid aspirin. Local anaesthetic with adrenaline for vasoconstriction.' }
+];
+
+// ===== CHAPTER 8: NERVOUS SYSTEM CONDITIONS =====
+const nervousSystemGuidelines = [
+    { category: 'Bacterial Meningitis', treatment: 'Ceftriaxone 2g IV q12h + Vancomycin 1g q12h + Dexamethasone 0.15mg/kg q6h', notes: 'Start dexamethasone before/with first antibiotic. LP for diagnosis but do NOT delay antibiotics >30 min.' },
+    { category: 'Cryptococcal Meningitis', treatment: 'Amphotericin B 0.7-1mg/kg IV + Flucytosine 100mg/kg q6h x2 weeks, then fluconazole 400mg daily x8 weeks', notes: 'HIV patients: start ART 4-6 weeks after meningitis treatment. Monitor renal function (amphotericin).' },
+    { category: 'Cerebral Malaria', treatment: 'Artesunate 2.4mg/kg IV at 0, 12, 24h then daily x7 days', notes: 'Exchange transfusion if parasite count >10% or severe complications. Monitor blood glucose (hypoglycemia).' },
+    { category: 'Generalized Tonic-Clonic Seizure', treatment: 'Diazepam 10mg IV/PR (0.3-0.5mg/kg) + Phenytoin 15-20mg/kg IV loading', notes: 'Status epilepticus: repeat diazepam after 10 min if needed. Airway protection. Check glucose, electrolytes.' },
+    { category: 'Epilepsy (Maintenance)', treatment: 'Phenytoin 100mg TDS or Carbamazepine 200mg BD', notes: 'Start low, titrate up. Monitor drug levels. Sodium valproate 200-500mg BD alternative. Lifelong therapy for most.' },
+    { category: 'Acute Stroke (Ischaemic)', treatment: 'Aspirin 300mg daily (if no haemorrhage) + BP control', notes: 'Thrombolysis only if within 4.5h at specialist centre. Rehabilitation critical. Secondary prevention: statin, antiplatelet.' },
+    { category: 'Stroke (Haemorrhagic)', treatment: 'Supportive care. Control BP. Reverse anticoagulation if applicable.', notes: 'Neurosurgical consult if large bleed or hydrocephalus. Avoid antiplatelet/anticoagulant. Mannitol for raised ICP.' },
+    { category: 'Peripheral Neuropathy (Diabetic)', treatment: 'Amitriptyline 25-50mg nocte + Gabapentin 300mg TDS', notes: 'Optimize glycaemic control. Vitamin B12 if deficient. Foot care education to prevent ulcers/amputation.' },
+    { category: 'Tetanus', treatment: 'Metronidazole 500mg IV q8h + Tetanus immunoglobulin 3000-6000 IU IM', notes: 'Wound debridement. Diazepam for muscle spasms. Dark, quiet room. Mechanical ventilation if respiratory failure.' },
+    { category: 'Rabies (Post-Exposure Prophylaxis)', treatment: 'Wound washing + Rabies vaccine day 0, 3, 7, 14 + Rabies immunoglobulin 20 IU/kg', notes: 'Clean wound with soap and water for 15 min. Immunoglobulin infiltrate around wound. Report animal if possible.' }
+];
+
+// ===== CHAPTER 11: RENAL & UROLOGICAL CONDITIONS =====
+const renalGuidelines = [
+    { category: 'UTI (Uncomplicated)', treatment: 'Nitrofurantoin 100mg BD x5 days or Cotrimoxazole DS BD x3 days', notes: 'Increase fluid intake. Urine culture if recurrent. Avoid nitrofurantoin if GFR <30. Treat sexual partner if STI suspected.' },
+    { category: 'UTI (Complicated/Pyelonephritis)', treatment: 'Ceftriaxone 1g IV OD x10-14 days or Ciprofloxacin 500mg BD', notes: 'Imaging to rule out obstruction/abscess. Treat for 14 days. Follow-up urine culture.' },
+    { category: 'Acute Kidney Injury (AKI)', treatment: 'Treat cause (sepsis, dehydration, nephrotoxins). Fluid resuscitation.', notes: 'Avoid nephrotoxic drugs (NSAIDs, aminoglycosides, contrast). Dialysis if severe hyperkalaemia, acidosis, fluid overload, uraemia.' },
+    { category: 'Chronic Kidney Disease', treatment: 'BP control (ACE-I/ARB if tolerated), diabetes control, statin', notes: 'Stage-based management. Erythropoietin for anaemia. Calcium/vitamin D for bone disease. Prepare for dialysis/transplant if Stage 5.' },
+    { category: 'Nephrotic Syndrome', treatment: 'Prednisolone 1mg/kg/day (max 60mg) x4-6 weeks then taper', notes: 'Diuretics for oedema. Anticoagulation if thrombosis. ACE-I for proteinuria. Renal biopsy if atypical.' },
+    { category: 'Acute Prostatitis', treatment: 'Ciprofloxacin 500mg BD x4 weeks or Cotrimoxazole DS BD', notes: 'IV antibiotics if septic. Alpha-blocker for urinary retention. Chronic prostatitis: 4-6 weeks antibiotics.' },
+    { category: 'Benign Prostatic Hyperplasia', treatment: 'Tamsulosin 0.4mg OD + Finasteride 5mg OD', notes: 'Monitor for postural hypotension (tamsulosin). Finasteride takes 3-6 months. Surgery if retention or severe symptoms.' },
+    { category: 'Urolithiasis (Renal Colic)', treatment: 'Diclofenac 75mg IM + IV fluids + Tamsulosin 0.4mg OD', notes: 'Strain urine for stone analysis. Imaging (KUB ultrasound). Urgent urology if fever, anuria, bilateral obstruction.' }
+];
+
+// ===== CHAPTER 12: EYE CONDITIONS =====
+const eyeGuidelines = [
+    { category: 'Cataract', treatment: 'Surgical extraction + IOL implantation', notes: 'No effective medical treatment. Surgery when VA <6/18 or affecting daily activities. Phacoemulsification or ECCE.' },
+    { category: 'Glaucoma (Open Angle)', treatment: 'Timolol 0.5% eye drops BD + Latanoprost 0.005% nocte', notes: 'Target IOP <21 mmHg (lower if advanced). Pilocarpine 2% QDS alternative. Surgery (trabeculectomy) if medical therapy fails.' },
+    { category: 'Glaucoma (Acute Angle Closure)', treatment: 'Acetazolamide 500mg IV + Pilocarpine 2% every 15 min + Mannitol 20% IV', notes: 'Emergency. Laser peripheral iridotomy after IOP controlled. Refer immediately. Do NOT give pilocarpine until IOP <40.' },
+    { category: 'Conjunctivitis (Bacterial)', treatment: 'Chloramphenicol 0.5% eye drops q2h or Tetracycline 1% eye ointment', notes: 'Most resolve spontaneously in 7-10 days. Hygiene to prevent spread. Gonococcal: ceftriaxone 1g IM + wash eyes.' },
+    { category: 'Trachoma', treatment: 'Azithromycin 20mg/kg (max 1g) single dose OR Tetracycline 1% eye ointment BD x6 weeks', notes: 'SAFE strategy: Surgery, Antibiotics, Facial cleanliness, Environment. Mass drug administration in endemic areas.' },
+    { category: 'Corneal Ulcer (Bacterial)', treatment: 'Ciprofloxacin 0.3% or Gentamicin 0.3% eye drops hourly', notes: 'Fungal: natamycin 5%. Acanthamoeba: polyhexamethylene biguanide. Do NOT use steroids. Shield eye. Daily follow-up.' },
+    { category: 'Vitamin A Deficiency (Xerophthalmia)', treatment: 'Vitamin A: <6mo=50,000 IU, 6-11mo=100,000 IU, >1yr=200,000 IU (day 1, next day, 2-4 weeks)', notes: 'Bitot spots, night blindness, corneal xerosis. Treat measles with vitamin A. Dietary counselling. Prevent with fortification.' },
+    { category: 'Eye Injury (Chemical Burn)', treatment: 'Immediate irrigation with clean water/saline for 30 min', notes: 'Alkali worse than acid. Evert eyelids. Topical antibiotics. Cycloplegics for pain. Refer if corneal involvement.' },
+    { category: 'Retinoblastoma', treatment: 'Enucleation if advanced. Chemotherapy (vincristine, etoposide, carboplatin) for bilateral.', notes: 'Refer to oncology centre. Genetic counselling. Leukocoria (white pupil) is hallmark sign. Early detection critical.' }
+];
+
+// ===== CHAPTER 13: EAR, NOSE & THROAT CONDITIONS =====
+const entGuidelines = [
+    { category: 'Acute Otitis Media', treatment: 'Amoxicillin 40mg/kg/day in 3 divided doses x5-7 days', notes: 'Analgesia (paracetamol). Most resolve without antibiotics. If treatment failure after 48h: amoxicillin-clavulanate. Myringotomy if bulging TM.' },
+    { category: 'Chronic Otitis Media (CSOM)', treatment: 'Aural toilet + Ciprofloxacin 0.3% ear drops + Oral ciprofloxacin if mastoiditis', notes: 'Dry mopping with sterile cotton buds. Avoid water entry. Cholesteatoma requires surgery (mastoidectomy).' },
+    { category: 'Acute Sinusitis', treatment: 'Amoxicillin 500mg TDS x10 days + nasal decongestant x3 days max', notes: 'Most viral and self-limiting. Antibiotics if >10 days or severe. Saline nasal irrigation. Avoid prolonged decongestant use (rhinitis medicamentosa).' },
+    { category: 'Acute Tonsillitis', treatment: 'Benzathine penicillin 1.2 MU IM single dose OR Phenoxymethylpenicillin 500mg QDS x10 days', notes: 'Centor criteria for streptococcal diagnosis. Complications: peritonsillar abscess, rheumatic fever, glomerulonephritis.' },
+    { category: 'Peritonsillar Abscess (Quinsy)', treatment: 'Aspiration/incision and drainage + Benzyl penicillin IV + Metronidazole', notes: 'Needle aspiration with 18G needle. Tonsillectomy after 6 weeks if recurrent. Airway obstruction risk.' },
+    { category: 'Epistaxis (Nosebleed)', treatment: 'Pinch soft nose for 10-15 min + ice pack. Pack with gauze if persistent.', notes: 'Cautery with silver nitrate if anterior bleed visible. Posterior bleed: posterior nasal pack + Foley catheter. Check BP and coagulation.' },
+    { category: 'Hearing Loss (Conductive)', treatment: 'Treat cause (wax, otitis media, Otosclerosis)', notes: 'Aural toilet for wax. Hearing aids if permanent. Stapedectomy for otosclerosis. Chronic otitis media: surgery if cholesteatoma.' },
+    { category: 'Hearing Loss (Sensorineural)', treatment: 'Hearing aids. Cochlear implant if bilateral severe in children.', notes: 'Sudden SNHL: steroids within 72 hours. Avoid ototoxic drugs (aminoglycosides, furosemide). Genetic testing if congenital.' }
+];
+
+// ===== CHAPTER 14: SKIN CONDITIONS =====
+const skinGuidelines = [
+    { category: 'Eczema (Atopic Dermatitis)', treatment: 'Emollients + Hydrocortisone 1% cream BD for face, Betamethasone 0.1% for body', notes: 'Avoid soap, use emollient wash. Short courses of potent steroids. Antihistamines for itch. Treat secondary infection.' },
+    { category: 'Psoriasis', treatment: 'Coal tar preparations + Salicylic acid + Betamethasone + Calcipotriol', notes: 'Methotrexate 7.5-15mg weekly for severe. Monitor LFTs, CBC. Avoid triggers (stress, infection, alcohol). Phototherapy if available.' },
+    { category: 'Scabies', treatment: 'Permethrin 5% cream overnight (repeat in 7 days) OR Ivermectin 200mcg/kg single dose', notes: 'Treat all household contacts simultaneously. Wash clothes/bedding in hot water. Itch may persist 2-4 weeks post-treatment.' },
+    { category: 'Tinea Capitis', treatment: 'Griseofulvin 10-20mg/kg daily x6-8 weeks OR Fluconazole 6mg/kg daily x3-6 weeks', notes: 'Kerion: add prednisolone 1mg/kg x1 week. Selenium sulfide shampoo reduces spread. Check for pet/animal source.' },
+    { category: 'Tinea Corporis (Ringworm)', treatment: 'Terbinafine 1% cream BD x1-2 weeks OR Clotrimazole 1% cream BD x4 weeks', notes: 'Extensive disease: oral terbinafine 250mg daily x2-4 weeks. Treat feet simultaneously if tinea pedis.' },
+    { category: 'Impetigo', treatment: 'Topical mupirocin TDS x5 days OR Flucloxacillin 500mg QDS x7 days', notes: 'Honey-coloured crusts. Highly contagious. Wash with soap and water. Isolate children from school until 24h after antibiotics.' },
+    { category: 'Acne Vulgaris', treatment: 'Benzoyl peroxide 2.5% + Topical clindamycin 1% + Retinoids (adapalene 0.1%)', notes: 'Moderate-severe: oral doxycycline 100mg BD x3 months. Isotretinoin for severe nodulocystic (teratogenic - strict contraception).' },
+    { category: 'Leprosy Type 1 Reaction (Reversal)', treatment: 'Prednisolone 40-60mg daily, taper over 3-6 months', notes: 'Continue anti-leprosy drugs. Do NOT stop MDT. Nerve function assessment. Physiotherapy to prevent contractures.' },
+    { category: 'Leprosy Type 2 Reaction (ENL)', treatment: 'Prednisolone 40mg daily + Clofazimine 300mg daily x3 months', notes: 'Thalidomide 100-400mg daily (if available) - highly effective but teratogenic. Pain control. Monitor for neuritis.' },
+    { category: 'Burns', treatment: 'Cool water irrigation 20 min + Silver sulfadiazine 1% cream + Fluid resuscitation (Parkland formula)', notes: 'Tetanus prophylaxis. Analgesia. Escharotomy if circumferential. Refer if >10% BSA, face/hands/genitals, electrical/chemical.' }
+];
+
+// ===== CHAPTER 15: MENTAL HEALTH CONDITIONS =====
+const mentalHealthGuidelines = [
+    { category: 'Major Depressive Disorder', treatment: 'Amitriptyline 25-50mg nocte (titrate to 150mg) OR Fluoxetine 20mg daily', notes: 'Start low, go slow. 4-6 weeks for response. Continue 6-12 months after remission. CBT if available. Suicide risk assessment.' },
+    { category: 'Generalized Anxiety Disorder', treatment: 'Amitriptyline 25-75mg nocte + Benzodiazepines short-term only', notes: 'SSRIs preferred if available. Avoid long-term benzodiazepines (dependence). Relaxation techniques. Treat comorbid depression.' },
+    { category: 'Schizophrenia / Psychosis', treatment: 'Haloperidol 5-10mg BD (or IM if acutely agitated) + Benzatropine 2mg BD for EPS', notes: 'Start with lower dose in elderly. Monitor for extrapyramidal symptoms. Depot antipsychotics (fluphenazine) for maintenance.' },
+    { category: 'Bipolar Disorder (Manic Episode)', treatment: 'Haloperidol 10-20mg daily + Sodium valproate 500-2000mg daily', notes: 'Lithium if available and renal function normal. Sedation if severely agitated. Mood stabilizer for maintenance.' },
+    { category: 'Bipolar Disorder (Depression)', treatment: 'Olanzapine-fluoxetine combination OR Lamotrigine (if available)', notes: 'Avoid antidepressants alone (may induce mania). Mood stabilizer essential. ECT if catatonia or severe.' },
+    { category: 'Post-Traumatic Stress Disorder', treatment: 'SSRIs (sertraline/paroxetine) + Trauma-focused CBT', notes: 'Avoid benzodiazepines. Prazosin for nightmares if available. Group therapy. Address ongoing trauma/safety.' },
+    { category: 'Substance Use Disorder (Alcohol)', treatment: 'Thiamine 100mg daily x5 days + Diazepam taper for withdrawal + Naltrexone if available', notes: 'Wernicke encephalopathy: thiamine IV before glucose. Delirium tremens: diazepam 10-20mg IV q1-2h. Support groups.' },
+    { category: 'Substance Use Disorder (Opioid)', treatment: 'Methadone maintenance OR Buprenorphine-naloxone', notes: 'Naloxone 0.4-2mg IV for overdose (repeat q2-3min). Harm reduction: needle exchange. Clonidine for withdrawal symptoms.' },
+    { category: 'Dementia (Alzheimer Type)', treatment: 'Supportive care. Cholinesterase inhibitors if available (donepezil 5-10mg daily).', notes: 'No cure. Treat comorbidities. Safety assessment (wandering, falls). Caregiver support. Avoid antipsychotics if possible.' },
+    { category: 'Delirium', treatment: 'Treat underlying cause + Haloperidol 0.5-2mg PO/IM (low dose in elderly)', notes: 'Medical emergency. Check infection, medications, electrolytes, hypoxia. Reorientation, family presence. Avoid restraints.' }
+];
+
+// ===== CHAPTER 17: MUSCULOSKELETAL DISORDERS =====
+const musculoskeletalGuidelines = [
+    { category: 'Osteomyelitis (Acute)', treatment: 'Flucloxacillin 2g IV QDS + Fusidic acid 500mg TDS x4-6 weeks', notes: 'Surgical debridement if abscess/sequestrum. Chronic: 6+ weeks antibiotics. MRI for diagnosis if available.' },
+    { category: 'Septic Arthritis', treatment: 'Flucloxacillin 2g IV QDS x2 weeks then oral x4 weeks', notes: 'Urgent joint aspiration for culture. Washout if accessible joint (knee). Gonococcal: ceftriaxone 1g daily.' },
+    { category: 'Rheumatoid Arthritis', treatment: 'NSAIDs + Methotrexate 7.5-15mg weekly + Hydroxychloroquine 200-400mg daily', notes: 'Early DMARDs to prevent joint damage. Monitor LFTs, CBC. Sulfasalazine alternative. Physiotherapy. Joint replacement if end-stage.' },
+    { category: 'Osteoarthritis', treatment: 'Paracetamol 1g QDS + NSAIDs PRN + Weight loss + Physiotherapy', notes: 'Intra-articular steroids for flares. Hyaluronic acid if available. Joint replacement (THR/TKR) for severe. Avoid long-term NSAIDs.' },
+    { category: 'Gout (Acute Attack)', treatment: 'Colchicine 0.5mg TDS OR Indomethacin 50mg TDS until pain resolves', notes: 'Start within 24 hours. Rest, ice, elevate. Avoid aspirin. Allopurinol 100-300mg daily for prophylaxis (NOT during acute attack).' },
+    { category: 'Low Back Pain (Mechanical)', treatment: 'NSAIDs + Muscle relaxants (diazepam 5mg TDS x3 days) + Stay active', notes: 'Avoid bed rest >48 hours. Physiotherapy. Red flags: cauda equina, malignancy, infection. MRI if neurological deficits.' },
+    { category: 'Tuberculous Spondylitis (Pott Disease)', treatment: 'RHZE x2 months then RH x10 months (total 12 months)', notes: 'Spinal immobilization (brace/collar). Surgery for spinal instability, neurological deficit, abscess. Monitor for paraplegia.' },
+    { category: 'Clubfoot (CTEV)', treatment: 'Ponseti method: serial casting weekly + Achilles tenotomy + abduction brace', notes: 'Start within 1 week of birth. >90% success if started early. Surgery (posteromedial release) if neglected/relapsed.' },
+    { category: 'Rickets', treatment: 'Vitamin D 2000-5000 IU daily x3 months + Calcium 500mg daily', notes: 'Nutritional rickets most common. X-ray: cupping/fraying of metaphysis. Sun exposure. Dietary counselling. Follow-up at 3 months.' },
+    { category: 'Tendinopathy (e.g., Achilles)', treatment: 'Rest, ice, eccentric exercises, NSAIDs PRN', notes: 'Physiotherapy key. Corticosteroid injection controversial (risk of rupture). Surgery if failed conservative management >6 months.' }
+];
+
+// ===== CHAPTER 18: PAEDIATRIC CONDITIONS =====
+const paediatricGuidelines = [
+    { category: 'Neonatal Sepsis (Early Onset <72h)', treatment: 'Ampicillin 50mg/kg IV q12h + Gentamicin 5mg/kg IV q48h', notes: 'Blood culture before antibiotics. If meningitis suspected: add cefotaxime 50mg/kg q12h. Treat 10-14 days.' },
+    { category: 'Neonatal Sepsis (Late Onset >72h)', treatment: 'Flucloxacillin 50mg/kg IV q12h + Gentamicin + Cefotaxime', notes: 'Staph aureus more common. Consider MRSA if risk factors. Lumbar puncture if any neurological signs.' },
+    { category: 'Neonatal Jaundice (Physiological)', treatment: 'Phototherapy if bilirubin above threshold (see nomogram)', notes: 'Breastfeeding jaundice vs breast milk jaundice. Phototherapy: blue light 425-475nm. Exchange transfusion if near exchange level.' },
+    { category: 'Neonatal Jaundice (Pathological)', treatment: 'Phototherapy + Treat cause (sepsis, ABO incompatibility, G6PD)', notes: 'Onset <24h = always pathological. Direct bilirubin >20% = conjugated jaundice (NOT phototherapy). Investigate for biliary atresia.' },
+    { category: 'Severe Acute Malnutrition (SAM)', treatment: 'F75 therapeutic milk (low osmolarity) → F100/RUTF', notes: 'WHO 10-step protocol. No IV fluids unless shock. Treat infections, hypoglycaemia, hypothermia. ReSoMal for rehydration.' },
+    { category: 'Moderate Acute Malnutrition (MAM)', treatment: 'RUSF (Ready-to-Use Supplementary Food) + Counselling', notes: 'Supplementary feeding programs. Address underlying causes (poverty, illness, inadequate breastfeeding). Monthly follow-up.' },
+    { category: 'Neonatal Tetanus', treatment: 'Diazepam for spasms + Metronidazole 15mg/kg IV q12h + Tetanus immunoglobulin', notes: 'Mortality 10-80%. Quiet, dark room. NG feeding. Muscle relaxants if ventilation available. Prevent via maternal immunization.' },
+    { category: 'Paediatric HIV (First-Line)', treatment: 'ABC/3TC + DTG (or LPV/r if <4 weeks or <3kg)', notes: 'DTG preferred for children >4 weeks and >3kg. NVP alternative if DTG unavailable. CTX prophylaxis if CD4 <25% or severe immunosuppression.' },
+    { category: 'IMCI: Cough/Difficult Breathing', treatment: 'Fast breathing: Amoxicillin 40mg/kg BD x5 days. Chest indrawing: Ampicillin + Gentamicin', notes: 'Count breaths: <2mo ≥60, 2-11mo ≥50, 1-5yr ≥40. Danger signs: central cyanosis, unable to drink, convulsions.' },
+    { category: 'IMCI: Diarrhoea', treatment: 'Plan A/B/C based on dehydration. Zinc 10-20mg daily x10-14 days.', notes: 'No antibiotics for uncomplicated watery diarrhoea. Blood in stool: dysentery → ciprofloxacin. Continue feeding.' }
+];
+
+// ===== CHAPTER 21: ONCOLOGY =====
+const oncologyGuidelines = [
+    { category: 'Breast Cancer (Early Stage)', treatment: 'Surgery (mastectomy/lumpectomy) + Axillary node dissection + Chemotherapy + Radiotherapy', notes: 'Stage I-II: surgery first. Adjuvant chemotherapy (AC-T: doxorubicin, cyclophosphamide, paclitaxel). Hormone receptor +ve: tamoxifen 20mg daily x5 years.' },
+n    { category: 'Breast Cancer (Locally Advanced)', treatment: 'Neoadjuvant chemotherapy → Surgery → Radiotherapy', notes: 'Stage III: downstage with chemo first. Trastuzumab if HER2+ (if available). Monitor cardiac function.' },
+    { category: 'Cervical Cancer (Early)', treatment: 'Surgery (radical hysterectomy + pelvic lymphadenectomy) OR Radiotherapy', notes: 'Stage IA-IB1. Fertility-sparing surgery if desired and <2cm. Brachytherapy + external beam for alternative.' },
+    { category: 'Cervical Cancer (Advanced)', treatment: 'Concurrent chemoradiation (cisplatin weekly) + Brachytherapy', notes: 'Stage IB2-IVA. Palliative: cisplatin/paclitaxel chemotherapy. HPV vaccination for prevention. Screen with VIA/Pap smear.' },
+    { category: 'Kaposi Sarcoma (HIV-Associated)', treatment: 'ART first (immune reconstitution) + Chemotherapy if visceral/symptomatic', notes: 'Liposomal doxorubicin 20mg/m2 q2-3 weeks x6 cycles. Paclitaxel if refractory. Good response to ART alone in some cases.' },
+    { category: 'Burkitt Lymphoma', treatment: 'Cyclophosphamide + Vincristine + Prednisolone (CVP) + Intrathecal methotrexate', notes: 'Highly curable if treated early. Jaw/maxilla involvement common in endemic (African) form. CNS prophylaxis essential.' },
+    { category: 'Palliative Care (Cancer Pain)', treatment: 'WHO analgesic ladder: Step 1 (paracetamol/NSAID) → Step 2 (tramadol) → Step 3 (morphine)', notes: 'Oral morphine 5-10mg q4h PRN then regular. Laxatives with morphine. Breakthrough dose = 1/6th of daily dose. No ceiling dose.' },
+    { category: 'Palliative Care (End of Life)', treatment: 'Symptom control: pain, dyspnoea, nausea, constipation, anxiety', notes: 'Morphine for pain/dyspnoea. Haloperidol for nausea/delirium. Midazolam for terminal restlessness. Family support, dignity.' }
+];
+
+// ===== CHAPTER 22: OTHER PROTOZOA INFECTIONS =====
+const protozoaGuidelines = [
+    { category: 'Visceral Leishmaniasis (Kala-azar)', treatment: 'Liposomal amphotericin B 3-5mg/kg IV daily x3-6 days OR Miltefosine 2.5mg/kg daily x28 days', notes: 'Fever, hepatosplenomegaly, pancytopenia. RK39 rapid test. HIV co-infection common. Relapse frequent in HIV.' },
+    { category: 'Cutaneous Leishmaniasis', treatment: 'Intralesional sodium stibogluconate OR Fluconazole 200mg daily x6 weeks', notes: 'Self-healing in months-years. Treat if multiple lesions, facial, or prolonged. Cryotherapy or heat therapy alternatives.' },
+    { category: 'Human African Trypanosomiasis (HAT)', treatment: 'Pentamidine 4mg/kg IM daily x7 days (Stage 1) OR Melarsoprol 2.2mg/kg IV daily x10 days (Stage 2)', notes: 'T.b. gambiense: West Africa. T.b. rhodesiense: East Africa (more acute). CSF exam for staging. Melarsoprol: encephalopathic syndrome 5-10%.' }
+];
+
+// ===== CHAPTER 23: OTHER BACTERIAL INFECTIONS =====
+const bacterialGuidelines = [
+    { category: 'Anthrax (Cutaneous)', treatment: 'Ciprofloxacin 500mg BD x7-10 days OR Doxycycline 100mg BD', notes: 'Black eschar with surrounding oedema. Report immediately. Inhalational: ciprofloxacin 400mg IV q12h + clindamycin + rifampicin.' },
+    { category: 'Anthrax (Gastrointestinal)', treatment: 'Ciprofloxacin 500mg BD x60 days + supportive care', notes: 'Severe abdominal pain, bloody diarrhoea, ascites. High mortality. Surgical if bowel perforation. Public health notification.' },
+    { category: 'Mastitis / Breast Abscess', treatment: 'Flucloxacillin 500mg QDS x10-14 days + Drainage if abscess', notes: 'Continue breastfeeding (drain affected breast first). Cloxacillin alternative. MRSA: add TMP-SMX. Ultrasound if abscess suspected.' },
+    { category: 'Lymphogranuloma Venereum (LGV)', treatment: 'Doxycycline 100mg BD x21 days', notes: 'STI caused by Chlamydia trachomatis L1-L3. Buboes may require aspiration. Treat sexual partners. Proctocolitis in MSM.' }
+];
+
+// ===== CHAPTER 24: NUTRITIONAL DISORDERS =====
+const nutritionalGuidelines = [
+    { category: 'Protein-Energy Malnutrition (Marasmus)', treatment: 'F75 → F100/RUTF. Treat infections, hypoglycaemia, hypothermia.', notes: 'Wasting <70% weight-for-height or MUAC <115mm. No oedema. Appetite test. Community-based management if uncomplicated.' },
+    { category: 'Protein-Energy Malnutrition (Kwashiorkor)', treatment: 'F75 initially (cautious refeeding) → F100/RUTF. Treat infections.', notes: 'Oedema, hypoalbuminaemia, skin/hair changes. Higher mortality than marasmus. Risk of refeeding syndrome. Slow feeding.' },
+    { category: 'Vitamin A Deficiency', treatment: '200,000 IU (day 1, next day, 2-4 weeks) for xerophthalmia/measles', notes: 'Night blindness, Bitot spots, corneal xerosis. Measles: give to all children. Fortification of sugar/oil. Dietary diversification.' },
+    { category: 'Vitamin B1 (Thiamine) Deficiency', treatment: 'Thiamine 100mg IV/IM daily x7 days then 10mg PO daily', notes: 'Beriberi (wet/dry), Wernicke encephalopathy. Give BEFORE glucose in malnourished/alcoholic patients. Ophthalmoplegia, ataxia, confusion.' },
+    { category: 'Vitamin B3 (Niacin) Deficiency', treatment: 'Niacin 100mg TDS x2 weeks then 50mg daily', notes: 'Pellagra: dermatitis, diarrhoea, dementia, death. Associated with maize-based diet. Also give other B vitamins.' },
+    { category: 'Vitamin B12 Deficiency', treatment: 'Cyanocobalamin 1000mcg IM weekly x4 then monthly lifelong', notes: 'Megaloblastic anaemia, glossitis, peripheral neuropathy. IF antibodies = pernicious anaemia (lifelong replacement). Oral 1-2mg daily if no malabsorption.' },
+    { category: 'Vitamin C Deficiency (Scurvy)', treatment: 'Vitamin C 500mg daily x1 month then 100mg daily', notes: 'Gingival bleeding, perifollicular haemorrhages, corkscrew hair, poor wound healing. Associated with elderly, alcoholism, restrictive diets.' },
+    { category: 'Vitamin D Deficiency (Rickets/Osteomalacia)', treatment: 'Vitamin D 2000-5000 IU daily x3 months + Calcium 500mg daily', notes: 'Rickets (children): bowed legs, rachitic rosary, craniotabes. Osteomalacia (adults): bone pain, proximal myopathy. Sun exposure, dietary sources.' },
+    { category: 'Zinc Deficiency', treatment: 'Zinc sulfate 20mg elemental daily', notes: 'Growth retardation, dermatitis, alopecia, impaired immunity, hypogonadism. Common in malabsorption, chronic liver/renal disease. All children with diarrhoea get zinc.' },
+    { category: 'Iodine Deficiency', treatment: 'Iodized salt + Iodine 200-300mcg daily if deficiency confirmed', notes: 'Goitre, hypothyroidism, cretinism (congenital). Universal salt iodization program. Pregnant women: 250mcg daily.' }
+];
+
+// ===== CHAPTER 25: POISONING =====
+const poisoningGuidelines = [
+    { category: 'General Principles', treatment: 'ABCDE. Decontamination if within 1 hour. Activated charcoal 50g if conscious.', notes: 'Do NOT induce emesis. Gastric lavage only if life-threatening and within 1 hour. Supportive care is mainstay. Call poison centre if available.' },
+    { category: 'Paracetamol Overdose', treatment: 'N-acetylcysteine (NAC) 150mg/kg IV over 15 min, then 50mg/kg over 4h, then 100mg/kg over 16h', notes: 'Effective within 8 hours. Check paracetamol level at 4 hours post-ingestion (Rumack-Matthew nomogram). LFTs, INR.' },
+    { category: 'Organophosphate Poisoning', treatment: 'Atropine 2mg IV q5-10min (titrate to dry secretions, HR >80) + Pralidoxime 1-2g IV q4-6h', notes: 'Muscarinic symptoms: SLUDGE (salivation, lacrimation, urination, defecation, GI distress, emesis). Nicotinic: weakness, fasciculations.' },
+    { category: 'Carbamate Poisoning', treatment: 'Atropine ONLY (NO pralidoxime - may worsen)', notes: 'Similar to organophosphates but shorter duration. Reversible cholinesterase inhibition. Atropine alone. Supportive care.' },
+    { category: 'Iron Overdose', treatment: 'Whole bowel irrigation. Deferoxamine 15mg/kg/hr IV if severe.', notes: 'Children: fatal dose 200-300mg/kg elemental iron. Stages: GI (0-6h), latent (6-24h), shock/metabolic acidosis (12-96h), hepatic necrosis (2-5 days).' },
+    { category: 'Snake Bite (Cytotoxic - Puff Adder etc.)', treatment: 'Pressure immobilization bandage + Polyvalent antivenom if available + Wound care', notes: 'Do NOT cut/suck wound. Mark swelling edge. Monitor for compartment syndrome. Antivenom if systemic symptoms or severe local effects.' },
+    { category: 'Snake Bite (Neurotoxic - Black Mamba etc.)', treatment: 'Pressure immobilization + Polyvalent antivenom + Ventilatory support', notes: 'Ptosis, ophthalmoplegia, respiratory paralysis. Antivenom ASAP. May need intubation/ventilation. Neostigmine may help post-antivenom.' },
+    { category: 'Scorpion Sting', treatment: 'Analgesia + Prazosin 0.5-1mg (autonomic storm) + Supportive care', notes: 'Most stings benign. Severe: hypertension, pulmonary oedema, myocarditis. Prazosin for sympathetic overactivity. No role for steroids/antivenom in most.' },
+    { category: 'Spider Bite (Button Spider - Latrodectism)', treatment: 'Calcium gluconate 10% 10mL IV + Muscle relaxants + Analgesia', notes: 'Severe muscle cramps, abdominal rigidity, hypertension. Antivenom if available (S. Africa). Supportive care usually sufficient.' },
+    { category: 'Carbon Monoxide Poisoning', treatment: '100% Oxygen via non-rebreather mask. Hyperbaric oxygen if available and severe.', notes: 'Headache, dizziness, confusion, cherry-red skin (late). Carboxyhaemoglobin level. Pregnant women: lower threshold for hyperbaric O2.' }
+];
             };
 
             const STGReferenceModal = ({ onClose }) => {
                 const [activeTab, setActiveTab] = React.useState('OVERVIEW');
                 const [searchTerm, setSearchTerm] = React.useState('');
 
-                const tabs = [
-                    { id: 'OVERVIEW', label: 'Overview' },
-                    { id: 'EMERGENCY', label: 'Emergency' },
-                    { id: 'MALARIA', label: 'Malaria' },
-                    { id: 'HIV', label: 'HIV/AIDS' },
-                    { id: 'TB', label: 'TB & Leprosy' },
-                    { id: 'PNEUMONIA', label: 'Pneumonia' },
-                    { id: 'DIARRHEA', label: 'Diarrhea' },
-                    { id: 'OBSTETRIC', label: 'Obstetric' },
-                    { id: 'DIABETES', label: 'Diabetes' },
-                    { id: 'CVD', label: 'Cardiovascular' },
-                    { id: 'NEMLIT', label: 'NEMLIT' },
-                    { id: 'AWARE', label: 'AWaRe' }
+const stgTabs = [
+    { id: 'OVERVIEW', label: 'Overview' },
+    { id: 'EMERGENCY', label: 'Emergency' },
+    { id: 'MALARIA', label: 'Malaria' },
+    { id: 'HIV', label: 'HIV/AIDS' },
+    { id: 'TB', label: 'TB & Leprosy' },
+    { id: 'PNEUMONIA', label: 'Pneumonia' },
+    { id: 'DIARRHEA', label: 'Diarrhea' },
+    { id: 'PREGNANCY', label: 'Obstetric' },
+    { id: 'DIABETES', label: 'Diabetes' },
+    { id: 'CVD', label: 'Cardiovascular' },
+    { id: 'NEMLIT', label: 'NEMLIT Levels' },
+    { id: 'AWaRe', label: 'AWaRe Antibiotics' },
+    // ===== NEW TABS =====
+    { id: 'ANAESTHESIA', label: 'Anaesthesia' },
+    { id: 'HAEMATOLOGY', label: 'Haematology' },
+    { id: 'NOTIFIABLE', label: 'Notifiable' },
+    { id: 'ORAL', label: 'Oral & Dental' },
+    { id: 'NEUROLOGY', label: 'Neurology' },
+    { id: 'RENAL', label: 'Renal & Urology' },
+    { id: 'EYE', label: 'Eye' },
+    { id: 'ENT', label: 'ENT' },
+    { id: 'SKIN', label: 'Skin' },
+    { id: 'MENTAL', label: 'Mental Health' },
+    { id: 'MSK', label: 'Musculoskeletal' },
+    { id: 'PAEDS', label: 'Paediatrics' },
+    { id: 'ONCOLOGY', label: 'Oncology' },
+    { id: 'PROTOZOA', label: 'Protozoa' },
+    { id: 'BACTERIAL', label: 'Bacterial' },
+    { id: 'NUTRITION', label: 'Nutrition' },
+    { id: 'POISONING', label: 'Poisoning' }
+];
                 ];
 
                 const renderContent = () => {
@@ -1723,6 +1953,176 @@
                                         ),
                                         React.createElement('p', { className: 'text-xs text-slate-300 mb-1' }, item.description),
                                         React.createElement('p', { className: 'text-[10px] text-slate-500' }, item.examples)
+                                    )
+                                )
+                            );
+                        case 'ANAESTHESIA':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(anaesthesiaGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'HAEMATOLOGY':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(haematologyGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'NOTIFIABLE':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(notifiableGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'ORAL':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(oralDentalGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'NEUROLOGY':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(nervousSystemGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'RENAL':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(renalGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'EYE':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(eyeGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'ENT':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(entGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'SKIN':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(skinGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'MENTAL':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(mentalHealthGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'MSK':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(musculoskeletalGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'PAEDS':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(paediatricGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'ONCOLOGY':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(oncologyGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'PROTOZOA':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(protozoaGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'BACTERIAL':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(bacterialGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'NUTRITION':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(nutritionalGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
+                                    )
+                                )
+                            );
+                        case 'POISONING':
+                            return React.createElement('div', { className: 'space-y-2' },
+                                filterData(poisoningGuidelines).map((item, idx) => 
+                                    React.createElement('div', { key: idx, className: 'bg-black p-3 rounded-xl border border-slate-800' },
+                                        React.createElement('p', { className: 'text-emerald-400 font-bold text-xs' }, item.category),
+                                        React.createElement('p', { className: 'text-white text-xs mt-1' }, React.createElement('span', { className: 'text-slate-500' }, 'Treatment: '), item.treatment),
+                                        React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, item.notes)
                                     )
                                 )
                             );
