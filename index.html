@@ -738,6 +738,318 @@
                     adult: { dose: '0.5\u20131 mg', freq: 'every 3\u20135 minutes (bradycardia/organophosphate)', maxDaily: 3, unit: 'mg' },
                     pediatric: { mgPerKg: 0.02, freq: 'every 5-10 min (minimum 0.1 mg dose)', maxDailyMgPerKg: 1, unit: 'mg/kg', minWeight: 3, maxWeight: 50 },
                     notes: 'Tanzania STG: Symptomatic bradycardia, organophosphate poisoning (may need grams/day), pre-medication for anesthesia. Minimum dose 0.1 mg (less may cause paradoxical bradycardia). Anticholinergic side effects.'
+                },
+                // ===== ADDITIONAL: ANALGESICS & ANTIPYRETICS =====
+                {
+                    id: 'paracetamol-iv', category: 'Analgesics & Antipyretics',
+                    name: 'Paracetamol (IV Infusion)', generic: 'Acetaminophen (IV)',
+                    adult: { dose: '1000 mg', freq: 'every 6 hours IV infusion (over 15 min)', maxDaily: 4000, unit: 'mg' },
+                    pediatric: { mgPerKg: 15, freq: 'every 6 hours IV (infuse over 15 minutes)', maxDailyMgPerKg: 60, unit: 'mg/kg', minWeight: 3, maxWeight: 50 },
+                    notes: 'Tanzania STG: For patients unable to take oral/rectal paracetamol - perioperative pain/fever. Infuse over 15 minutes, never bolus. Reduce dose in low body weight (<10kg) and hepatic impairment.'
+                },
+                {
+                    id: 'pethidine', category: 'Analgesics & Antipyretics',
+                    name: 'Pethidine (Meperidine)', generic: 'Pethidine HCl',
+                    adult: { dose: '25\u2013100 mg', freq: 'every 4 hours IM/IV as needed', maxDaily: 400, unit: 'mg' },
+                    pediatric: { mgPerKg: 1, freq: 'every 4 hours IM as needed', maxDailyMgPerKg: 6, unit: 'mg/kg', minWeight: 5, maxWeight: 50 },
+                    notes: 'Tanzania STG: Moderate-severe pain, labor analgesia. Avoid in renal impairment (toxic metabolite accumulation causing seizures). Not recommended for chronic or repeated dosing.'
+                },
+                {
+                    id: 'diclofenac', category: 'Analgesics & Antipyretics',
+                    name: 'Diclofenac', generic: 'Diclofenac sodium',
+                    adult: { dose: '50 mg', freq: 'every 8 hours', maxDaily: 150, unit: 'mg' },
+                    pediatric: { mgPerKg: 1, freq: 'every 8 hours (children >6 months)', maxDailyMgPerKg: 3, unit: 'mg/kg', minWeight: 7, maxWeight: 50 },
+                    notes: 'Tanzania STG: Moderate pain, inflammation, dysmenorrhea, renal colic. Avoid in dehydration, renal impairment, peptic ulcer disease, and 3rd trimester pregnancy. Take with food.'
+                },
+
+                // ===== ADDITIONAL: ANTIMALARIALS =====
+                {
+                    id: 'asaq', category: 'Antimalarials',
+                    name: 'Artesunate-Amodiaquine (ASAQ)', generic: 'Artesunate/Amodiaquine',
+                    adult: { dose: '1 tablet (100/270 mg)', freq: 'once daily for 3 days', maxDaily: 1, unit: 'tablet' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: Alternative first-line ACT for uncomplicated malaria (weight-band FDC). Bands: 4.5\u20139kg=1/2 tab; 9\u201318kg=1 tab; 18\u201336kg=2 tabs; >36kg=adult dose. Once daily x3 days - consult weight-band table for exact tablet fraction.'
+                },
+                {
+                    id: 'dha-ppq', category: 'Antimalarials',
+                    name: 'Dihydroartemisinin-Piperaquine', generic: 'DHA/Piperaquine',
+                    adult: { dose: '2\u20134 tablets (40/320 mg each)', freq: 'once daily for 3 days', maxDaily: 4, unit: 'tabs' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: Alternative ACT for uncomplicated malaria, weight-band dosed. Give on an EMPTY stomach (avoid fatty food, unlike ALU). Not for use in 1st trimester pregnancy. Consult weight-band table.'
+                },
+                {
+                    id: 'amodiaquine', category: 'Antimalarials',
+                    name: 'Amodiaquine', generic: 'Amodiaquine HCl',
+                    adult: { dose: '600 mg', freq: 'once daily for 3 days', maxDaily: 600, unit: 'mg' },
+                    pediatric: { mgPerKg: 10, freq: 'once daily for 3 days', maxDailyMgPerKg: 10, unit: 'mg/kg', minWeight: 4.5, maxWeight: 50 },
+                    notes: 'Tanzania STG: Used in combination with artesunate (ASAQ) for malaria; rarely used alone. Watch for agranulocytosis/hepatotoxicity risk with prolonged or repeated use.'
+                },
+
+                // ===== ADDITIONAL: ANTIBIOTICS (ACCESS) =====
+                {
+                    id: 'penicillin-v', category: 'Antibiotics (Access)',
+                    name: 'Penicillin V (Phenoxymethylpenicillin)', generic: 'Phenoxymethylpenicillin',
+                    adult: { dose: '250\u2013500 mg', freq: 'every 6 hours', maxDaily: 2000, unit: 'mg' },
+                    pediatric: { mgPerKg: 12.5, freq: 'every 6 hours', maxDailyMgPerKg: 50, unit: 'mg/kg', minWeight: 3, maxWeight: 40 },
+                    notes: 'Tanzania STG: Oral penicillin for streptococcal pharyngitis, mild skin infections, rheumatic fever prophylaxis alternative. Take on empty stomach for best absorption. Complete full course.'
+                },
+                {
+                    id: 'erythromycin', category: 'Antibiotics (Access)',
+                    name: 'Erythromycin', generic: 'Erythromycin',
+                    adult: { dose: '250\u2013500 mg', freq: 'every 6 hours', maxDaily: 4000, unit: 'mg' },
+                    pediatric: { mgPerKg: 12.5, freq: 'every 6 hours', maxDailyMgPerKg: 50, unit: 'mg/kg', minWeight: 3, maxWeight: 50 },
+                    notes: 'Tanzania STG: Alternative for penicillin-allergic patients, atypical pneumonia, pertussis. GI upset common - take with food. Many CYP3A4 drug interactions.'
+                },
+
+                // ===== ADDITIONAL: ANTIBIOTICS (WATCH) =====
+                {
+                    id: 'cefotaxime', category: 'Antibiotics (Watch)',
+                    name: 'Cefotaxime', generic: 'Cefotaxime sodium',
+                    adult: { dose: '1\u20132 g', freq: 'every 8 hours IV/IM', maxDaily: 12000, unit: 'mg' },
+                    pediatric: { mgPerKg: 50, freq: 'every 8 hours (meningitis: every 6 hours)', maxDailyMgPerKg: 200, unit: 'mg/kg', minWeight: 2, maxWeight: 50 },
+                    notes: 'Tanzania STG: Severe sepsis, meningitis, pneumonia. Preferred over ceftriaxone in neonates (no bilirubin-displacement risk). Adjust dose in renal impairment.'
+                },
+
+                // ===== ADDITIONAL: ANTI-TB MEDICINES =====
+                {
+                    id: 'streptomycin', category: 'Anti-TB Medicines',
+                    name: 'Streptomycin', generic: 'Streptomycin sulfate',
+                    adult: { dose: '15 mg/kg (max 1 g)', freq: 'once daily IM', maxDaily: 1000, unit: 'mg' },
+                    pediatric: { mgPerKg: 20, freq: 'once daily IM', maxDailyMgPerKg: 20, unit: 'mg/kg', minWeight: 5, maxWeight: 50 },
+                    notes: 'Tanzania STG: Second-line/retreatment TB regimen, injectable. Ototoxicity and nephrotoxicity risk. AVOID in pregnancy (fetal ototoxicity). IM injection only.'
+                },
+                {
+                    id: 'levofloxacin', category: 'Anti-TB Medicines',
+                    name: 'Levofloxacin', generic: 'Levofloxacin',
+                    adult: { dose: '750 mg', freq: 'once daily', maxDaily: 750, unit: 'mg' },
+                    pediatric: { mgPerKg: 15, freq: 'once daily (children <5 years: divide every 12 hours)', maxDailyMgPerKg: 20, unit: 'mg/kg', minWeight: 10, maxWeight: 50 },
+                    notes: 'Tanzania STG: Drug-resistant TB (MDR-TB) regimen component, complicated UTIs. Tendon/cartilage risk in children - use only when benefit outweighs risk. Avoid with dairy/antacids.'
+                },
+
+                // ===== ADDITIONAL: ANTIHELMINTHICS =====
+                {
+                    id: 'tinidazole', category: 'Antihelminthics',
+                    name: 'Tinidazole', generic: 'Tinidazole',
+                    adult: { dose: '2 g', freq: 'single dose (giardiasis/amoebiasis)', maxDaily: 2000, unit: 'mg' },
+                    pediatric: { mgPerKg: 50, freq: 'single dose', maxDailyMgPerKg: 50, unit: 'mg/kg', minWeight: 12, maxWeight: 50 },
+                    notes: 'Tanzania STG: Giardiasis, amoebiasis, trichomoniasis. Single-dose alternative to metronidazole. Avoid alcohol during and 72h after treatment.'
+                },
+                {
+                    id: 'secnidazole', category: 'Antihelminthics',
+                    name: 'Secnidazole', generic: 'Secnidazole',
+                    adult: { dose: '2 g', freq: 'single dose', maxDaily: 2000, unit: 'mg' },
+                    pediatric: { mgPerKg: 30, freq: 'single dose', maxDailyMgPerKg: 30, unit: 'mg/kg', minWeight: 12, maxWeight: 50 },
+                    notes: 'Tanzania STG: Giardiasis, amoebiasis, bacterial vaginosis. Single-dose therapy improves compliance. Avoid alcohol during and after treatment.'
+                },
+                {
+                    id: 'niclosamide', category: 'Antihelminthics',
+                    name: 'Niclosamide', generic: 'Niclosamide',
+                    adult: { dose: '2 g', freq: 'single dose (chew tablets thoroughly)', maxDaily: 2000, unit: 'mg' },
+                    pediatric: { mgPerKg: 50, freq: 'single dose (chew tablets with water)', maxDailyMgPerKg: 50, unit: 'mg/kg', minWeight: 10, maxWeight: 50 },
+                    notes: 'Tanzania STG: Tapeworm infections (Taenia, Diphyllobothrium). Chew tablets thoroughly with water. Not effective against cysticercosis.'
+                },
+                {
+                    id: 'levamisole', category: 'Antihelminthics',
+                    name: 'Levamisole', generic: 'Levamisole HCl',
+                    adult: { dose: '150 mg', freq: 'single dose', maxDaily: 150, unit: 'mg' },
+                    pediatric: { mgPerKg: 2.5, freq: 'single dose', maxDailyMgPerKg: 2.5, unit: 'mg/kg', minWeight: 10, maxWeight: 50 },
+                    notes: 'Tanzania STG: Ascariasis, hookworm. Alternative when albendazole/mebendazole unavailable. Generally well tolerated; mild GI upset possible.'
+                },
+
+                // ===== ADDITIONAL: ARVs (STANDALONE COMPONENTS) =====
+                {
+                    id: 'abacavir', category: 'ARVs',
+                    name: 'Abacavir (ABC)', generic: 'Abacavir sulfate',
+                    adult: { dose: '300 mg', freq: 'every 12 hours (or 600 mg once daily)', maxDaily: 600, unit: 'mg' },
+                    pediatric: { mgPerKg: 8, freq: 'every 12 hours', maxDailyMgPerKg: 16, unit: 'mg/kg', minWeight: 3, maxWeight: 25 },
+                    notes: 'Tanzania STG: NRTI backbone component. Screen for HLA-B*5701 if possible before starting. Stop immediately and NEVER rechallenge if hypersensitivity reaction occurs.'
+                },
+                {
+                    id: 'lamivudine', category: 'ARVs',
+                    name: 'Lamivudine (3TC)', generic: 'Lamivudine',
+                    adult: { dose: '150 mg', freq: 'every 12 hours (or 300 mg once daily)', maxDaily: 300, unit: 'mg' },
+                    pediatric: { mgPerKg: 4, freq: 'every 12 hours', maxDailyMgPerKg: 8, unit: 'mg/kg', minWeight: 3, maxWeight: 50 },
+                    notes: 'Tanzania STG: NRTI backbone in nearly all first-line regimens. Well tolerated. Dose-reduce in renal impairment. Also active against hepatitis B.'
+                },
+                {
+                    id: 'zidovudine', category: 'ARVs',
+                    name: 'Zidovudine (AZT)', generic: 'Zidovudine',
+                    adult: { dose: '300 mg', freq: 'every 12 hours', maxDaily: 600, unit: 'mg' },
+                    pediatric: { mgPerKg: 4, freq: 'every 12 hours', maxDailyMgPerKg: 8, unit: 'mg/kg', minWeight: 3, maxWeight: 30 },
+                    notes: 'Tanzania STG: Alternative NRTI backbone, PMTCT infant prophylaxis. Monitor hemoglobin (anemia risk) and neutrophils. Take with food to reduce nausea.'
+                },
+                {
+                    id: 'tenofovir', category: 'ARVs',
+                    name: 'Tenofovir (TDF)', generic: 'Tenofovir disoproxil fumarate',
+                    adult: { dose: '300 mg', freq: 'once daily', maxDaily: 300, unit: 'mg' },
+                    pediatric: { mgPerKg: 8, freq: 'once daily (children/adolescents >=25\u201330 kg)', maxDailyMgPerKg: 8, unit: 'mg/kg', minWeight: 25, maxWeight: 50 },
+                    notes: 'Tanzania STG: Preferred NRTI backbone for adults/adolescents. Monitor renal function and bone density with long-term use. Avoid with other nephrotoxic drugs.'
+                },
+                {
+                    id: 'lpv-r', category: 'ARVs',
+                    name: 'Lopinavir/Ritonavir (LPV/r)', generic: 'Lopinavir/Ritonavir',
+                    adult: { dose: '400/100 mg', freq: 'every 12 hours', maxDaily: 800, unit: 'mg LPV' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: Protease-inhibitor based second-line regimen, preferred for infants <3 years (weight-band or mg/m2 dosing). Take with food. Many drug interactions; GI upset, dyslipidemia common. Consult pediatric weight-band table.'
+                },
+                {
+                    id: 'efavirenz', category: 'ARVs',
+                    name: 'Efavirenz (EFV)', generic: 'Efavirenz',
+                    adult: { dose: '600 mg', freq: 'once daily at bedtime', maxDaily: 600, unit: 'mg' },
+                    pediatric: { mgPerKg: 15, freq: 'once daily at bedtime', maxDailyMgPerKg: 15, unit: 'mg/kg', minWeight: 10, maxWeight: 40 },
+                    notes: 'Tanzania STG: NNRTI alternative first-line component. CNS side effects (dizziness, vivid dreams) - take at bedtime. Contraindicated in 1st trimester pregnancy.'
+                },
+                {
+                    id: 'nevirapine', category: 'ARVs',
+                    name: 'Nevirapine (NVP)', generic: 'Nevirapine',
+                    adult: { dose: '200 mg', freq: 'once daily x2 weeks lead-in, then every 12 hours', maxDaily: 400, unit: 'mg' },
+                    pediatric: { mgPerKg: 4, freq: 'once daily lead-in x2 weeks, then every 12 hours', maxDailyMgPerKg: 7, unit: 'mg/kg', minWeight: 3, maxWeight: 30 },
+                    notes: 'Tanzania STG: Pediatric first-line NNRTI, PMTCT infant prophylaxis. Lead-in dosing reduces rash risk. NEVER restart after Stevens-Johnson syndrome or severe hepatotoxicity.'
+                },
+                {
+                    id: 'dolutegravir', category: 'ARVs',
+                    name: 'Dolutegravir (DTG)', generic: 'Dolutegravir sodium',
+                    adult: { dose: '50 mg', freq: 'once daily', maxDaily: 50, unit: 'mg' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: Preferred integrase inhibitor, first-line component for adults and children >=20kg (weight-band dosed - 10/25/35/50mg per WHO bands). Well tolerated; monitor weight gain. Take separate from antacids/iron/calcium. Consult weight-band table.'
+                },
+                {
+                    id: 'emtricitabine', category: 'ARVs',
+                    name: 'Emtricitabine', generic: 'Emtricitabine',
+                    adult: { dose: '200 mg', freq: 'once daily', maxDaily: 200, unit: 'mg' },
+                    pediatric: { mgPerKg: 6, freq: 'once daily', maxDailyMgPerKg: 6, unit: 'mg/kg', minWeight: 3, maxWeight: 50 },
+                    notes: 'Tanzania STG: NRTI, alternative to lamivudine in some FDCs (e.g. PrEP regimens). Similar tolerability profile to lamivudine. Dose-reduce in renal impairment.'
+                },
+                {
+                    id: 'atv-r', category: 'ARVs',
+                    name: 'Atazanavir/Ritonavir', generic: 'Atazanavir/Ritonavir',
+                    adult: { dose: '300/100 mg', freq: 'once daily with food', maxDaily: 300, unit: 'mg ATV' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: Alternative protease-inhibitor based second-line regimen for children >=25kg (weight-band dosed). Take with food. Causes benign hyperbilirubinemia (jaundice) - counsel patients this is expected. Consult weight-band table.'
+                },
+
+                // ===== ADDITIONAL: VITAMINS & MINERALS =====
+                {
+                    id: 'vitamin-b12', category: 'Vitamins & Minerals',
+                    name: 'Vitamin B12', generic: 'Cyanocobalamin',
+                    adult: { dose: '1000 mcg', freq: 'IM once weekly x4 doses, then monthly', maxDaily: 1000, unit: 'mcg' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: Pernicious anemia, severe malnutrition, prolonged metformin use. IM injection preferred for deficiency (typically 100\u20131000 mcg per dose depending on severity); oral maintenance possible for mild cases.'
+                },
+                {
+                    id: 'vitamin-d', category: 'Vitamins & Minerals',
+                    name: 'Vitamin D', generic: 'Cholecalciferol',
+                    adult: { dose: '1000\u20132000 IU', freq: 'once daily', maxDaily: 4000, unit: 'IU' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: Rickets prevention (400 IU/day infants) and treatment (2000\u20135000 IU/day x3 months), exclusively breastfed infants. Ensure adequate calcium intake alongside. Monitor for hypercalcemia with high-dose therapy.'
+                },
+                {
+                    id: 'multivitamins', category: 'Vitamins & Minerals',
+                    name: 'Multivitamins', generic: 'Multivitamin combination',
+                    adult: { dose: '1 tablet', freq: 'once daily', maxDaily: 1, unit: 'tablet' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: General nutritional supplementation, malnutrition, chronic illness support (typically 1 tablet or 5 mL syrup once daily, age-appropriate formulation). Not a substitute for a balanced diet.'
+                },
+
+                // ===== ADDITIONAL: RESPIRATORY =====
+                {
+                    id: 'aminophylline', category: 'Respiratory',
+                    name: 'Aminophylline', generic: 'Aminophylline',
+                    adult: { dose: '5 mg/kg loading IV, then 0.5 mg/kg/hr infusion', freq: 'loading dose then continuous infusion', maxDaily: 20, unit: 'mg/kg/day' },
+                    pediatric: { mgPerKg: 5, freq: 'loading dose IV over 20\u201330 min, then 0.5\u20130.7 mg/kg/hr infusion', maxDailyMgPerKg: 20, unit: 'mg/kg', minWeight: 3, maxWeight: 50 },
+                    notes: 'Tanzania STG: Severe acute asthma unresponsive to salbutamol/steroids. Narrow therapeutic index - monitor for toxicity (arrhythmias, seizures). Reduce dose if already on oral theophylline.'
+                },
+                {
+                    id: 'ipratropium', category: 'Respiratory',
+                    name: 'Ipratropium Bromide', generic: 'Ipratropium bromide',
+                    adult: { dose: '500 mcg nebulized (or 2 puffs)', freq: 'every 6\u20138 hours', maxDaily: 2000, unit: 'mcg' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: Add-on bronchodilator for severe asthma/COPD exacerbations, combined with salbutamol. Dosing: 250 mcg nebulized every 6\u20138h (<12 years); 500 mcg (>=12 years). Avoid contact with eyes during nebulization.'
+                },
+                {
+                    id: 'beclomethasone', category: 'Respiratory',
+                    name: 'Beclomethasone', generic: 'Beclomethasone dipropionate',
+                    adult: { dose: '100\u2013400 mcg', freq: 'twice daily (inhaled)', maxDaily: 2000, unit: 'mcg' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: Asthma maintenance/prophylaxis (inhaled corticosteroid), typically 50\u2013200 mcg twice daily in children. Not for acute attacks. Rinse mouth after use to prevent oral candidiasis. Use spacer in children.'
+                },
+
+                // ===== ADDITIONAL: CARDIOVASCULAR =====
+                {
+                    id: 'digoxin', category: 'Cardiovascular',
+                    name: 'Digoxin', generic: 'Digoxin',
+                    adult: { dose: '0.125\u20130.25 mg', freq: 'once daily (after loading dose)', maxDaily: 0.25, unit: 'mg' },
+                    pediatric: { mgPerKg: 0.01, freq: 'once daily maintenance (after divided loading dose)', maxDailyMgPerKg: 0.01, unit: 'mg/kg', minWeight: 3, maxWeight: 50 },
+                    notes: 'Tanzania STG: Heart failure, atrial fibrillation rate control. Narrow therapeutic index - monitor levels, renal function, potassium. Watch for toxicity (nausea, visual changes, arrhythmias).'
+                },
+                {
+                    id: 'furosemide', category: 'Cardiovascular',
+                    name: 'Furosemide', generic: 'Furosemide',
+                    adult: { dose: '20\u201340 mg', freq: 'once or twice daily', maxDaily: 600, unit: 'mg' },
+                    pediatric: { mgPerKg: 1, freq: 'every 12\u201324 hours', maxDailyMgPerKg: 6, unit: 'mg/kg', minWeight: 2, maxWeight: 50 },
+                    notes: 'Tanzania STG: Heart failure, pulmonary edema, fluid overload, nephrotic syndrome. Monitor electrolytes (especially potassium), renal function, hydration status.'
+                },
+                {
+                    id: 'spironolactone', category: 'Cardiovascular',
+                    name: 'Spironolactone', generic: 'Spironolactone',
+                    adult: { dose: '25\u2013100 mg', freq: 'once daily', maxDaily: 200, unit: 'mg' },
+                    pediatric: { mgPerKg: 1, freq: 'once or twice daily', maxDailyMgPerKg: 3, unit: 'mg/kg', minWeight: 3, maxWeight: 50 },
+                    notes: 'Tanzania STG: Heart failure (add-on to ACE-I/diuretic), ascites, nephrotic syndrome. Monitor potassium closely (hyperkalemia risk), especially when combined with ACE inhibitors.'
+                },
+                {
+                    id: 'hydralazine', category: 'Cardiovascular',
+                    name: 'Hydralazine', generic: 'Hydralazine HCl',
+                    adult: { dose: '5\u201310 mg IV every 20\u201330 min (severe HTN); 25\u201350 mg PO every 8\u201312h', freq: 'as needed / every 8\u201312 hours', maxDaily: 300, unit: 'mg' },
+                    pediatric: { mgPerKg: 0.15, freq: 'every 4\u20136 hours IV/IM (hypertensive emergency)', maxDailyMgPerKg: 1.7, unit: 'mg/kg', minWeight: 3, maxWeight: 50 },
+                    notes: 'Tanzania STG: Severe hypertension in pregnancy (pre-eclampsia/eclampsia), hypertensive emergencies. Monitor BP closely after each dose to avoid precipitous drops. Reflex tachycardia common.'
+                },
+
+                // ===== ADDITIONAL: GI MEDICINES =====
+                {
+                    id: 'ranitidine', category: 'GI Medicines',
+                    name: 'Ranitidine', generic: 'Ranitidine HCl',
+                    adult: { dose: '150 mg', freq: 'every 12 hours', maxDaily: 300, unit: 'mg' },
+                    pediatric: { mgPerKg: 2, freq: 'every 12 hours', maxDailyMgPerKg: 4, unit: 'mg/kg', minWeight: 3, maxWeight: 50 },
+                    notes: 'Tanzania STG: PUD, GERD, stress ulcer prophylaxis (alternative to omeprazole). Reduce dose in renal impairment. Generally well tolerated.'
+                },
+                {
+                    id: 'mag-trisilicate', category: 'GI Medicines',
+                    name: 'Magnesium Trisilicate', generic: 'Magnesium trisilicate compound',
+                    adult: { dose: '1\u20132 tablets (or 10 mL suspension)', freq: 'as needed, up to 4 times daily', maxDaily: 8, unit: 'doses' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: Symptomatic relief of dyspepsia, mild gastritis (children >6 years: 5 mL suspension as needed). Take between meals and at bedtime. Separate from other oral medications by 2 hours (reduces their absorption).'
+                },
+                {
+                    id: 'promethazine', category: 'GI Medicines',
+                    name: 'Promethazine', generic: 'Promethazine HCl',
+                    adult: { dose: '25 mg', freq: 'every 6\u20138 hours as needed', maxDaily: 100, unit: 'mg' },
+                    pediatric: { mgPerKg: 0.5, freq: 'every 6\u20138 hours (children >2 years only)', maxDailyMgPerKg: 1.5, unit: 'mg/kg', minWeight: 10, maxWeight: 50 },
+                    notes: 'Tanzania STG: Nausea/vomiting, allergic reactions, sedation. CONTRAINDICATED in children <2 years (risk of fatal respiratory depression). Causes drowsiness.'
+                },
+                {
+                    id: 'metoclopramide', category: 'GI Medicines',
+                    name: 'Metoclopramide', generic: 'Metoclopramide HCl',
+                    adult: { dose: '10 mg', freq: 'every 8 hours', maxDaily: 30, unit: 'mg' },
+                    pediatric: { mgPerKg: 0.1, freq: 'every 8 hours (children >1 year, short-term use only)', maxDailyMgPerKg: 0.5, unit: 'mg/kg', minWeight: 10, maxWeight: 50 },
+                    notes: 'Tanzania STG: Nausea/vomiting, gastroparesis, antiemetic in chemotherapy. Risk of extrapyramidal reactions especially in children - use lowest effective dose, shortest duration only.'
+                },
+
+                // ===== ADDITIONAL: ENDOCRINE (new category) =====
+                {
+                    id: 'thyroxine', category: 'Endocrine',
+                    name: 'Thyroxine', generic: 'Levothyroxine sodium',
+                    adult: { dose: '50\u2013100 mcg', freq: 'once daily on empty stomach', maxDaily: 200, unit: 'mcg' },
+                    pediatric: { mgPerKg: 10, freq: 'once daily (higher mcg/kg in infants, decreasing with age)', maxDailyMgPerKg: 10, unit: 'mcg/kg', minWeight: 2, maxWeight: 50 },
+                    notes: 'Tanzania STG: Congenital/acquired hypothyroidism. Take on empty stomach 30\u201360 min before breakfast. Monitor TSH periodically to titrate dose. Higher mcg/kg doses are needed in neonates/infants than older children.'
+                },
+
+                // ===== ADDITIONAL: EMERGENCY =====
+                {
+                    id: 'oxygen', category: 'Emergency',
+                    name: 'Oxygen', generic: 'Medical Oxygen',
+                    adult: { dose: '1\u20135 L/min via nasal cannula (up to 15 L/min via mask)', freq: 'continuous, titrate to SpO2 >=94%', maxDaily: 0, unit: 'L/min' },
+                    pediatric: null,
+                    notes: 'Tanzania STG: Hypoxemia (SpO2 <90\u201394%), severe pneumonia, respiratory distress. Titrate flow to target oxygen saturation (typically 0.5\u20132 L/min via nasal prongs in children), not a fixed weight-based dose. Humidify for prolonged use.'
                 }
             ];
 
