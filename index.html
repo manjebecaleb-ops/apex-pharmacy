@@ -4332,6 +4332,35 @@
                     data.sales.forEach(s => safeDelete('sales', s.id)); data.expenses.forEach(e => safeDelete('expenses', e.id));
                     toast('Financial history wiped', 'success'); logAudit('WIPE_FINANCE', {});
                 };
+                const handleClearAuditLogs = () => {
+                    if (!hasAccess('MANAGER')) return toast("Manager access required", 'error');
+                    if (data.auditLogs.length === 0) return toast("No audit records to clear", 'info');
+                    if(!requireAdminConfirm(`DELETE ALL ${data.auditLogs.length} audit log records. This CANNOT be undone!`)) return;
+                    const count = data.auditLogs.length;
+                    data.auditLogs.forEach(l => safeDelete('auditLogs', l.id));
+                    toast('Audit log cleared', 'success'); logAudit('WIPE_AUDIT_LOG', { count });
+                };
+                const handleClearClaims = () => {
+                    if (!hasAccess('MANAGER')) return toast("Manager access required", 'error');
+                    if (data.insuranceClaims.length === 0) return toast("No claims to clear", 'info');
+                    if(!requireAdminConfirm(`DELETE ALL ${data.insuranceClaims.length} insurance claim records. This CANNOT be undone!`)) return;
+                    data.insuranceClaims.forEach(c => safeDelete('insuranceClaims', c.id));
+                    toast('Insurance claims cleared', 'success'); logAudit('WIPE_CLAIMS', { count: data.insuranceClaims.length });
+                };
+                const handleClearClientHistory = () => {
+                    if (!hasAccess('MANAGER')) return toast("Manager access required", 'error');
+                    if (data.medicalHistory.length === 0) return toast("No client history to clear", 'info');
+                    if(!requireAdminConfirm(`DELETE ALL ${data.medicalHistory.length} client medical history records. This CANNOT be undone!`)) return;
+                    data.medicalHistory.forEach(h => safeDelete('medicalHistory', h.id));
+                    toast('Client history cleared', 'success'); logAudit('WIPE_CLIENT_HISTORY', { count: data.medicalHistory.length });
+                };
+                const handleClearSupplierHistory = () => {
+                    if (!hasAccess('MANAGER')) return toast("Manager access required", 'error');
+                    if (data.purchaseOrders.length === 0) return toast("No supplier history to clear", 'info');
+                    if(!requireAdminConfirm(`DELETE ALL ${data.purchaseOrders.length} supplier purchase order records. This CANNOT be undone!`)) return;
+                    data.purchaseOrders.forEach(po => safeDelete('purchaseOrders', po.id));
+                    toast('Supplier history cleared', 'success'); logAudit('WIPE_SUPPLIER_HISTORY', { count: data.purchaseOrders.length });
+                };
                 const handleWhatsAppReminder = (pt) => {
                     if(!pt.phone) return toast("No phone number recorded.", 'warning');
                     const msg = `Hello ${pt.name},\n\nThis is a reminder from APEX Pharmacy. You have an outstanding balance of ${pt.creditBalance.toLocaleString()} ${currency}.\n\nPlease arrange payment at your earliest convenience. Thank you!`;
@@ -5743,8 +5772,15 @@
                                         </div>
                                         {hasAccess('MANAGER') && (
                                             <div className="glass-panel p-6 rounded-3xl border border-red-900/30">
-                                                <h3 className="text-sm font-black text-red-400 uppercase tracking-wider mb-4">Danger Zone</h3>
-                                                <button onClick={handleDeleteAllFinance} className="bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Delete All Financial Data</button>
+                                                <h3 className="text-sm font-black text-red-400 uppercase tracking-wider mb-1">Danger Zone</h3>
+                                                <p className="text-[10px] text-red-400/60 font-bold mb-4">Permanent, Manager-only actions. Every clear is logged and cannot be undone.</p>
+                                                <div className="flex flex-wrap gap-3">
+                                                    <button onClick={handleDeleteAllFinance} className="bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Delete All Financial Data</button>
+                                                    <button onClick={handleClearAuditLogs} className="bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Clear Audit Logs ({data.auditLogs.length})</button>
+                                                    <button onClick={handleClearClaims} className="bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Clear Insurance Claims ({data.insuranceClaims.length})</button>
+                                                    <button onClick={handleClearClientHistory} className="bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Clear Client Medical History ({data.medicalHistory.length})</button>
+                                                    <button onClick={handleClearSupplierHistory} className="bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Clear Supplier Order History ({data.purchaseOrders.length})</button>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
