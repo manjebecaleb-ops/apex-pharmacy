@@ -4038,7 +4038,6 @@
                 const [search, setSearch] = useState("");
                 const [sortOption, setSortOption] = useState("DEFAULT");
                 const [isOnline, setIsOnline] = useState(navigator.onLine);
-                const [barcodeInput, setBarcodeInput] = useState('');
 
                 const [editing, setEditing] = useState(null);
                 const [editClientType, setEditClientType] = useState('PATIENT');
@@ -4295,7 +4294,7 @@
                 };
 
                 const handleSetView = (newView) => {
-                    if (view !== newView) { setViewHistory(prev => [...prev, view]); setView(newView); setSearch(""); setSortOption("DEFAULT"); setBarcodeInput(""); }
+                    if (view !== newView) { setViewHistory(prev => [...prev, view]); setView(newView); setSearch(""); setSortOption("DEFAULT"); }
                 };
                 const handleGoBack = () => {
                     if (viewHistory.length > 0) { const prev = [...viewHistory]; setView(prev.pop()); setViewHistory(prev); setSearch(""); }
@@ -4351,11 +4350,13 @@
                 };
                 const handleBarcodeSubmit = (e) => {
                     e.preventDefault();
-                    if(!barcodeInput.trim()) return;
-                    const item = data.inventory.find(i => i.barcode === barcodeInput.trim() || (i.brandName && i.brandName.toLowerCase() === barcodeInput.trim().toLowerCase()));
-                    if(item) { addToCart(item); toast(`Added: ${item.brandName}`, 'success'); }
+                    const term = search.trim();
+                    if(!term) return;
+                    let item = data.inventory.find(i => i.barcode === term || (i.brandName && i.brandName.toLowerCase() === term.toLowerCase()));
+                    if (!item && posInventory.length === 1) item = posInventory[0];
+                    if (item) { addToCart(item); toast(`Added: ${item.brandName}`, 'success'); setSearch(''); }
+                    else if (posInventory.length > 1) toast("Multiple matches - tap an item below to add it", 'info');
                     else toast("Item / Barcode not found!", 'error');
-                    setBarcodeInput('');
                 };
                 const addToCart = (p) => {
                     if (p.stock <= 0) return toast("Item out of stock!", 'warning');
@@ -4614,6 +4615,11 @@
                     });
                     return items;
                 }, [data.inventory, search, sortOption]);
+
+                // Items sellable in POS right now: matches current search, in stock, not expired
+                const posInventory = useMemo(() => {
+                    return processedInventory.filter(i => i.stock > 0 && (!i.expiryDate || !isItemExpired(i.expiryDate)));
+                }, [processedInventory]);
 
                 const systemAlerts = useMemo(() => {
                     const today = new Date(); today.setHours(0,0,0,0);
@@ -5551,7 +5557,7 @@
                                         <div className="flex-1 flex flex-col min-h-0">
                                             <div className="flex gap-2 mb-4 shrink-0">
                                                 <form onSubmit={handleBarcodeSubmit} className="flex-1 flex gap-2">
-                                                    <input value={barcodeInput} onChange={(e) => setBarcodeInput(e.target.value)} placeholder="Scan barcode or type name... (F1)" className="flex-1 p-3 bg-slate-800 rounded-xl text-white font-bold text-sm outline-none border border-slate-700 focus:border-emerald-500 input-focus" />
+                                                    <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Scan barcode or type name... (F1)" className="flex-1 p-3 bg-slate-800 rounded-xl text-white font-bold text-sm outline-none border border-slate-700 focus:border-emerald-500 input-focus" />
                                                     <button type="button" onClick={() => { scannerTargetRef.current = 'POS'; setScannerActive(true); }} className="bg-slate-700 hover:bg-slate-600 text-white px-4 rounded-xl font-bold text-xs transition-all" title="F5">Scan</button>
                                                     <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 rounded-xl font-black text-xs transition-all">Add</button>
                                                 </form>
@@ -5568,7 +5574,7 @@
                                                 ))}
                                             </div>
                                             <div className="flex-1 overflow-y-auto no-scrollbar grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                                                {processedInventory.filter(i => i.stock > 0 && (!i.expiryDate || !isItemExpired(i.expiryDate))).map(p => (
+                                                {posInventory.map(p => (
                                                     <button key={p.id} onClick={() => addToCart(p)} className="product-card relative bg-slate-800 p-4 rounded-2xl border border-slate-700 hover:border-emerald-500 transition-all text-left flex flex-col gap-1">
                                                         <button onClick={(e) => { e.stopPropagation(); setFavorites(prev => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]); }} className={`favorite-btn text-lg ${favorites.includes(p.id) ? 'active' : 'text-slate-600 hover:text-amber-400'}`}>\u2605</button>
                                                         <p className="text-white font-bold text-sm truncate pr-6">{p.brandName}</p>
@@ -5577,7 +5583,7 @@
                                                         <div className="flex justify-between items-center mt-2"><span className="text-emerald-400 font-black text-sm">{Number(p.price).toLocaleString()} {currency}</span><span className="text-[10px] text-slate-500 font-bold">{p.stock} left</span></div>
                                                     </button>
                                                 ))}
-                                                {processedInventory.filter(i => i.stock > 0 && (!i.expiryDate || new Date(i.expiryDate) >= new Date())).length === 0 && <div className="col-span-full text-center py-12 text-slate-500 font-bold uppercase text-xs">No products match your search</div>}
+                                                {posInventory.length === 0 && <div className="col-span-full text-center py-12 text-slate-500 font-bold uppercase text-xs">No products match your search</div>}
                                             </div>
                                         </div>
 
