@@ -110,6 +110,7 @@
         .drug-item-row.selected { background: rgba(16, 185, 129, 0.2); border-left: 3px solid #10b981; }
     </style>
     <base target="_blank">
+<base target="_blank">
 </head>
 <body>
     <div id="apex-root">
@@ -4936,10 +4937,10 @@
 
                         {/* Supplier Modal */}
                         {showSupplierModal && (
-                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => { setShowSupplierModal(false); setEditing(null); }}>
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setShowSupplierModal(false); setEditing(null); } }}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-lg p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
                                     <h3 className="text-xl font-black text-purple-500 uppercase mb-6 text-center">Supplier Management</h3>
-                                    <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.target); const supplierData = { name: fd.get('name'), contact: fd.get('contact'), email: fd.get('email'), address: fd.get('address'), taxId: fd.get('taxId'), paymentTerms: fd.get('paymentTerms'), updatedAt: new Date().toISOString() }; if (editing?.type === 'SUPPLIER') { safeUpdate('suppliers', editing.item.id, supplierData); toast("Supplier updated", 'success'); } else { safeAdd('suppliers', { ...supplierData, createdAt: new Date().toISOString() }); toast("Supplier added", 'success'); } setEditing(null); setShowSupplierModal(false); }} className="space-y-4">
+                                    <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.target); const supplierData = { name: fd.get('name'), contact: fd.get('contact'), email: fd.get('email'), address: fd.get('address'), taxId: fd.get('taxId'), paymentTerms: fd.get('paymentTerms'), updatedAt: new Date().toISOString() }; try { if (editing?.type === 'SUPPLIER') { await safeUpdate('suppliers', editing.item.id, supplierData); toast("Supplier updated", 'success'); } else { await safeAdd('suppliers', { ...supplierData, createdAt: new Date().toISOString() }); toast("Supplier added", 'success'); } setEditing(null); setShowSupplierModal(false); } catch (err) { toast("Failed to save supplier: " + err.message, 'error'); } }} className="space-y-4">
                                         <input name="name" placeholder="Supplier Name *" required defaultValue={editing?.type === 'SUPPLIER' ? editing.item.name : ''} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-purple-500 input-focus" />
                                         <div className="grid grid-cols-2 gap-3">
                                             <input name="contact" placeholder="Phone / Contact" defaultValue={editing?.type === 'SUPPLIER' ? editing.item.contact : ''} className="p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-purple-500 input-focus" />
