@@ -4072,6 +4072,8 @@
                 const [sessionCountdown, setSessionCountdown] = useState(60);
                 const [showStockTakeModal, setShowStockTakeModal] = useState(false);
                 const [showPurchaseOrderModal, setShowPurchaseOrderModal] = useState(false);
+                const [poItems, setPoItems] = useState([]);
+                const [poDraft, setPoDraft] = useState({ itemId: '', qty: 1, price: 0 });
                 const [showBackupModal, setShowBackupModal] = useState(false);
                 const [showShiftModal, setShowShiftModal] = useState(false);
                 const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
@@ -4326,6 +4328,47 @@
                     if(!confirm("Delete this item completely?")) return;
                     if(!requireAdminConfirm('DELETE_PRODUCT')) return;
                     setEditing(null); safeDelete('inventory', id); toast("Product deleted", 'success'); logAudit('DELETE_PRODUCT', { productId: id });
+                };
+                const handleDeleteSupplier = (supplierItem) => {
+                    if(!confirm(`Delete supplier "${supplierItem.name}"? This cannot be undone.`)) return;
+                    if(!requireAdminConfirm('DELETE_SUPPLIER')) return;
+                    safeDelete('suppliers', supplierItem.id); toast("Supplier deleted", 'success'); logAudit('DELETE_SUPPLIER', { supplierId: supplierItem.id, supplierName: supplierItem.name });
+                    setEditing(null); setShowSupplierModal(false);
+                };
+                // Purchase Order item picker - pulls directly from live inventory instead of free-typed text
+                const handleAddPoItem = () => {
+                    if (!poDraft.itemId) return toast("Select an item first", 'warning');
+                    const item = data.inventory.find(i => i.id === poDraft.itemId);
+                    if (!item) return toast("Item not found", 'error');
+                    const qty = Number(poDraft.qty) || 0;
+                    if (qty <= 0) return toast("Enter a valid quantity", 'warning');
+                    setPoItems(prev => {
+                        const ex = prev.find(i => i.itemId === item.id);
+                        if (ex) return prev.map(i => i.itemId === item.id ? {...i, qty: i.qty + qty, price: Number(poDraft.price) || i.price} : i);
+                        return [...prev, { itemId: item.id, name: item.brandName, qty, price: Number(poDraft.price) || Number(item.costPrice) || 0 }];
+                    });
+                    setPoDraft({ itemId: '', qty: 1, price: 0 });
+                };
+                const updatePoItemQty = (itemId, qty) => {
+                    const numVal = Number(qty);
+                    if (numVal <= 0) return removePoItem(itemId);
+                    setPoItems(prev => prev.map(i => i.itemId === itemId ? {...i, qty: numVal} : i));
+                };
+                const removePoItem = (itemId) => setPoItems(prev => prev.filter(i => i.itemId !== itemId));
+                const closePurchaseOrderModal = () => { setShowPurchaseOrderModal(false); setPoItems([]); setPoDraft({ itemId: '', qty: 1, price: 0 }); };
+                const handleReceivePurchaseOrder = (po) => {
+                    if (po.status === 'RECEIVED') return;
+                    if (!confirm(`Receive PO ${po.poNumber}? This will add all ordered quantities into inventory stock.`)) return;
+                    (po.items || []).forEach(it => {
+                        const invItem = (it.itemId && data.inventory.find(i => i.id === it.itemId)) || data.inventory.find(i => (i.brandName || '').toLowerCase() === (it.name || '').toLowerCase());
+                        if (invItem) {
+                            safeUpdate('inventory', invItem.id, { stock: (Number(invItem.stock) || 0) + (Number(it.qty) || 0) });
+                            logStockMovement(invItem.id, invItem.brandName, 'PURCHASE_RECEIVED', Number(it.qty) || 0, `PO ${po.poNumber} received`, po.poNumber);
+                        }
+                    });
+                    safeUpdate('purchaseOrders', po.id, { status: 'RECEIVED', receivedAt: new Date().toISOString(), receivedBy: user.fullName || user.email });
+                    logAudit('RECEIVE_PURCHASE_ORDER', { poId: po.id, poNumber: po.poNumber, itemCount: (po.items || []).length });
+                    toast(`PO ${po.poNumber} received — inventory updated`, 'success');
                 };
                 const handleDeleteAllFinance = () => {
                     if (!hasAccess('MANAGER')) return toast("Manager access required", 'error');
@@ -4951,12 +4994,16 @@
                                             <input name="taxId" placeholder="Tax ID / TIN" defaultValue={editing?.type === 'SUPPLIER' ? editing.item.taxId : ''} className="p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-purple-500 input-focus" />
                                             <input name="paymentTerms" placeholder="Payment Terms" defaultValue={editing?.type === 'SUPPLIER' ? editing.item.paymentTerms : ''} className="p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-purple-500 input-focus" />
                                         </div>
-                                        <button type="submit" className="w-full bg-purple-600 hover:bg-purple-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">{editing?.type === 'SUPPLIER' ? 'Update Supplier' : 'Add Supplier'}</button>
+                                        <div className="flex gap-2">
+                                            <button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">{editing?.type === 'SUPPLIER' ? 'Update Supplier' : 'Add Supplier'}</button>
+                                            {editing?.type === 'SUPPLIER' && editing.item?.id && <button type="button" onClick={() => handleDeleteSupplier(editing.item)} className="bg-rose-600 hover:bg-rose-500 text-white py-4 px-6 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Del</button>}
+                                        </div>
+                                        {editing?.type === 'SUPPLIER' && editing.item?.id && <button type="button" onClick={() => setEditing(null)} className="w-full text-slate-500 hover:text-white font-bold text-[10px] uppercase tracking-widest">Cancel edit / add new supplier instead</button>}
                                     </form>
                                     <div className="mt-6 border-t border-slate-800 pt-4">
                                         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Existing Suppliers</h4>
                                         <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar">
-                                            {data.suppliers.map(s => <div key={s.id} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center"><div><p className="text-white font-bold text-xs">{s.name}</p><p className="text-[10px] text-slate-500">{s.contact}</p></div><button onClick={() => { setEditing({type: 'SUPPLIER', item: s}); }} className="text-purple-400 hover:text-purple-300 text-xs font-bold">Edit</button></div>)}
+                                            {data.suppliers.map(s => <div key={s.id} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center"><div><p className="text-white font-bold text-xs">{s.name}</p><p className="text-[10px] text-slate-500">{s.contact}</p></div><div className="flex gap-3 items-center"><button onClick={() => { setEditing({type: 'SUPPLIER', item: s}); }} className="text-purple-400 hover:text-purple-300 text-xs font-bold">Edit</button><button onClick={() => handleDeleteSupplier(s)} className="text-rose-500 hover:text-rose-400 text-xs font-black">Del</button></div></div>)}
                                             {data.suppliers.length === 0 && <p className="text-center text-slate-500 text-xs">No suppliers yet</p>}
                                         </div>
                                     </div>
@@ -5079,10 +5126,10 @@
 
                         {/* Purchase Order Modal */}
                         {showPurchaseOrderModal && (
-                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowPurchaseOrderModal(false))}>
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, closePurchaseOrderModal)}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
                                     <h3 className="text-xl font-black text-indigo-500 uppercase mb-6 text-center">Purchase Order</h3>
-                                    <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.target); const items = fd.get('items').split('\n').filter(l => l.trim()).map(line => { const parts = line.split(','); return { name: parts[0]?.trim(), qty: Number(parts[1]) || 0, price: Number(parts[2]) || 0 }; }); safeAdd('purchaseOrders', { supplier: fd.get('supplier'), poNumber: fd.get('poNumber'), items, total: items.reduce((s,i) => s + (i.qty * i.price), 0), status: 'PENDING', createdAt: new Date().toISOString(), createdBy: user.fullName || user.email, location }); toast("Purchase order created", 'success'); setShowPurchaseOrderModal(false); }} className="space-y-4">
+                                    <form onSubmit={(e) => { e.preventDefault(); if (poItems.length === 0) return toast("Add at least one item to the order", 'warning'); const fd = new FormData(e.target); const items = poItems.map(({itemId, name, qty, price}) => ({ itemId, name, qty, price })); safeAdd('purchaseOrders', { supplier: fd.get('supplier'), poNumber: fd.get('poNumber'), items, total: items.reduce((s,i) => s + (i.qty * i.price), 0), status: 'PENDING', createdAt: new Date().toISOString(), createdBy: user.fullName || user.email, location }); logAudit('CREATE_PURCHASE_ORDER', { poNumber: fd.get('poNumber'), supplier: fd.get('supplier'), itemCount: items.length }); toast("Purchase order created", 'success'); setPoItems([]); setPoDraft({ itemId: '', qty: 1, price: 0 }); setShowPurchaseOrderModal(false); }} className="space-y-4">
                                         <div className="grid grid-cols-2 gap-3">
                                             <select name="supplier" required className="p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-indigo-500 input-focus">
                                                 <option value="">Select Supplier *</option>
@@ -5090,7 +5137,39 @@
                                             </select>
                                             <input name="poNumber" placeholder="PO Number *" required className="p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-indigo-500 input-focus" />
                                         </div>
-                                        <textarea name="items" placeholder="Items (format: Name, Qty, UnitPrice per line)" rows="5" required className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-indigo-500 input-focus font-mono text-xs"></textarea>
+
+                                        <div className="bg-black/30 border border-slate-800 rounded-2xl p-4 space-y-3">
+                                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Add Items From Inventory ({data.inventory.length} available)</p>
+                                            <div className="flex flex-col sm:flex-row gap-2">
+                                                <select value={poDraft.itemId} onChange={(e) => { const it = data.inventory.find(i => i.id === e.target.value); setPoDraft(prev => ({ itemId: e.target.value, qty: prev.qty || 1, price: it ? (Number(it.costPrice) || 0) : 0 })); }} className="flex-1 p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-indigo-500 input-focus">
+                                                    <option value="">Select Item *</option>
+                                                    {data.inventory.slice().sort((a,b) => (a.brandName || '').localeCompare(b.brandName || '')).map(i => <option key={i.id} value={i.id}>{i.brandName} (Stock: {i.stock})</option>)}
+                                                </select>
+                                                <div className="flex gap-2">
+                                                    <input type="number" min="1" value={poDraft.qty} onChange={(e) => setPoDraft({...poDraft, qty: Number(e.target.value)})} placeholder="Qty" title="Quantity" className="w-20 p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-indigo-500 input-focus" />
+                                                    <input type="number" min="0" step="0.01" value={poDraft.price} onChange={(e) => setPoDraft({...poDraft, price: Number(e.target.value)})} placeholder="Unit Cost" title="Unit cost" className="w-24 p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-indigo-500 input-focus" />
+                                                    <button type="button" onClick={handleAddPoItem} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-xl font-black text-xs uppercase transition-all whitespace-nowrap">Add</button>
+                                                </div>
+                                            </div>
+
+                                            {poItems.length > 0 && (
+                                                <div className="space-y-1.5 max-h-40 overflow-y-auto no-scrollbar pt-1">
+                                                    {poItems.map(it => (
+                                                        <div key={it.itemId} className="flex items-center justify-between gap-2 bg-black p-2.5 rounded-xl border border-slate-800">
+                                                            <p className="text-white font-bold text-xs flex-1 truncate">{it.name}</p>
+                                                            <input type="number" min="1" value={it.qty} onChange={(e) => updatePoItemQty(it.itemId, e.target.value)} className="w-14 p-1.5 bg-slate-800 rounded-lg text-white font-bold text-xs text-center outline-none border border-slate-700 focus:border-indigo-500 input-focus" />
+                                                            <span className="text-slate-400 font-bold text-[10px] w-24 text-right shrink-0">{(it.qty * it.price).toLocaleString()} {currency}</span>
+                                                            <button type="button" onClick={() => removePoItem(it.itemId)} className="text-rose-500 hover:text-rose-400 text-xs font-black px-1">x</button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <div className="flex justify-between items-center pt-2 border-t border-slate-800">
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Order Total</span>
+                                                <span className="text-indigo-400 font-black text-sm">{poItems.reduce((s,i) => s + (i.qty * i.price), 0).toLocaleString()} {currency}</span>
+                                            </div>
+                                        </div>
+
                                         <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Create Purchase Order</button>
                                     </form>
                                     <div className="mt-6 border-t border-slate-800 pt-4">
@@ -5099,13 +5178,13 @@
                                             {data.purchaseOrders.filter(po => po.status === 'PENDING').map(po => (
                                                 <div key={po.id} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center">
                                                     <div><p className="text-white font-bold text-xs">{po.poNumber}</p><p className="text-[10px] text-slate-500">{po.supplier} - {po.items?.length} items</p></div>
-                                                    <div className="flex gap-2"><span className="text-indigo-400 font-bold text-xs">{po.total?.toLocaleString()} {currency}</span><button onClick={() => { safeUpdate('purchaseOrders', po.id, { status: 'RECEIVED', receivedAt: new Date().toISOString() }); toast("PO marked as received", 'success'); }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded-lg font-black text-[9px] uppercase">Receive</button></div>
+                                                    <div className="flex gap-2"><span className="text-indigo-400 font-bold text-xs">{po.total?.toLocaleString()} {currency}</span><button onClick={() => handleReceivePurchaseOrder(po)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded-lg font-black text-[9px] uppercase">Receive</button></div>
                                                 </div>
                                             ))}
                                             {data.purchaseOrders.filter(po => po.status === 'PENDING').length === 0 && <p className="text-center text-slate-500 text-xs">No pending orders</p>}
                                         </div>
                                     </div>
-                                    <button onClick={() => setShowPurchaseOrderModal(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
+                                    <button onClick={closePurchaseOrderModal} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
                                 </div>
                             </div>
                         )}
