@@ -118,7 +118,7 @@
             <div class="text-center">
                 <div style="width:80px;height:80px;border:4px solid #10b981;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 24px;"></div>
                 <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
-                <h1 style="font-size:3.5rem;font-weight:900;color:#10b981;font-style:italic;margin:0;letter-spacing:-0.02em;">APEX</h1>
+                <h1 id="apex-splash-name" style="font-size:3.5rem;font-weight:900;color:#10b981;font-style:italic;margin:0;letter-spacing:-0.02em;">APEX</h1>
                 <p style="color:#475569;font-weight:700;margin-top:12px;letter-spacing:0.15em;font-size:11px;text-transform:uppercase;">Initializing Enterprise Vault...</p>
                 <p id="error-text" style="color:#f87171;font-size:12px;margin-top:20px;font-weight:700;display:none;text-align:center;max-width:420px;background:rgba(127,29,29,0.3);padding:12px 16px;border-radius:12px;border:1px solid rgba(248,113,113,0.2);"></p>
             </div>
@@ -128,6 +128,11 @@
     <div id="toast-root" class="toast-container"></div>
 
     <script>
+        try {
+            const savedName = JSON.parse(localStorage.getItem('apex_pharmacy_name'));
+            const splashEl = document.getElementById('apex-splash-name');
+            if (savedName && splashEl) splashEl.textContent = savedName;
+        } catch (e) {}
         window.addEventListener('error', function(e) {
             const el = document.getElementById('error-text');
             if(el) { el.style.display = 'block'; el.innerText = 'SYSTEM ERROR: ' + (e.message || "Network/CDN failure. Check connection."); }
@@ -4086,6 +4091,7 @@
                 const [reportPeriod, setReportPeriod] = useState('DAILY');
                 const [reportTab, setReportTab] = useState('SALES');
                 const [reportSearch, setReportSearch] = useState('');
+                const [pharmacyName, setPharmacyName] = useLocalStorage('apex_pharmacy_name', 'APEX');
                 const [currency, setCurrency] = useLocalStorage('apex_currency', 'TZS');
                 const [location, setLocation] = useLocalStorage('apex_location', 'MAIN');
                 const [taxRate, setTaxRate] = useLocalStorage('apex_tax_rate', 0);
@@ -4407,7 +4413,7 @@
                 };
                 const handleWhatsAppReminder = (pt) => {
                     if(!pt.phone) return toast("No phone number recorded.", 'warning');
-                    const msg = `Hello ${pt.name},\n\nThis is a reminder from APEX Pharmacy. You have an outstanding balance of ${pt.creditBalance.toLocaleString()} ${currency}.\n\nPlease arrange payment at your earliest convenience. Thank you!`;
+                    const msg = `Hello ${pt.name},\n\nThis is a reminder from ${pharmacyName} Pharmacy. You have an outstanding balance of ${pt.creditBalance.toLocaleString()} ${currency}.\n\nPlease arrange payment at your earliest convenience. Thank you!`;
                     window.open(`https://wa.me/${pt.phone.replace(/[^0-9\+]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
                     logAudit('WHATSAPP_REMINDER', { patientId: pt.id });
                 };
@@ -4541,7 +4547,8 @@
                     if (!item) return toast("Item not found in sale", 'error');
                     if (returnQty > item.qty) return toast(`Cannot return more than ${item.qty} units`, 'warning');
                     const returnAmount = item.currentPrice * returnQty;
-                    safeAdd('returns', { saleId, itemId, returnQty, reason, itemName: item.brandName, returnAmount, timestamp: new Date().toISOString(), processedBy: user.fullName || user.email, location });
+                    const returnProfit = (Number(item.currentPrice) - Number(item.costPrice || 0)) * returnQty;
+                    safeAdd('returns', { saleId, itemId, returnQty, reason, itemName: item.brandName, returnAmount, returnProfit, timestamp: new Date().toISOString(), processedBy: user.fullName || user.email, location });
                     const invItem = data.inventory.find(i => i.id === itemId);
                     if (invItem) { safeUpdate('inventory', itemId, { stock: invItem.stock + returnQty }); logStockMovement(itemId, item.brandName, 'RETURN', returnQty, reason, saleId); }
                     logAudit('RETURN_PROCESSED', { saleId, itemId, returnQty, amount: returnAmount });
@@ -4556,7 +4563,7 @@
                     const { jsPDF } = window.jspdf;
                     const doc = new jsPDF();
                     doc.setFontSize(20); doc.setTextColor(16, 185, 129);
-                    doc.text("APEX PHARMACY", 105, 20, { align: "center" });
+                    doc.text(pharmacyName, 105, 20, { align: "center" });
                     doc.setFontSize(10); doc.setTextColor(100);
                     doc.text(`Date: ${new Date().toLocaleString()}`, 20, 35);
                     doc.text(`Prescriber: ${user.fullName || user.email}`, 20, 42);
@@ -4716,7 +4723,12 @@
                 const inventoryTotalCost = data.inventory.reduce((a,b) => a + (Number(b.costPrice||0) * Number(b.stock||0)), 0);
                 const inventoryTotalValue = data.inventory.reduce((a,b) => a + (Number(b.price||0) * Number(b.stock||0)), 0);
                 const inventoryExpectedProfit = inventoryTotalValue - inventoryTotalCost;
-                const totalNetProfit = data.sales.reduce((a,b) => a + Number(b.profit || 0), 0) - data.expenses.reduce((a,b) => a + Number(b.amount || 0), 0);
+                const totalReturnsAmount = (data.returns || []).reduce((a,b) => a + Number(b.returnAmount || 0), 0);
+                const totalReturnsProfit = (data.returns || []).reduce((a,b) => a + Number(b.returnProfit || 0), 0);
+                const totalReturnsQty = (data.returns || []).reduce((a,b) => a + Number(b.returnQty || 0), 0);
+                const netTotalSales = data.sales.reduce((a,b) => a + Number(b.total), 0) - totalReturnsAmount;
+                const netGrossProfit = data.sales.reduce((a,b) => a + Number(b.profit || 0), 0) - totalReturnsProfit;
+                const totalNetProfit = netGrossProfit - data.expenses.reduce((a,b) => a + Number(b.amount || 0), 0);
                 const itemAnalytics = useMemo(() => {
                     const stats = {};
                     data.sales.forEach(s => {
@@ -4725,8 +4737,15 @@
                             stats[i.id].qty += Number(i.qty); stats[i.id].revenue += (Number(i.currentPrice) * Number(i.qty)); stats[i.id].profit += ((Number(i.currentPrice) - Number(i.costPrice)) * Number(i.qty));
                         });
                     });
+                    (data.returns || []).forEach(r => {
+                        if (!stats[r.itemId]) return;
+                        stats[r.itemId].qty -= Number(r.returnQty || 0);
+                        stats[r.itemId].revenue -= Number(r.returnAmount || 0);
+                        stats[r.itemId].profit -= Number(r.returnProfit || 0);
+                    });
                     return Object.values(stats).sort((a,b) => b.qty - a.qty);
-                }, [data.sales]);
+                }, [data.sales, data.returns]);
+                const topProfitableItems = useMemo(() => [...itemAnalytics].sort((a,b) => b.profit - a.profit), [itemAnalytics]);
                 const todaySales = useMemo(() => {
                     const tKey = todayKey();
                     return (data.sales || []).filter(s => s.timestamp && s.timestamp.split('T')[0] === tKey);
@@ -4742,6 +4761,38 @@
                     if (reportSearch) { const term = reportSearch.toLowerCase(); sales = sales.filter(s => (s.soldBy || '').toLowerCase().includes(term) || (s.method || '').toLowerCase().includes(term)); }
                     return sales.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
                 }, [data.sales, reportPeriod, reportSearch]);
+
+                const filterRecordsByPeriod = (records, dateField) => {
+                    let recs = [...records];
+                    if (reportPeriod === 'DAILY') { const tKey = todayKey(); recs = recs.filter(r => r[dateField] && r[dateField].split('T')[0] === tKey); }
+                    else if (reportPeriod === 'WEEKLY') { const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0); recs = recs.filter(r => r[dateField] && new Date(r[dateField]) >= weekAgo); }
+                    else if (reportPeriod === 'MONTHLY') { const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth() - 1); monthAgo.setHours(0,0,0,0); recs = recs.filter(r => r[dateField] && new Date(r[dateField]) >= monthAgo); }
+                    return recs.sort((a,b) => new Date(b[dateField]) - new Date(a[dateField]));
+                };
+
+                const filteredReturns = useMemo(() => {
+                    let returns = filterRecordsByPeriod(data.returns || [], 'timestamp');
+                    if (reportSearch) { const term = reportSearch.toLowerCase(); returns = returns.filter(r => (r.itemName || '').toLowerCase().includes(term) || (r.processedBy || '').toLowerCase().includes(term) || (r.reason || '').toLowerCase().includes(term)); }
+                    return returns;
+                }, [data.returns, reportPeriod, reportSearch]);
+
+                const filteredPurchaseOrders = useMemo(() => {
+                    let pos = filterRecordsByPeriod(data.purchaseOrders || [], 'createdAt');
+                    if (reportSearch) { const term = reportSearch.toLowerCase(); pos = pos.filter(p => (p.supplier || '').toLowerCase().includes(term) || (p.poNumber || '').toLowerCase().includes(term) || (p.status || '').toLowerCase().includes(term)); }
+                    return pos;
+                }, [data.purchaseOrders, reportPeriod, reportSearch]);
+
+                const filteredTransfers = useMemo(() => {
+                    let transfers = filterRecordsByPeriod((data.stockMovements || []).filter(m => m.type === 'TRANSFER'), 'timestamp');
+                    if (reportSearch) { const term = reportSearch.toLowerCase(); transfers = transfers.filter(t => (t.itemName || '').toLowerCase().includes(term) || (t.reason || '').toLowerCase().includes(term) || (t.userName || '').toLowerCase().includes(term)); }
+                    return transfers;
+                }, [data.stockMovements, reportPeriod, reportSearch]);
+
+                const filteredStockTakes = useMemo(() => {
+                    let takes = filterRecordsByPeriod((data.stockMovements || []).filter(m => m.type === 'STOCK_TAKE'), 'timestamp');
+                    if (reportSearch) { const term = reportSearch.toLowerCase(); takes = takes.filter(t => (t.itemName || '').toLowerCase().includes(term) || (t.userName || '').toLowerCase().includes(term)); }
+                    return takes;
+                }, [data.stockMovements, reportPeriod, reportSearch]);
 
                 // Finance chart
                 useEffect(() => {
@@ -4788,7 +4839,7 @@
                         <div className="h-screen flex items-center justify-center bg-black">
                             <div className="text-center animate-pulse">
                                 <div className="w-20 h-20 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
-                                <h1 className="text-5xl font-black text-emerald-500 mb-2 italic">APEX</h1>
+                                <h1 className="text-5xl font-black text-emerald-500 mb-2 italic">{pharmacyName}</h1>
                                 <p className="text-slate-500 text-xs font-bold uppercase tracking-[0.3em]">Securing Enterprise Vault...</p>
                             </div>
                         </div>
@@ -4800,7 +4851,7 @@
                         <div className="h-screen flex items-center justify-center bg-black p-4 relative">
                             <div className={`status-badge ${isOnline ? 'bg-online' : 'bg-offline'}`}>{isOnline ? 'Online' : 'Offline'}</div>
                             <div className="bg-slate-900 p-10 rounded-[3rem] shadow-2xl w-full max-w-sm text-center border border-slate-800/50">
-                                <h1 className="text-5xl font-black text-emerald-500 mb-2 italic tracking-tight">APEX</h1>
+                                <h1 className="text-5xl font-black text-emerald-500 mb-2 italic tracking-tight">{pharmacyName}</h1>
                                 <p className="text-slate-500 text-[10px] font-bold uppercase mb-2 tracking-[0.3em]">Enterprise Pharmacy OS v3.0</p>
                                 <p className="text-emerald-600 text-[10px] font-bold uppercase mb-8 tracking-[0.2em]">Tanzania STG Dose Calculator</p>
                                 <form onSubmit={handleLogin} className="flex flex-col gap-3">
@@ -4911,7 +4962,7 @@
                                 <div className="bg-white text-black p-6 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col animate-slide-up">
                                     <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-black text-emerald-600 uppercase">Receipt</h3></div>
                                     <div id="print-area" className="flex flex-col text-sm space-y-2 mb-6 text-black bg-white">
-                                        <h2 className="text-center font-black text-xl mb-1">APEX PHARMACY</h2>
+                                        <h2 className="text-center font-black text-xl mb-1">{pharmacyName}</h2>
                                         <p className="text-center text-xs">{new Date(receiptData.timestamp).toLocaleString()}</p>
                                         <p className="text-center text-xs">Cashier: {receiptData.soldBy}</p>
                                         <p className="text-center text-xs font-bold uppercase mt-1">Method: {receiptData.method}</p>
@@ -4929,7 +4980,7 @@
                                         <div className="flex justify-between text-xs"><span>Change:</span><span>{receiptData.changeGiven.toLocaleString()} {currency}</span></div>
                                         <div className="border-b-2 border-black border-dashed my-2"></div>
                                         <p className="text-center text-xs font-bold mt-2">Thank you for your business!</p>
-                                        <p className="text-center text-[8px] text-slate-500">APEX Pharmacy OS v3.0</p>
+                                        <p className="text-center text-[8px] text-slate-500">{pharmacyName} Pharmacy OS v3.0</p>
                                     </div>
                                     <div className="flex gap-2">
                                         <button onClick={() => window.print()} className="flex-1 bg-emerald-600 text-white font-black py-4 rounded-xl hover:bg-emerald-500 shadow-lg transition-all">Print</button>
@@ -5288,6 +5339,7 @@
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
                                     <h3 className="text-xl font-black text-white uppercase mb-6 text-center">System Settings</h3>
                                     <div className="space-y-4">
+                                        <div><label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Pharmacy Name</label><input type="text" value={pharmacyName} onChange={(e) => setPharmacyName(e.target.value)} placeholder="Pharmacy Name" className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" /></div>
                                         <div><label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Tax / VAT Rate (%)</label><input type="number" value={taxRate} onChange={(e) => setTaxRate(Number(e.target.value))} placeholder="0" className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" /></div>
                                         <div><label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Daily Sales Target ({currency})</label><input type="number" value={salesTarget} onChange={(e) => setSalesTarget(Number(e.target.value))} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" /></div>
                                         <div><label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Currency</label><select value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus">
@@ -5507,7 +5559,7 @@
                         {!isMobile && (
                             <div className="w-20 lg:w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 no-print">
                                 <div className="p-6 text-center border-b border-slate-800">
-                                    <h1 className="text-2xl font-black text-emerald-500 italic tracking-tight">APEX</h1>
+                                    <h1 className="text-2xl font-black text-emerald-500 italic tracking-tight">{pharmacyName}</h1>
                                     <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1 hidden lg:block">Pharmacy OS v3.0</p>
                                     <p className="text-[8px] text-emerald-600 font-bold uppercase tracking-[0.15em] mt-1 hidden lg:block">Tanzania STG Edition</p>
                                 </div>
@@ -5608,13 +5660,13 @@
                                         </div>
 
                                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                            <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total Sales</p><p className="text-2xl font-black text-emerald-400">{data.sales.reduce((a,b) => a + Number(b.total), 0).toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
+                                            <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total Sales</p><p className="text-2xl font-black text-emerald-400">{netTotalSales.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
                                             <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Net Profit</p><p className={`text-2xl font-black ${totalNetProfit >= 0 ? 'text-blue-400' : 'text-rose-400'}`}>{totalNetProfit.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
                                             <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Inventory Value</p><p className="text-2xl font-black text-violet-400">{inventoryTotalValue.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
                                             <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Products</p><p className="text-2xl font-black text-amber-400">{data.inventory.length}</p></div>
                                             <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Inventory Cost</p><p className="text-2xl font-black text-rose-400">{inventoryTotalCost.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
                                             <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Expected Profit</p><p className={`text-2xl font-black ${inventoryExpectedProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{inventoryExpectedProfit.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
-                                            <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Gross Profit</p><p className="text-2xl font-black text-blue-400">{data.sales.reduce((a,b) => a + Number(b.profit || 0), 0).toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
+                                            <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Gross Profit</p><p className="text-2xl font-black text-blue-400">{netGrossProfit.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
                                             <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total Expenses</p><p className="text-2xl font-black text-rose-400">{data.expenses.reduce((a,b) => a + Number(b.amount || 0), 0).toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
                                         </div>
 
@@ -5655,6 +5707,19 @@
                                                     </div>
                                                 ))}
                                                 {itemAnalytics.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No sales data yet</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="glass-panel p-6 rounded-3xl">
+                                            <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Top Profitable Products</h3>
+                                            <div className="space-y-3">
+                                                {topProfitableItems.slice(0, 10).map((item, idx) => (
+                                                    <div key={idx} className="flex items-center justify-between bg-black p-3 rounded-xl">
+                                                        <div className="flex items-center gap-3"><span className="text-violet-500 font-black text-xs w-6">#{idx+1}</span><div><p className="text-white font-bold text-sm">{item.name}</p><p className="text-[10px] text-slate-500">{item.cat} - {item.qty} sold</p></div></div>
+                                                        <div className="text-right"><p className="text-violet-400 font-bold text-sm">{item.profit.toLocaleString()} {currency}</p><p className="text-[10px] text-slate-500">Profit</p></div>
+                                                    </div>
+                                                ))}
+                                                {topProfitableItems.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No sales data yet</p>}
                                             </div>
                                         </div>
                                     </div>
@@ -5821,10 +5886,10 @@
                                 {view === 'FINANCE' && (
                                     <div className="space-y-6 animate-fade-in">
                                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                            <div className="glass-panel p-5 rounded-3xl cursor-pointer hover:border-emerald-500 transition-all border border-transparent" onClick={() => setViewSalesVolume(true)}><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total Revenue</p><p className="text-2xl font-black text-emerald-400">{data.sales.reduce((a,b) => a + Number(b.total), 0).toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
+                                            <div className="glass-panel p-5 rounded-3xl cursor-pointer hover:border-emerald-500 transition-all border border-transparent" onClick={() => setViewSalesVolume(true)}><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total Revenue</p><p className="text-2xl font-black text-emerald-400">{netTotalSales.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
                                             <div className="glass-panel p-5 rounded-3xl cursor-pointer hover:border-blue-500 transition-all border border-transparent" onClick={() => setViewNetProfitDetail(true)}><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Net Profit</p><p className={`text-2xl font-black ${totalNetProfit >= 0 ? 'text-blue-400' : 'text-rose-400'}`}>{totalNetProfit.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
                                             <div className="glass-panel p-5 rounded-3xl cursor-pointer hover:border-rose-500 transition-all border border-transparent" onClick={() => setViewExpensesDetail(true)}><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total Expenses</p><p className="text-2xl font-black text-rose-400">{data.expenses.reduce((a,b) => a + Number(b.amount), 0).toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
-                                            <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Gross Profit</p><p className="text-2xl font-black text-violet-400">{data.sales.reduce((a,b) => a + Number(b.profit || 0), 0).toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
+                                            <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Gross Profit</p><p className="text-2xl font-black text-violet-400">{netGrossProfit.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
                                         </div>
                                         <div className="glass-panel p-4 rounded-3xl">
                                             <div className="flex flex-wrap gap-2 mb-4">
@@ -5870,23 +5935,33 @@
                                 {view === 'REPORTS' && (
                                     <div className="space-y-6 animate-fade-in">
                                         <div className="flex flex-col md:flex-row gap-3">
-                                            <div className="flex gap-2">
-                                                {['SALES', 'EXPENSES', 'CLAIMS', 'STOCK'].map(tab => <button key={tab} onClick={() => setReportTab(tab)} className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all ${reportTab === tab ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{tab}</button>)}
+                                            <div className="flex flex-wrap gap-2">
+                                                {['SALES', 'RETURNS', 'EXPENSES', 'CLAIMS', 'STOCK', 'PURCHASE_ORDERS', 'TRANSFERS', 'STOCK_TAKE'].map(tab => <button key={tab} onClick={() => setReportTab(tab)} className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all whitespace-nowrap ${reportTab === tab ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{tab.replace(/_/g, ' ')}</button>)}
                                             </div>
                                             <div className="flex gap-2">
                                                 {['DAILY', 'WEEKLY', 'MONTHLY'].map(p => <button key={p} onClick={() => setReportPeriod(p)} className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all ${reportPeriod === p ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{p}</button>)}
                                             </div>
                                             <input value={reportSearch} onChange={(e) => setReportSearch(e.target.value)} placeholder="Search reports..." className="flex-1 p-3 bg-slate-800 rounded-xl text-white font-bold text-sm outline-none border border-slate-700 focus:border-emerald-500 input-focus" />
-                                            <button onClick={() => { if (reportTab === 'SALES') exportToExcel(filteredSales.map(s => ({Date: s.timestamp, Total: s.total, Profit: s.profit, Method: s.method, Cashier: s.soldBy, Items: s.items?.length})), 'Sales_Report'); else if (reportTab === 'EXPENSES') exportToExcel(data.expenses.map(e => ({Description: e.description, Amount: e.amount, Category: e.category, Date: e.timestamp})), 'Expenses_Report'); else if (reportTab === 'CLAIMS') exportToExcel(data.insuranceClaims.map(c => ({Provider: c.provider, Patient: c.patientName, Amount: c.totalAmount, Claimed: c.claimedAmount, Status: c.status, Date: c.submittedAt})), 'Claims_Report'); else exportToExcel(data.inventory.map(i => ({Brand: i.brandName, Stock: i.stock, Price: i.price, Cost: i.costPrice, Value: i.stock * i.price})), 'Stock_Report'); }} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all whitespace-nowrap">Export Excel</button>
+                                            <button onClick={() => { if (reportTab === 'SALES') exportToExcel(filteredSales.map(s => ({Date: s.timestamp, Total: s.total, Profit: s.profit, Method: s.method, Cashier: s.soldBy, Items: s.items?.length, Status: (data.returns||[]).some(r => r.saleId === s.id) ? 'Returned' : 'Completed'})), 'Sales_Report'); else if (reportTab === 'RETURNS') exportToExcel(filteredReturns.map(r => ({Date: r.timestamp, Item: r.itemName, Qty: r.returnQty, Amount: r.returnAmount, ProfitImpact: r.returnProfit, Reason: r.reason, ProcessedBy: r.processedBy})), 'Returns_Report'); else if (reportTab === 'EXPENSES') exportToExcel(data.expenses.map(e => ({Description: e.description, Amount: e.amount, Category: e.category, Date: e.timestamp})), 'Expenses_Report'); else if (reportTab === 'CLAIMS') exportToExcel(data.insuranceClaims.map(c => ({Provider: c.provider, Patient: c.patientName, Amount: c.totalAmount, Claimed: c.claimedAmount, Status: c.status, Date: c.submittedAt})), 'Claims_Report'); else if (reportTab === 'PURCHASE_ORDERS') exportToExcel(filteredPurchaseOrders.map(po => ({PO: po.poNumber, Supplier: po.supplier, Items: po.items?.length, Total: po.total, Status: po.status, Created: po.createdAt, ReceivedBy: po.receivedBy || ''})), 'Purchase_Orders_Report'); else if (reportTab === 'TRANSFERS') exportToExcel(filteredTransfers.map(t => ({Date: t.timestamp, Item: t.itemName, Qty: Math.abs(t.quantity), Reason: t.reason, By: t.userName})), 'Stock_Transfers_Report'); else if (reportTab === 'STOCK_TAKE') exportToExcel(filteredStockTakes.map(t => ({Date: t.timestamp, Item: t.itemName, Difference: t.quantity, By: t.userName})), 'Stock_Take_Report'); else exportToExcel(data.inventory.map(i => ({Brand: i.brandName, Stock: i.stock, Price: i.price, Cost: i.costPrice, Value: i.stock * i.price})), 'Stock_Report'); }} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all whitespace-nowrap">Export Excel</button>
                                         </div>
                                         {reportTab === 'SALES' && (
                                             <div className="glass-panel p-6 rounded-3xl">
                                                 <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Sales Report ({reportPeriod})</h3>
                                                 <div className="space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">
-                                                    {filteredSales.map(sale => <div key={sale.id} className="bg-black p-4 rounded-2xl border border-slate-800"><div className="flex justify-between items-center mb-2"><span className="text-white font-bold text-xs">{new Date(sale.timestamp).toLocaleString()}</span><div className="flex gap-2"><span className="text-emerald-400 font-black text-sm">{sale.total.toLocaleString()} {currency}</span><button onClick={() => setShowReturnModal(true)} className="text-rose-400 text-[10px] font-bold hover:text-rose-300">Return</button></div></div><p className="text-[10px] text-slate-500">{sale.soldBy} | {sale.method} | {sale.items?.length} items | Profit: {sale.profit?.toLocaleString()} {currency}</p>{sale.drugInteractions && <p className="text-[10px] text-red-400 font-bold mt-1">Drug interactions noted</p>}</div>)}
+                                                    {filteredSales.map(sale => { const wasReturned = (data.returns||[]).some(r => r.saleId === sale.id); return (<div key={sale.id} className="bg-black p-4 rounded-2xl border border-slate-800"><div className="flex justify-between items-center mb-2"><span className="text-white font-bold text-xs">{new Date(sale.timestamp).toLocaleString()}</span><div className="flex gap-2 items-center">{wasReturned && <span className="text-rose-400 bg-rose-500/10 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider">Returned</span>}<span className="text-emerald-400 font-black text-sm">{sale.total.toLocaleString()} {currency}</span><button onClick={() => setShowReturnModal(true)} className="text-rose-400 text-[10px] font-bold hover:text-rose-300">Return</button></div></div><p className="text-[10px] text-slate-500">{sale.soldBy} | {sale.method} | {sale.items?.length} items | Profit: {sale.profit?.toLocaleString()} {currency}</p>{sale.drugInteractions && <p className="text-[10px] text-red-400 font-bold mt-1">Drug interactions noted</p>}</div>); })}
                                                     {filteredSales.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No sales in selected period</p>}
                                                 </div>
-                                                <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between text-sm font-bold"><span className="text-slate-400">Total: <span className="text-white">{filteredSales.reduce((a,b) => a + b.total, 0).toLocaleString()} {currency}</span></span><span className="text-slate-400">Profit: <span className="text-emerald-400">{filteredSales.reduce((a,b) => a + (b.profit || 0), 0).toLocaleString()} {currency}</span></span><span className="text-slate-400">Transactions: <span className="text-white">{filteredSales.length}</span></span></div>
+                                                <div className="mt-4 pt-4 border-t border-slate-800 flex flex-wrap gap-x-4 gap-y-1 justify-between text-sm font-bold"><span className="text-slate-400">Total: <span className="text-white">{(filteredSales.reduce((a,b) => a + b.total, 0) - filteredReturns.reduce((a,b) => a + Number(b.returnAmount||0), 0)).toLocaleString()} {currency}</span></span><span className="text-slate-400">Profit: <span className="text-emerald-400">{(filteredSales.reduce((a,b) => a + (b.profit || 0), 0) - filteredReturns.reduce((a,b) => a + Number(b.returnProfit||0), 0)).toLocaleString()} {currency}</span></span><span className="text-slate-400">Transactions: <span className="text-white">{filteredSales.length}</span></span><span className="text-slate-400">Returned: <span className="text-rose-400">{filteredReturns.length}</span></span></div>
+                                            </div>
+                                        )}
+                                        {reportTab === 'RETURNS' && (
+                                            <div className="glass-panel p-6 rounded-3xl">
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Returns Report ({reportPeriod})</h3>
+                                                <div className="space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">
+                                                    {filteredReturns.map(r => <div key={r.id} className="bg-black p-4 rounded-2xl border border-slate-800"><div className="flex justify-between items-center mb-1"><span className="text-white font-bold text-xs">{r.itemName}</span><span className="text-rose-400 font-black text-sm">-{Number(r.returnAmount).toLocaleString()} {currency}</span></div><p className="text-[10px] text-slate-500">Qty: {r.returnQty} | Reason: {r.reason || 'N/A'} | {r.processedBy}</p><p className="text-[10px] text-slate-600">{new Date(r.timestamp).toLocaleString()}</p></div>)}
+                                                    {filteredReturns.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No returns in selected period</p>}
+                                                </div>
+                                                <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between text-sm font-bold"><span className="text-slate-400">Total Returned: <span className="text-rose-400">{filteredReturns.reduce((a,b) => a + Number(b.returnAmount||0), 0).toLocaleString()} {currency}</span></span><span className="text-slate-400">Units: <span className="text-white">{filteredReturns.reduce((a,b) => a + Number(b.returnQty||0), 0)}</span></span></div>
                                             </div>
                                         )}
                                         {reportTab === 'EXPENSES' && (
@@ -5915,6 +5990,36 @@
                                                     {data.inventory.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No inventory</p>}
                                                 </div>
                                                 <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between text-sm font-bold"><span className="text-slate-400">Total Stock Value: <span className="text-emerald-400">{inventoryTotalValue.toLocaleString()} {currency}</span></span><span className="text-slate-400">Total Cost: <span className="text-rose-400">{inventoryTotalCost.toLocaleString()} {currency}</span></span></div>
+                                            </div>
+                                        )}
+                                        {reportTab === 'PURCHASE_ORDERS' && (
+                                            <div className="glass-panel p-6 rounded-3xl">
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Purchase Order Report ({reportPeriod})</h3>
+                                                <div className="space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">
+                                                    {filteredPurchaseOrders.map(po => <div key={po.id} className="bg-black p-4 rounded-2xl border border-slate-800"><div className="flex justify-between items-center mb-1"><span className="text-white font-bold text-xs">{po.poNumber} - {po.supplier}</span><span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${po.status === 'PENDING' ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{po.status}</span></div><div className="flex justify-between text-xs text-slate-400"><span>{po.items?.length} items</span><span className="text-indigo-400 font-bold">{Number(po.total).toLocaleString()} {currency}</span></div><p className="text-[10px] text-slate-500 mt-1">Created: {new Date(po.createdAt).toLocaleString()} by {po.createdBy}{po.receivedAt ? ` | Received: ${new Date(po.receivedAt).toLocaleString()}` : ''}</p></div>)}
+                                                    {filteredPurchaseOrders.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No purchase orders in selected period</p>}
+                                                </div>
+                                                <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between text-sm font-bold"><span className="text-slate-400">Total Ordered: <span className="text-indigo-400">{filteredPurchaseOrders.reduce((a,b) => a + Number(b.total||0), 0).toLocaleString()} {currency}</span></span><span className="text-slate-400">Orders: <span className="text-white">{filteredPurchaseOrders.length}</span></span><span className="text-slate-400">Pending: <span className="text-amber-400">{filteredPurchaseOrders.filter(p => p.status === 'PENDING').length}</span></span></div>
+                                            </div>
+                                        )}
+                                        {reportTab === 'TRANSFERS' && (
+                                            <div className="glass-panel p-6 rounded-3xl">
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Stock Transfer Report ({reportPeriod})</h3>
+                                                <div className="space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">
+                                                    {filteredTransfers.map(t => <div key={t.id} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center"><div><p className="text-white font-bold text-xs">{t.itemName}</p><p className="text-[10px] text-slate-500">{t.reason} | {t.userName}</p></div><div className="text-right"><p className="text-cyan-400 font-bold text-sm">{Math.abs(t.quantity)} units</p><p className="text-[10px] text-slate-500">{new Date(t.timestamp).toLocaleDateString()}</p></div></div>)}
+                                                    {filteredTransfers.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No stock transfers in selected period</p>}
+                                                </div>
+                                                <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between text-sm font-bold"><span className="text-slate-400">Total Units Transferred: <span className="text-cyan-400">{filteredTransfers.reduce((a,b) => a + Math.abs(Number(b.quantity||0)), 0)}</span></span><span className="text-slate-400">Transfers: <span className="text-white">{filteredTransfers.length}</span></span></div>
+                                            </div>
+                                        )}
+                                        {reportTab === 'STOCK_TAKE' && (
+                                            <div className="glass-panel p-6 rounded-3xl">
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Physical Stock Take Report ({reportPeriod})</h3>
+                                                <div className="space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">
+                                                    {filteredStockTakes.map(t => <div key={t.id} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center"><div><p className="text-white font-bold text-xs">{t.itemName}</p><p className="text-[10px] text-slate-500">{t.userName} | {new Date(t.timestamp).toLocaleString()}</p></div><span className={`font-black text-sm ${t.quantity > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{t.quantity > 0 ? '+' : ''}{t.quantity}</span></div>)}
+                                                    {filteredStockTakes.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No physical stock takes in selected period</p>}
+                                                </div>
+                                                <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between text-sm font-bold"><span className="text-slate-400">Net Adjustment: <span className={`${filteredStockTakes.reduce((a,b) => a + Number(b.quantity||0), 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{filteredStockTakes.reduce((a,b) => a + Number(b.quantity||0), 0)}</span></span><span className="text-slate-400">Counts Recorded: <span className="text-white">{filteredStockTakes.length}</span></span></div>
                                             </div>
                                         )}
                                     </div>
