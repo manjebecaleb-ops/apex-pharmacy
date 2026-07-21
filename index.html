@@ -25,6 +25,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap');
@@ -172,6 +173,7 @@
             });
             window.db = firebase.firestore();
             window.db.enablePersistence({ synchronizeTabs: true }).catch(err => console.warn('Persistence:', err.code));
+            try { window.cloudStorage = firebase.storage(); } catch (e) { console.warn('Storage init:', e.message); }
         } catch (error) { console.error("Firebase Error:", error); }
     </script>
 
@@ -3658,6 +3660,109 @@
                 'tramadol': { 'ssri': 'SEVERE', 'maoi': 'SEVERE', 'triptans': 'MODERATE', 'alcohol': 'MODERATE' }
             };
 
+            // ==================== PATIENT SAFETY REFERENCE DATA ====================
+            // Starter reference sets covering common Tanzania STG drugs already in DRUG_DB.
+            // Matching is done by substring against genericName/brandName, same approach as DRUG_INTERACTIONS above.
+            // These lists are a starting point, not a complete clinical database - pharmacists should review and extend them.
+
+            // Allergy cross-reactivity classes: keyword -> drug-name fragments that belong to that class
+            const ALLERGY_CLASS_MAP = {
+                'penicillin': ['penicillin', 'amoxicillin', 'ampicillin', 'flucloxacillin', 'cloxacillin', 'benzathine', 'procaine penicillin', 'co-amoxiclav'],
+                'sulfa': ['sulfamethoxazole', 'cotrimoxazole', 'co-trimoxazole', 'sulfadoxine', 'sulfasalazine'],
+                'cephalosporin': ['cefalexin', 'cephalexin', 'ceftriaxone', 'cefixime', 'cefuroxime'],
+                'nsaid': ['ibuprofen', 'diclofenac', 'aspirin', 'acetylsalicylic'],
+                'macrolide': ['erythromycin', 'azithromycin', 'clarithromycin'],
+                'quinolone': ['ciprofloxacin', 'levofloxacin', 'norfloxacin'],
+                'metronidazole': ['metronidazole', 'tinidazole'],
+            };
+
+            // Pregnancy / lactation risk notes: keyword fragment -> risk info
+            const PREGNANCY_LACTATION_DB = [
+                { keywords: ['doxycycline', 'tetracycline'], pregnancy: 'CONTRAINDICATED', lactation: 'CAUTION', note: 'Tetracyclines: teeth/bone effects in fetus; avoid in pregnancy.' },
+                { keywords: ['sodium valproate', 'valproate'], pregnancy: 'CONTRAINDICATED', lactation: 'CAUTION', note: 'High risk of neural tube defects - avoid in pregnancy.' },
+                { keywords: ['misoprostol'], pregnancy: 'CAUTION', lactation: 'CAUTION', note: 'Uterotonic - only for indicated obstetric use under supervision.' },
+                { keywords: ['warfarin'], pregnancy: 'CONTRAINDICATED', lactation: 'CAUTION', note: 'Teratogenic (warfarin embryopathy) - avoid, especially 1st trimester.' },
+                { keywords: ['lisinopril', 'enalapril', 'captopril', 'losartan', 'valsartan'], pregnancy: 'CONTRAINDICATED', lactation: 'CAUTION', note: 'ACE inhibitors/ARBs: fetal renal toxicity - avoid, especially 2nd/3rd trimester.' },
+                { keywords: ['simvastatin', 'atorvastatin'], pregnancy: 'CONTRAINDICATED', lactation: 'CAUTION', note: 'Statins contraindicated in pregnancy.' },
+                { keywords: ['efavirenz'], pregnancy: 'CAUTION', lactation: 'CAUTION', note: 'Avoid in 1st trimester if alternatives available.' },
+                { keywords: ['ciprofloxacin', 'levofloxacin', 'norfloxacin'], pregnancy: 'CAUTION', lactation: 'CAUTION', note: 'Fluoroquinolones: use only if benefit outweighs risk.' },
+                { keywords: ['fluconazole', 'itraconazole', 'ketoconazole'], pregnancy: 'CAUTION', lactation: 'CAUTION', note: 'Azole antifungals: high-dose use linked to fetal risk.' },
+                { keywords: ['ergometrine', 'methylergometrine'], pregnancy: 'CAUTION', lactation: 'CAUTION', note: 'Uterotonic - antepartum use contraindicated (only postpartum).' },
+                { keywords: ['artemether', 'lumefantrine', 'artesunate', 'amodiaquine'], pregnancy: 'CAUTION', lactation: 'CAUTION', note: 'ACTs: preferred regimen and trimester varies - confirm against current STG malaria-in-pregnancy guidance.' },
+                { keywords: ['quinine'], pregnancy: 'CAUTION', lactation: 'CAUTION', note: 'Tanzania STG: first-line for malaria in 1st trimester specifically - confirm indication before flagging.' },
+            ];
+
+            // Age-based hard stops: keyword fragment -> minimum age in years, with reason
+            const AGE_RESTRICTIONS = [
+                { keywords: ['aspirin', 'acetylsalicylic'], minAgeYears: 12, reason: 'Reye syndrome risk in children under 12.' },
+                { keywords: ['doxycycline', 'tetracycline'], minAgeYears: 8, reason: 'Tooth discoloration / bone growth effects under 8 years.' },
+                { keywords: ['ciprofloxacin', 'levofloxacin', 'norfloxacin'], minAgeYears: 18, reason: 'Fluoroquinolones: growing cartilage risk - Tanzania STG restricts routine pediatric use; use only per specialist guidance.' },
+                { keywords: ['loperamide'], minAgeYears: 2, reason: 'Contraindicated in children under 2 years (respiratory depression risk).' },
+                { keywords: ['promethazine'], minAgeYears: 2, reason: 'Contraindicated under 2 years - risk of fatal respiratory depression.' },
+            ];
+
+            // Runs allergy / pregnancy / lactation / age checks for the given cart items against a selected patient.
+            // Returns an array of { type, severity: 'BLOCK'|'WARNING', drug, description }
+            const checkPatientSafety = (items, patient) => {
+                const warnings = [];
+                if (!patient) return warnings;
+
+                const allergyText = (patient.allergies || '').toLowerCase();
+                const allergyTerms = allergyText.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+
+                const age = patient.age !== undefined && patient.age !== '' ? Number(patient.age) : null;
+                const isPregnant = !!patient.pregnant;
+                const isLactating = !!patient.breastfeeding;
+
+                items.forEach(item => {
+                    const generic = (item.genericName || '').toLowerCase();
+                    const brand = (item.brandName || '').toLowerCase();
+                    const nameBlob = `${generic} ${brand}`;
+
+                    // Allergy check: does any patient allergy term map to a class that this drug belongs to,
+                    // or does the drug name itself directly contain a stated allergy term?
+                    allergyTerms.forEach(term => {
+                        if (!term) return;
+                        let matched = nameBlob.includes(term);
+                        if (!matched) {
+                            for (const [cls, members] of Object.entries(ALLERGY_CLASS_MAP)) {
+                                if (term.includes(cls) || cls.includes(term)) {
+                                    if (members.some(m => nameBlob.includes(m))) { matched = true; break; }
+                                }
+                            }
+                        }
+                        if (matched) {
+                            warnings.push({ type: 'ALLERGY', severity: 'BLOCK', drug: item.brandName, description: `${item.brandName}: client has a recorded ${term} allergy.` });
+                        }
+                    });
+
+                    // Pregnancy / lactation check
+                    if (isPregnant || isLactating) {
+                        PREGNANCY_LACTATION_DB.forEach(rule => {
+                            if (rule.keywords.some(k => nameBlob.includes(k))) {
+                                if (isPregnant && rule.pregnancy) {
+                                    warnings.push({ type: 'PREGNANCY', severity: rule.pregnancy === 'CONTRAINDICATED' ? 'BLOCK' : 'WARNING', drug: item.brandName, description: `${item.brandName}: ${rule.pregnancy === 'CONTRAINDICATED' ? 'contraindicated' : 'use with caution'} in pregnancy - ${rule.note}` });
+                                }
+                                if (isLactating && rule.lactation) {
+                                    warnings.push({ type: 'LACTATION', severity: rule.lactation === 'CONTRAINDICATED' ? 'BLOCK' : 'WARNING', drug: item.brandName, description: `${item.brandName}: ${rule.lactation === 'CONTRAINDICATED' ? 'contraindicated' : 'use with caution'} while breastfeeding - ${rule.note}` });
+                                }
+                            }
+                        });
+                    }
+
+                    // Age-based hard stop
+                    if (age !== null && !isNaN(age)) {
+                        AGE_RESTRICTIONS.forEach(rule => {
+                            if (rule.keywords.some(k => nameBlob.includes(k)) && age < rule.minAgeYears) {
+                                warnings.push({ type: 'AGE', severity: 'BLOCK', drug: item.brandName, description: `${item.brandName}: not recommended under ${rule.minAgeYears} years (client age ${age}) - ${rule.reason}` });
+                            }
+                        });
+                    }
+                });
+
+                return warnings;
+            };
+
             const checkDrugInteractions = (items) => {
                 const warnings = [];
                 const names = items.map(i => ({
@@ -4038,7 +4143,7 @@
                 const [viewHistory, setViewHistory] = useState([]);
                 const [user, setUser] = useState(null);
                 const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-                const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [], suppliers: [], insuranceClaims: [], auditLogs: [], returns: [], purchaseOrders: [], stockMovements: [], shifts: [], prescriptions: [] });
+                const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [], suppliers: [], insuranceClaims: [], auditLogs: [], returns: [], purchaseOrders: [], stockMovements: [], shifts: [], prescriptions: [], quotations: [], backups: [] });
                 const [cart, setCart] = useState([]);
                 const [heldCarts, setHeldCarts] = useState([]);
                 const [search, setSearch] = useState("");
@@ -4088,6 +4193,28 @@
                 const [showDoseCalc, setShowDoseCalc] = useState(false);
                 const [splitPayment, setSplitPayment] = useState({ cash: 0, mobile: 0, card: 0 });
                 const [showSplitPayment, setShowSplitPayment] = useState(false);
+
+                // ---- Quotation comparison ----
+                const [showQuotationModal, setShowQuotationModal] = useState(false);
+                const [quoteRequestItem, setQuoteRequestItem] = useState('');
+                const [quoteDraft, setQuoteDraft] = useState({ supplier: '', unitPrice: 0, leadTimeDays: '', moq: '', notes: '' });
+
+                // ---- Purchase order receiving / three-way invoice match ----
+                const [receivingPO, setReceivingPO] = useState(null);
+                const [receiveLines, setReceiveLines] = useState([]);
+                const [receiveInvoice, setReceiveInvoice] = useState({ deliveryNoteNumber: '', invoiceNumber: '', invoiceTotal: '' });
+
+                // ---- Patient safety checks (allergy / pregnancy / lactation / age) ----
+                const [patientSafetyWarnings, setPatientSafetyWarnings] = useState([]);
+                const [safetyOverrideConfirmed, setSafetyOverrideConfirmed] = useState(false);
+
+                // ---- Data retention & cloud backup settings ----
+                const [salesRetentionYears, setSalesRetentionYears] = useLocalStorage('apex_retention_years', 5);
+                const [autoBackupEnabled, setAutoBackupEnabled] = useLocalStorage('apex_auto_backup_enabled', true);
+                const [showRestorePointModal, setShowRestorePointModal] = useState(null);
+                const [restoreConfirmText, setRestoreConfirmText] = useState('');
+                const [isBackingUp, setIsBackingUp] = useState(false);
+                const [isRestoring, setIsRestoring] = useState(false);
 
                 const [reportPeriod, setReportPeriod] = useState('DAILY');
                 const [reportTab, setReportTab] = useState('SALES');
@@ -4236,7 +4363,7 @@
 
                 useEffect(() => {
                     if (typeof window.db === 'undefined' || !user) return;
-                    const collections = ["inventory", "sales", "patients", "users", "expenses", "medicalHistory", "suppliers", "insuranceClaims", "auditLogs", "returns", "purchaseOrders", "stockMovements", "shifts", "prescriptions"];
+                    const collections = ["inventory", "sales", "patients", "users", "expenses", "medicalHistory", "suppliers", "insuranceClaims", "auditLogs", "returns", "purchaseOrders", "stockMovements", "shifts", "prescriptions", "quotations", "backups"];
                     const unsubscribers = collections.map(col => 
                         window.db.collection(col).onSnapshot(
                             s => {
@@ -4369,20 +4496,114 @@
                 };
                 const removePoItem = (itemId) => setPoItems(prev => prev.filter(i => i.itemId !== itemId));
                 const closePurchaseOrderModal = () => { setShowPurchaseOrderModal(false); setPoItems([]); setPoDraft({ itemId: '', qty: 1, price: 0 }); };
-                const handleReceivePurchaseOrder = (po) => {
-                    if (po.status === 'RECEIVED') return;
-                    if (!confirm(`Receive PO ${po.poNumber}? This will add all ordered quantities into inventory stock.`)) return;
-                    (po.items || []).forEach(it => {
-                        const invItem = (it.itemId && data.inventory.find(i => i.id === it.itemId)) || data.inventory.find(i => (i.brandName || '').toLowerCase() === (it.name || '').toLowerCase());
-                        if (invItem) {
-                            safeUpdate('inventory', invItem.id, { stock: (Number(invItem.stock) || 0) + (Number(it.qty) || 0) });
-                            logStockMovement(invItem.id, invItem.brandName, 'PURCHASE_RECEIVED', Number(it.qty) || 0, `PO ${po.poNumber} received`, po.poNumber);
+
+                // ---- Quotation comparison (multiple supplier quotes for the same item) ----
+                const currentQuoteRequest = useMemo(() => (data.quotations || []).find(q => q.itemId === quoteRequestItem && q.status === 'OPEN'), [data.quotations, quoteRequestItem]);
+
+                const handleAddQuote = async () => {
+                    if (!quoteRequestItem) return toast("Select an item first", 'warning');
+                    if (!quoteDraft.supplier) return toast("Select a supplier", 'warning');
+                    if (!quoteDraft.unitPrice || Number(quoteDraft.unitPrice) <= 0) return toast("Enter a unit price", 'warning');
+                    const item = data.inventory.find(i => i.id === quoteRequestItem);
+                    const quoteEntry = { supplier: quoteDraft.supplier, unitPrice: Number(quoteDraft.unitPrice), leadTimeDays: quoteDraft.leadTimeDays ? Number(quoteDraft.leadTimeDays) : null, moq: quoteDraft.moq ? Number(quoteDraft.moq) : null, notes: quoteDraft.notes || '', quotedAt: new Date().toISOString(), quotedBy: user.fullName || user.email };
+                    if (currentQuoteRequest) {
+                        await safeUpdate('quotations', currentQuoteRequest.id, { quotes: [...(currentQuoteRequest.quotes || []), quoteEntry] });
+                    } else {
+                        await safeAdd('quotations', { itemId: quoteRequestItem, itemName: item?.brandName || '', quotes: [quoteEntry], status: 'OPEN', createdAt: new Date().toISOString(), createdBy: user.fullName || user.email, location });
+                    }
+                    setQuoteDraft({ supplier: '', unitPrice: 0, leadTimeDays: '', moq: '', notes: '' });
+                    logAudit('QUOTE_ADDED', { itemId: quoteRequestItem, supplier: quoteEntry.supplier, unitPrice: quoteEntry.unitPrice });
+                    toast("Quote added for comparison", 'success');
+                };
+
+                const handleAwardQuote = (request, quote) => {
+                    if (!confirm(`Award this quote (${quote.supplier} @ ${Number(quote.unitPrice).toLocaleString()} ${currency}) and start a purchase order for it?`)) return;
+                    safeUpdate('quotations', request.id, { status: 'AWARDED', awardedSupplier: quote.supplier, awardedUnitPrice: quote.unitPrice, awardedAt: new Date().toISOString(), awardedBy: user.fullName || user.email });
+                    setPoItems([{ itemId: request.itemId, name: request.itemName, qty: quote.moq || 1, price: quote.unitPrice }]);
+                    setShowQuotationModal(false);
+                    setShowPurchaseOrderModal(true);
+                    toast(`Quote awarded to ${quote.supplier} - select them as the supplier below to finish the order`, 'info');
+                    logAudit('QUOTE_AWARDED', { itemId: request.itemId, supplier: quote.supplier, unitPrice: quote.unitPrice });
+                };
+
+                const handleDeleteQuoteRequest = (request) => {
+                    if (!requireAdminConfirm(`Delete the quotation comparison for ${request.itemName}?`)) return;
+                    safeDelete('quotations', request.id);
+                    toast("Quotation request removed", 'success');
+                };
+
+                // Average actual lead time (PO created -> received) per supplier, from completed purchase orders
+                const supplierLeadTimes = useMemo(() => {
+                    const stats = {};
+                    (data.purchaseOrders || []).forEach(po => {
+                        if (po.status === 'RECEIVED' && po.actualLeadTimeDays != null && po.supplier) {
+                            if (!stats[po.supplier]) stats[po.supplier] = { totalDays: 0, count: 0 };
+                            stats[po.supplier].totalDays += Number(po.actualLeadTimeDays);
+                            stats[po.supplier].count += 1;
                         }
                     });
-                    safeUpdate('purchaseOrders', po.id, { status: 'RECEIVED', receivedAt: new Date().toISOString(), receivedBy: user.fullName || user.email });
-                    logAudit('RECEIVE_PURCHASE_ORDER', { poId: po.id, poNumber: po.poNumber, itemCount: (po.items || []).length });
-                    toast(`PO ${po.poNumber} received — inventory updated`, 'success');
+                    const out = {};
+                    Object.entries(stats).forEach(([supplier, s]) => { out[supplier] = { avgDays: Math.round((s.totalDays / s.count) * 10) / 10, count: s.count }; });
+                    return out;
+                }, [data.purchaseOrders]);
+
+                // ---- PO receiving with three-way match (PO vs delivery note vs supplier invoice) ----
+                const handleReceivePurchaseOrder = (po) => {
+                    if (po.status === 'RECEIVED') return;
+                    setReceivingPO(po);
+                    setReceiveLines((po.items || []).map(it => ({ itemId: it.itemId, name: it.name, orderedQty: Number(it.qty) || 0, orderedPrice: Number(it.price) || 0, receivedQty: Number(it.qty) || 0, invoicedPrice: Number(it.price) || 0 })));
+                    setReceiveInvoice({ deliveryNoteNumber: '', invoiceNumber: '', invoiceTotal: '' });
                 };
+                const updateReceiveLine = (itemId, field, value) => {
+                    setReceiveLines(prev => prev.map(l => l.itemId === itemId ? { ...l, [field]: Number(value) || 0 } : l));
+                };
+                const closeReceivePOModal = () => { setReceivingPO(null); setReceiveLines([]); setReceiveInvoice({ deliveryNoteNumber: '', invoiceNumber: '', invoiceTotal: '' }); };
+
+                // Completes goods receipt: three-way match between the PO, the delivered quantities (delivery
+                // note), and the supplier invoice; only the ACTUALLY delivered quantities are added to stock,
+                // and any qty/price mismatch is flagged and stored on the PO record for the Reports view.
+                const finalizeReceivePurchaseOrder = async () => {
+                    if (!receivingPO) return;
+                    const po = receivingPO;
+                    const discrepancies = [];
+                    receiveLines.forEach(l => {
+                        if (l.receivedQty !== l.orderedQty) discrepancies.push(`${l.name}: ordered ${l.orderedQty}, delivered ${l.receivedQty}`);
+                        if (l.invoicedPrice !== l.orderedPrice) discrepancies.push(`${l.name}: PO price ${l.orderedPrice.toLocaleString()}, invoiced price ${l.invoicedPrice.toLocaleString()}`);
+                    });
+                    const invoiceTotal = Number(receiveInvoice.invoiceTotal) || 0;
+                    const computedTotal = receiveLines.reduce((s, l) => s + (l.receivedQty * l.invoicedPrice), 0);
+                    if (invoiceTotal > 0 && Math.abs(invoiceTotal - computedTotal) > 0.5) discrepancies.push(`Invoice total ${invoiceTotal.toLocaleString()} does not match line total ${computedTotal.toLocaleString()}`);
+
+                    for (const l of receiveLines) {
+                        if (l.receivedQty <= 0) continue;
+                        const invItem = (l.itemId && data.inventory.find(i => i.id === l.itemId)) || data.inventory.find(i => (i.brandName || '').toLowerCase() === (l.name || '').toLowerCase());
+                        if (invItem) {
+                            await safeUpdate('inventory', invItem.id, { stock: firebase.firestore.FieldValue.increment(l.receivedQty) });
+                            logStockMovement(invItem.id, invItem.brandName, 'PURCHASE_RECEIVED', l.receivedQty, `PO ${po.poNumber} received`, po.poNumber);
+                        }
+                    }
+
+                    const receivedAt = new Date().toISOString();
+                    const actualLeadTimeDays = po.createdAt ? Math.max(0, Math.round((new Date(receivedAt) - new Date(po.createdAt)) / (1000 * 60 * 60 * 24))) : null;
+
+                    await safeUpdate('purchaseOrders', po.id, {
+                        status: 'RECEIVED', receivedAt, receivedBy: user.fullName || user.email,
+                        actualLeadTimeDays,
+                        deliveryNoteNumber: receiveInvoice.deliveryNoteNumber || null,
+                        invoiceMatch: {
+                            invoiceNumber: receiveInvoice.invoiceNumber || null,
+                            invoiceTotal: invoiceTotal || null,
+                            computedTotal,
+                            status: discrepancies.length > 0 ? 'DISCREPANCY' : 'MATCHED',
+                            discrepancies,
+                            lines: receiveLines,
+                        }
+                    });
+                    logAudit('RECEIVE_PURCHASE_ORDER', { poId: po.id, poNumber: po.poNumber, itemCount: receiveLines.length, matchStatus: discrepancies.length > 0 ? 'DISCREPANCY' : 'MATCHED' });
+                    toast(discrepancies.length > 0 ? `PO ${po.poNumber} received with ${discrepancies.length} discrepancy(ies) - review invoice match` : `PO ${po.poNumber} received - invoice matched cleanly`, discrepancies.length > 0 ? 'warning' : 'success');
+                    closeReceivePOModal();
+                };
+
                 const handleDeleteAllFinance = () => {
                     if (!hasAccess('MANAGER')) return toast("Manager access required", 'error');
                     if(!requireAdminConfirm('DELETE ALL sales and expenses. This CANNOT be undone!')) return;
@@ -4418,6 +4639,37 @@
                     data.purchaseOrders.forEach(po => safeDelete('purchaseOrders', po.id));
                     toast('Supplier history cleared', 'success'); logAudit('WIPE_SUPPLIER_HISTORY', { count: data.purchaseOrders.length });
                 };
+
+                // Data retention purge: permanently removes transaction records older than the configured
+                // retention window (sales, expenses, returns, received purchase orders, stock movements).
+                // Audit logs are never purged here - they're kept as a permanent compliance trail.
+                const getRetentionCutoff = () => { const d = new Date(); d.setFullYear(d.getFullYear() - Number(salesRetentionYears || 5)); return d; };
+                const recordsDueForPurge = useMemo(() => {
+                    const cutoff = getRetentionCutoff();
+                    const olderThan = (arr, field) => (arr || []).filter(r => r[field] && new Date(r[field]) < cutoff);
+                    return {
+                        sales: olderThan(data.sales, 'timestamp'),
+                        expenses: olderThan(data.expenses, 'timestamp'),
+                        returns: olderThan(data.returns, 'timestamp'),
+                        purchaseOrders: olderThan(data.purchaseOrders, 'createdAt'),
+                        stockMovements: olderThan(data.stockMovements, 'timestamp'),
+                    };
+                }, [data.sales, data.expenses, data.returns, data.purchaseOrders, data.stockMovements, salesRetentionYears]);
+                const handlePurgeOldRecords = () => {
+                    if (!hasAccess('MANAGER')) return toast("Manager access required", 'error');
+                    const r = recordsDueForPurge;
+                    const total = r.sales.length + r.expenses.length + r.returns.length + r.purchaseOrders.length + r.stockMovements.length;
+                    if (total === 0) return toast(`No records older than ${salesRetentionYears} years to purge`, 'info');
+                    if (!requireAdminConfirm(`PERMANENTLY DELETE ${total} record(s) older than ${salesRetentionYears} years (${r.sales.length} sales, ${r.expenses.length} expenses, ${r.returns.length} returns, ${r.purchaseOrders.length} purchase orders, ${r.stockMovements.length} stock movements). Download a backup first if you haven't already - this cannot be undone!`)) return;
+                    r.sales.forEach(x => safeDelete('sales', x.id));
+                    r.expenses.forEach(x => safeDelete('expenses', x.id));
+                    r.returns.forEach(x => safeDelete('returns', x.id));
+                    r.purchaseOrders.forEach(x => safeDelete('purchaseOrders', x.id));
+                    r.stockMovements.forEach(x => safeDelete('stockMovements', x.id));
+                    toast(`Purged ${total} record(s) older than ${salesRetentionYears} years`, 'success');
+                    logAudit('DATA_RETENTION_PURGE', { total, retentionYears: salesRetentionYears });
+                };
+
                 const handleWhatsAppReminder = (pt) => {
                     if(!pt.phone) return toast("No phone number recorded.", 'warning');
                     const msg = `Hello ${pt.name},\n\nThis is a reminder from ${pharmacyName} Pharmacy. You have an outstanding balance of ${pt.creditBalance.toLocaleString()} ${currency}.\n\nPlease arrange payment at your earliest convenience. Thank you!`;
@@ -4501,6 +4753,14 @@
                     } else { setDrugInteractions([]); }
                 }, [cart]);
 
+                useEffect(() => {
+                    const patient = checkoutPatient ? data.patients.find(p => p.id === checkoutPatient) : null;
+                    const warnings = cart.length > 0 ? checkPatientSafety(cart, patient) : [];
+                    setPatientSafetyWarnings(warnings);
+                    setSafetyOverrideConfirmed(false);
+                    if (warnings.some(w => w.severity === 'BLOCK')) toast(`Patient safety check: sale blocked for ${patient?.name || 'this client'} - see checkout for details.`, 'error');
+                }, [cart, checkoutPatient, data.patients]);
+
                 const handleHoldCart = () => {
                     if (cart.length === 0) return toast("Cart is empty.", 'warning');
                     const refName = prompt("Enter reference name for this sale:");
@@ -4538,10 +4798,53 @@
                 const getCartTotalWithTax = () => getCartTotal() + getCartTax();
                 const getFinalTotal = () => Math.max(0, getCartTotalWithTax() - checkoutDiscount);
 
+                // Atomically checks and decrements stock for every cart line inside a single Firestore transaction.
+                // This closes the race condition where two cashiers could both sell the last unit of an item at
+                // the same time: the transaction reads current stock for every line, and if ANY line no longer has
+                // enough stock (because someone else just sold it), the WHOLE transaction aborts and nothing is
+                // written - the sale is never double-booked. A `version` counter is bumped on every successful
+                // write, giving each inventory record simple optimistic-locking metadata for future conflict checks.
+                const decrementCartStockAtomic = async (cartItems) => {
+                    const db = safeDb();
+                    if (!db) return { ok: false, error: 'No database connection' };
+                    try {
+                        await db.runTransaction(async (tx) => {
+                            const refs = cartItems.map(i => db.collection('inventory').doc(i.id));
+                            const snaps = await Promise.all(refs.map(ref => tx.get(ref)));
+                            const shortages = [];
+                            const writes = [];
+                            snaps.forEach((snap, idx) => {
+                                const wanted = Number(cartItems[idx].qty) || 0;
+                                if (!snap.exists) { shortages.push({ id: cartItems[idx].id, name: cartItems[idx].brandName, reason: 'no_longer_exists' }); return; }
+                                const cur = snap.data();
+                                const currentStock = Number(cur.stock) || 0;
+                                if (currentStock < wanted) { shortages.push({ id: cartItems[idx].id, name: cartItems[idx].brandName, available: currentStock, wanted }); return; }
+                                writes.push({ ref: refs[idx], newStock: currentStock - wanted, newVersion: (Number(cur.version) || 0) + 1 });
+                            });
+                            if (shortages.length > 0) { const err = new Error('INSUFFICIENT_STOCK'); err.shortages = shortages; throw err; }
+                            writes.forEach(w => tx.update(w.ref, { stock: w.newStock, version: w.newVersion }));
+                        });
+                        return { ok: true };
+                    } catch (e) {
+                        if (e.message === 'INSUFFICIENT_STOCK') return { ok: false, shortages: e.shortages };
+                        console.error('Stock transaction failed:', e);
+                        return { ok: false, error: e.message };
+                    }
+                };
+
                 const finalizeSale = async (method) => {
                     const lockedNow = cart.filter(i => { const inv = data.inventory.find(x => x.id === i.id); return inv && inv.expiryDate && isItemExpired(inv.expiryDate); });
                     if (lockedNow.length > 0) { setCart(prev => prev.filter(i => !lockedNow.some(l => l.id === i.id))); return toast(`Sale blocked: ${lockedNow.map(i => i.brandName).join(', ')} expired and locked. Removed from cart.`, 'error'); }
                     if (method === 'DEBT' && !checkoutPatient) return toast("Select a client for credit!", 'warning');
+
+                    const blockingWarnings = patientSafetyWarnings.filter(w => w.severity === 'BLOCK');
+                    if (blockingWarnings.length > 0 && !safetyOverrideConfirmed) {
+                        const ok = requireAdminConfirm(`Patient safety block(s) detected:\n${blockingWarnings.map(w => '- ' + w.description).join('\n')}\n\nOverride and proceed with this sale anyway?`);
+                        if (!ok) return toast("Sale not completed - safety block not cleared.", 'warning');
+                        setSafetyOverrideConfirmed(true);
+                        logAudit('PATIENT_SAFETY_OVERRIDE', { patientId: checkoutPatient || null, warnings: blockingWarnings.map(w => w.description) });
+                    }
+
                     const subTotal = getCartTotal();
                     const taxAmount = getCartTax();
                     const totalCost = cart.reduce((s,i) => s + ((i.costPrice || 0) * i.qty), 0);
@@ -4557,10 +4860,26 @@
                         amountTenderedTotal = amountTendered; changeGiven = amountTendered - totalDue;
                     } else { amountTenderedTotal = totalDue; }
 
-                    const saleData = { total: totalDue, subTotal, tax: taxAmount, taxRate, discount: checkoutDiscount, profit: totalDue - totalCost - taxAmount, amountTendered: amountTenderedTotal, changeGiven, timestamp: new Date().toISOString(), soldBy: user.fullName || user.email, method, items: cart, patientId: checkoutPatient || null, location, drugInteractions: drugInteractions.length > 0 ? drugInteractions : null, currency, splitPayment: method === 'SPLIT' ? splitPayment : null };
-
                     const currentCart = [...cart];
-                    setCart([]); setCheckoutModal(false); setDrugInteractions([]);
+
+                    // Reserve stock FIRST, atomically, before the sale is ever recorded. If another cashier
+                    // beat us to the last unit(s) of something in this cart, the whole transaction aborts here
+                    // and nothing is charged or written - the cashier is told exactly what ran out.
+                    const stockResult = await decrementCartStockAtomic(currentCart);
+                    if (!stockResult.ok) {
+                        if (stockResult.shortages) {
+                            const names = stockResult.shortages.map(s => s.name).join(', ');
+                            setCart(prev => prev.filter(i => !stockResult.shortages.some(s => s.id === i.id)));
+                            toast(`Sale blocked: ${names} sold out just now (stock changed). Removed from cart - please recheck and retry.`, 'error');
+                        } else {
+                            toast(`Sale could not be completed: ${stockResult.error || 'stock system unavailable'}. Nothing was charged.`, 'error');
+                        }
+                        return;
+                    }
+
+                    const saleData = { total: totalDue, subTotal, tax: taxAmount, taxRate, discount: checkoutDiscount, profit: totalDue - totalCost - taxAmount, amountTendered: amountTenderedTotal, changeGiven, timestamp: new Date().toISOString(), soldBy: user.fullName || user.email, method, items: cart, patientId: checkoutPatient || null, location, drugInteractions: drugInteractions.length > 0 ? drugInteractions : null, patientSafetyOverride: blockingWarnings.length > 0 ? blockingWarnings.map(w => w.description) : null, currency, splitPayment: method === 'SPLIT' ? splitPayment : null };
+
+                    setCart([]); setCheckoutModal(false); setDrugInteractions([]); setPatientSafetyWarnings([]); setSafetyOverrideConfirmed(false);
 
                     await safeAdd('sales', saleData);
                     if (method === 'DEBT' && checkoutPatient) {
@@ -4578,9 +4897,8 @@
                     for (const i of currentCart) {
                         const invItem = data.inventory.find(inv => inv.id === i.id);
                         if (invItem) {
-                            const newStock = Math.max(0, (invItem.stock || 0) - i.qty);
-                            await safeUpdate('inventory', i.id, { stock: newStock });
                             logStockMovement(i.id, i.brandName, 'SALE', -i.qty, 'POS Sale', saleData.timestamp);
+                            const newStock = Math.max(0, (invItem.stock || 0) - i.qty);
                             if (i.reorderPoint && newStock <= i.reorderPoint) toast(`${i.brandName} below reorder point (${i.reorderPoint})!`, 'warning');
                         }
                     }
@@ -4590,6 +4908,7 @@
                     logAudit('SALE_COMPLETED', { total: totalDue, method, items: currentCart.length });
                     toast(`Sale completed: ${totalDue.toLocaleString()} ${currency}`, 'success');
                 };
+
 
                 const handleReturn = (saleId, itemId, returnQty, reason) => {
                     const sale = data.sales.find(s => s.id === saleId);
@@ -4742,6 +5061,90 @@
                     };
                     reader.readAsText(file);
                 };
+
+                // ---- Automated cloud backup + point-in-time recovery ----
+                // Collections included in every cloud snapshot / restore point. Excludes `users` (tied to Firebase
+                // Auth accounts - blindly restoring these could break logins) and `auditLogs`/`backups` (kept as a
+                // permanent, append-only trail rather than something to roll back).
+                const CLOUD_BACKUP_COLLECTIONS = ['inventory', 'patients', 'suppliers', 'sales', 'expenses', 'medicalHistory', 'insuranceClaims', 'returns', 'purchaseOrders', 'stockMovements', 'shifts', 'prescriptions', 'quotations'];
+
+                const performCloudBackup = async (triggeredBy) => {
+                    if (!window.cloudStorage) { toast("Cloud storage isn't available right now - check your connection and try again.", 'error'); return false; }
+                    setIsBackingUp(true);
+                    try {
+                        const snapshot = {};
+                        CLOUD_BACKUP_COLLECTIONS.forEach(col => { snapshot[col] = data[col] || []; });
+                        const timestamp = new Date().toISOString();
+                        const payload = JSON.stringify({ version: '1.0', createdAt: timestamp, collections: CLOUD_BACKUP_COLLECTIONS, data: snapshot });
+                        const path = `backups/${timestamp.replace(/[:.]/g, '-')}.json`;
+                        await window.cloudStorage.ref(path).putString(payload, 'raw', { contentType: 'application/json' });
+                        const counts = {}; CLOUD_BACKUP_COLLECTIONS.forEach(col => { counts[col] = (snapshot[col] || []).length; });
+                        await safeAdd('backups', { timestamp, path, triggeredBy, counts, approxSizeBytes: payload.length, createdBy: user?.fullName || user?.email || 'system', location });
+                        logAudit('CLOUD_BACKUP_CREATED', { triggeredBy, path, sizeBytes: payload.length });
+                        toast(`Cloud backup complete (${triggeredBy === 'AUTO' ? 'automatic' : 'manual'})`, 'success');
+                        return true;
+                    } catch (err) {
+                        console.error('Cloud backup failed:', err);
+                        toast(`Cloud backup failed: ${err.message}`, 'error');
+                        return false;
+                    } finally {
+                        setIsBackingUp(false);
+                    }
+                };
+
+                // Restores every APEX collection to exactly the state captured in the chosen backup: current
+                // documents are deleted and replaced with the snapshot's documents (same IDs), batched to stay
+                // under Firestore's 500-writes-per-batch limit. This is destructive and requires typed confirmation
+                // in the UI before it's called.
+                const restoreFromCloudBackup = async (backupMeta) => {
+                    if (!hasAccess('MANAGER')) return toast("Manager access required", 'error');
+                    if (!window.cloudStorage) return toast("Cloud storage isn't available right now.", 'error');
+                    const db = safeDb();
+                    if (!db) return toast("No database connection.", 'error');
+                    setIsRestoring(true);
+                    try {
+                        const url = await window.cloudStorage.ref(backupMeta.path).getDownloadURL();
+                        const res = await fetch(url);
+                        if (!res.ok) throw new Error('Could not download the backup file');
+                        const snapshot = await res.json();
+
+                        let batch = db.batch();
+                        let opCount = 0;
+                        const commitIfFull = async () => { if (opCount >= 400) { await batch.commit(); batch = db.batch(); opCount = 0; } };
+
+                        for (const col of CLOUD_BACKUP_COLLECTIONS) {
+                            for (const d of (data[col] || [])) { batch.delete(db.collection(col).doc(d.id)); opCount++; await commitIfFull(); }
+                        }
+                        for (const col of CLOUD_BACKUP_COLLECTIONS) {
+                            for (const d of ((snapshot.data && snapshot.data[col]) || [])) { const { id, ...rest } = d; batch.set(db.collection(col).doc(id), rest); opCount++; await commitIfFull(); }
+                        }
+                        if (opCount > 0) await batch.commit();
+
+                        logAudit('RESTORE_FROM_BACKUP', { path: backupMeta.path, timestamp: backupMeta.timestamp });
+                        toast(`Restored to the backup from ${new Date(backupMeta.timestamp).toLocaleString()}`, 'success');
+                        setShowRestorePointModal(null); setRestoreConfirmText('');
+                        return true;
+                    } catch (err) {
+                        console.error('Restore failed:', err);
+                        toast(`Restore failed: ${err.message}`, 'error');
+                        return false;
+                    } finally {
+                        setIsRestoring(false);
+                    }
+                };
+
+                const autoBackupTriggeredRef = useRef(false);
+                useEffect(() => {
+                    if (!user || !autoBackupEnabled) return;
+                    const t = setTimeout(() => {
+                        if (autoBackupTriggeredRef.current) return;
+                        const lastBackup = [...(data.backups || [])].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+                        const dueForBackup = !lastBackup || (Date.now() - new Date(lastBackup.timestamp).getTime()) > 24 * 60 * 60 * 1000;
+                        if (dueForBackup) { autoBackupTriggeredRef.current = true; performCloudBackup('AUTO'); }
+                    }, 4000);
+                    return () => clearTimeout(t);
+                }, [user, autoBackupEnabled, data.backups]);
+
                 const openShift = (openingFloat) => {
                     safeAdd('shifts', { userId: user.id, userName: user.fullName || user.email, location, openedAt: new Date().toISOString(), openingFloat: Number(openingFloat), status: 'OPEN', totalSales: 0, transactionCount: 0 }).then(docRef => {
                         setCurrentShift({ id: docRef.id, openingFloat: Number(openingFloat), status: 'OPEN', totalSales: 0 });
@@ -4895,6 +5298,31 @@
                     filteredWastage.forEach(w => { const code = totals.hasOwnProperty(w.reason) ? w.reason : 'OTHER'; totals[code] += Math.abs(Number(w.quantity) || 0); });
                     return totals;
                 }, [filteredWastage]);
+
+                // Monthly consumption by item, over the last 6 months - for quantification/forecasting of future orders.
+                const monthlyConsumption = useMemo(() => {
+                    const now = new Date();
+                    const monthKeys = [];
+                    for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); monthKeys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
+                    const byItem = {};
+                    (data.sales || []).forEach(s => {
+                        const monthKey = (s.timestamp || '').slice(0, 7);
+                        if (!monthKeys.includes(monthKey)) return;
+                        (s.items || []).forEach(it => {
+                            if (!byItem[it.id]) byItem[it.id] = { name: it.brandName, months: {} };
+                            byItem[it.id].months[monthKey] = (byItem[it.id].months[monthKey] || 0) + (Number(it.qty) || 0);
+                        });
+                    });
+                    let rows = Object.values(byItem).map(v => {
+                        const monthly = monthKeys.map(mk => v.months[mk] || 0);
+                        const total = monthly.reduce((a, b) => a + b, 0);
+                        const thisMonth = monthly[monthly.length - 1] || 0;
+                        const lastMonth = monthly[monthly.length - 2] || 0;
+                        return { name: v.name, monthly, total, avgPerMonth: Math.round((total / monthKeys.length) * 10) / 10, thisMonth, lastMonth };
+                    }).sort((a, b) => b.total - a.total);
+                    if (reportSearch) { const term = reportSearch.toLowerCase(); rows = rows.filter(r => r.name.toLowerCase().includes(term)); }
+                    return { monthKeys, rows };
+                }, [data.sales, reportSearch]);
 
                 // Finance chart
                 useEffect(() => {
@@ -5156,7 +5584,7 @@
                                     <div className="mt-6 border-t border-slate-800 pt-4">
                                         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Existing Suppliers</h4>
                                         <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar">
-                                            {data.suppliers.map(s => <div key={s.id} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center"><div><p className="text-white font-bold text-xs">{s.name}</p><p className="text-[10px] text-slate-500">{s.contact}</p></div><div className="flex gap-3 items-center"><button onClick={() => { setEditing({type: 'SUPPLIER', item: s}); }} className="text-purple-400 hover:text-purple-300 text-xs font-bold">Edit</button><button onClick={() => handleDeleteSupplier(s)} className="text-rose-500 hover:text-rose-400 text-xs font-black">Del</button></div></div>)}
+                                            {data.suppliers.map(s => <div key={s.id} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center"><div><p className="text-white font-bold text-xs">{s.name}</p><p className="text-[10px] text-slate-500">{s.contact}</p>{supplierLeadTimes[s.name] && <p className="text-[10px] text-cyan-400 font-bold mt-0.5">Avg lead time: {supplierLeadTimes[s.name].avgDays}d ({supplierLeadTimes[s.name].count} order{supplierLeadTimes[s.name].count === 1 ? '' : 's'})</p>}</div><div className="flex gap-3 items-center"><button onClick={() => { setEditing({type: 'SUPPLIER', item: s}); }} className="text-purple-400 hover:text-purple-300 text-xs font-bold">Edit</button><button onClick={() => handleDeleteSupplier(s)} className="text-rose-500 hover:text-rose-400 text-xs font-black">Del</button></div></div>)}
                                             {data.suppliers.length === 0 && <p className="text-center text-slate-500 text-xs">No suppliers yet</p>}
                                         </div>
                                     </div>
@@ -5384,19 +5812,160 @@
                             </div>
                         )}
 
+                        {/* Quotation Comparison Modal */}
+                        {showQuotationModal && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowQuotationModal(false))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
+                                    <h3 className="text-xl font-black text-fuchsia-500 uppercase mb-2 text-center">Quotation Comparison</h3>
+                                    <p className="text-[10px] text-slate-500 text-center mb-6">Collect multiple supplier quotes for the same item, compare price/lead time/MOQ side by side, then award one to start a purchase order.</p>
+
+                                    <select value={quoteRequestItem} onChange={(e) => setQuoteRequestItem(e.target.value)} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-fuchsia-500 input-focus mb-4">
+                                        <option value="">Select item to compare quotes for *</option>
+                                        {data.inventory.slice().sort((a,b) => (a.brandName || '').localeCompare(b.brandName || '')).map(i => <option key={i.id} value={i.id}>{i.brandName}</option>)}
+                                    </select>
+
+                                    {quoteRequestItem && (
+                                        <>
+                                            <div className="bg-black/30 border border-slate-800 rounded-2xl p-4 space-y-3 mb-4">
+                                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Add a Supplier Quote</p>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <select value={quoteDraft.supplier} onChange={(e) => setQuoteDraft({...quoteDraft, supplier: e.target.value})} className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-fuchsia-500 input-focus">
+                                                        <option value="">Supplier *</option>
+                                                        {data.suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                                    </select>
+                                                    <input type="number" min="0" step="0.01" value={quoteDraft.unitPrice} onChange={(e) => setQuoteDraft({...quoteDraft, unitPrice: e.target.value})} placeholder="Unit Price *" className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-fuchsia-500 input-focus" />
+                                                    <input type="number" min="0" value={quoteDraft.leadTimeDays} onChange={(e) => setQuoteDraft({...quoteDraft, leadTimeDays: e.target.value})} placeholder="Lead Time (days)" className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-fuchsia-500 input-focus" />
+                                                    <input type="number" min="0" value={quoteDraft.moq} onChange={(e) => setQuoteDraft({...quoteDraft, moq: e.target.value})} placeholder="MOQ (min order qty)" className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-fuchsia-500 input-focus" />
+                                                </div>
+                                                <input value={quoteDraft.notes} onChange={(e) => setQuoteDraft({...quoteDraft, notes: e.target.value})} placeholder="Notes (payment terms, validity, etc.)" className="w-full p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-fuchsia-500 input-focus" />
+                                                <button onClick={handleAddQuote} className="w-full bg-fuchsia-600 hover:bg-fuchsia-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Add Quote</button>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Quotes Received {currentQuoteRequest ? `(${(currentQuoteRequest.quotes || []).length})` : '(0)'}</p>
+                                                {currentQuoteRequest && (currentQuoteRequest.quotes || []).length > 0 ? (() => {
+                                                    const quotes = currentQuoteRequest.quotes || [];
+                                                    const bestPrice = Math.min(...quotes.map(q => q.unitPrice));
+                                                    const leadTimes = quotes.filter(q => q.leadTimeDays != null).map(q => q.leadTimeDays);
+                                                    const bestLead = leadTimes.length > 0 ? Math.min(...leadTimes) : null;
+                                                    return quotes.map((q, idx) => (
+                                                        <div key={idx} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-2">
+                                                            <div className="flex-1">
+                                                                <p className="text-white font-bold text-xs">{q.supplier}</p>
+                                                                <p className="text-[10px] text-slate-500">
+                                                                    <span className={q.unitPrice === bestPrice ? 'text-emerald-400 font-bold' : ''}>{Number(q.unitPrice).toLocaleString()} {currency}</span>
+                                                                    {q.leadTimeDays != null && <> · <span className={q.leadTimeDays === bestLead ? 'text-emerald-400 font-bold' : ''}>{q.leadTimeDays}d lead</span></>}
+                                                                    {q.moq != null && <> · MOQ {q.moq}</>}
+                                                                </p>
+                                                                {q.notes && <p className="text-[10px] text-slate-600 italic mt-0.5">{q.notes}</p>}
+                                                            </div>
+                                                            {currentQuoteRequest.status === 'OPEN' ? (
+                                                                <button onClick={() => handleAwardQuote(currentQuoteRequest, q)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap">Award &amp; Create PO</button>
+                                                            ) : currentQuoteRequest.awardedSupplier === q.supplier && (
+                                                                <span className="text-emerald-400 font-black text-[9px] uppercase">Awarded</span>
+                                                            )}
+                                                        </div>
+                                                    ));
+                                                })() : <p className="text-center text-slate-500 text-xs py-4">No quotes yet for this item - add one above.</p>}
+                                                {currentQuoteRequest && hasAccess('MANAGER') && <button onClick={() => handleDeleteQuoteRequest(currentQuoteRequest)} className="w-full mt-2 text-rose-500 hover:text-rose-400 font-bold text-[10px] uppercase">Delete this comparison</button>}
+                                            </div>
+                                        </>
+                                    )}
+                                    <button onClick={() => { setShowQuotationModal(false); setQuoteRequestItem(''); }} className="mt-6 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* PO Receiving / Three-Way Invoice Match Modal */}
+                        {receivingPO && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, closeReceivePOModal)}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
+                                    <h3 className="text-xl font-black text-emerald-500 uppercase mb-1 text-center">Receive PO {receivingPO.poNumber}</h3>
+                                    <p className="text-[10px] text-slate-500 text-center mb-6">Confirm what was actually delivered and invoiced. Only delivered quantities are added to stock - mismatches with the PO are flagged for review (three-way match: PO vs delivery note vs invoice).</p>
+
+                                    <div className="space-y-2 mb-4">
+                                        {receiveLines.map(l => {
+                                            const qtyMismatch = l.receivedQty !== l.orderedQty;
+                                            const priceMismatch = l.invoicedPrice !== l.orderedPrice;
+                                            return (
+                                                <div key={l.itemId} className={`p-3 rounded-xl border ${qtyMismatch || priceMismatch ? 'border-amber-600 bg-amber-950/20' : 'border-slate-800 bg-black'}`}>
+                                                    <p className="text-white font-bold text-xs mb-2">{l.name} <span className="text-slate-500 font-normal">(ordered {l.orderedQty} @ {l.orderedPrice.toLocaleString()} {currency})</span></p>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className="text-[9px] font-bold text-slate-500 uppercase">Qty Received</label>
+                                                            <input type="number" min="0" value={l.receivedQty} onChange={(e) => updateReceiveLine(l.itemId, 'receivedQty', e.target.value)} className={`w-full p-2 bg-slate-800 rounded-lg text-white font-bold text-xs outline-none border ${qtyMismatch ? 'border-amber-600' : 'border-slate-700'}`} />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[9px] font-bold text-slate-500 uppercase">Invoiced Unit Price</label>
+                                                            <input type="number" min="0" step="0.01" value={l.invoicedPrice} onChange={(e) => updateReceiveLine(l.itemId, 'invoicedPrice', e.target.value)} className={`w-full p-2 bg-slate-800 rounded-lg text-white font-bold text-xs outline-none border ${priceMismatch ? 'border-amber-600' : 'border-slate-700'}`} />
+                                                        </div>
+                                                    </div>
+                                                    {qtyMismatch && <p className="text-[9px] font-bold text-amber-400 mt-1 uppercase">Qty differs from PO</p>}
+                                                    {priceMismatch && <p className="text-[9px] font-bold text-amber-400 mt-1 uppercase">Price differs from PO</p>}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <div className="bg-black/30 border border-slate-800 rounded-2xl p-4 space-y-2 mb-4">
+                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Delivery Note &amp; Supplier Invoice</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input value={receiveInvoice.deliveryNoteNumber} onChange={(e) => setReceiveInvoice({...receiveInvoice, deliveryNoteNumber: e.target.value})} placeholder="Delivery Note #" className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
+                                            <input value={receiveInvoice.invoiceNumber} onChange={(e) => setReceiveInvoice({...receiveInvoice, invoiceNumber: e.target.value})} placeholder="Supplier Invoice #" className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
+                                        </div>
+                                        <input type="number" min="0" step="0.01" value={receiveInvoice.invoiceTotal} onChange={(e) => setReceiveInvoice({...receiveInvoice, invoiceTotal: e.target.value})} placeholder="Supplier Invoice Total (optional - checked against line totals)" className="w-full p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
+                                        <div className="flex justify-between text-xs font-bold text-slate-400 pt-1"><span>Computed line total:</span><span className="text-emerald-400">{receiveLines.reduce((s,l) => s + (l.receivedQty * l.invoicedPrice), 0).toLocaleString()} {currency}</span></div>
+                                    </div>
+
+                                    <button onClick={finalizeReceivePurchaseOrder} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Confirm Receipt</button>
+                                    <button onClick={closeReceivePOModal} className="mt-3 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Cancel</button>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Backup/Restore Modal */}
-                        {showBackupModal && (
+                        {showBackupModal && (() => {
+                            const sortedBackups = [...(data.backups || [])].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                            const lastBackup = sortedBackups[0];
+                            return (
                             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowBackupModal(false))}>
-                                <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
-                                    <h3 className="text-xl font-black text-emerald-500 uppercase mb-6 text-center">Data Backup</h3>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-lg p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
+                                    <h3 className="text-xl font-black text-emerald-500 uppercase mb-6 text-center">Data Backup &amp; Restore</h3>
                                     <div className="space-y-4">
                                         <div className="bg-black p-4 rounded-2xl border border-slate-800">
-                                            <p className="text-white font-bold text-sm mb-2">Export Backup</p>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <p className="text-white font-bold text-sm">Cloud Backup</p>
+                                                <span className={`text-[9px] font-bold uppercase px-2 py-1 rounded-lg ${autoBackupEnabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-400'}`}>Auto: {autoBackupEnabled ? 'On' : 'Off'}</span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 mb-3">{lastBackup ? `Last backup: ${new Date(lastBackup.timestamp).toLocaleString()} (${lastBackup.triggeredBy === 'AUTO' ? 'automatic' : 'manual'})` : 'No cloud backups yet.'}</p>
+                                            <button onClick={() => performCloudBackup('MANUAL')} disabled={isBackingUp} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">{isBackingUp ? 'Backing Up...' : 'Backup Now'}</button>
+                                            <p className="text-[10px] text-slate-600 mt-2">Toggle automatic daily backups in System Settings. Automatic backup runs while someone is logged in - for guaranteed backups even when APEX is closed, deploy the included Cloud Function (see docs).</p>
+                                        </div>
+
+                                        <div className="bg-black p-4 rounded-2xl border border-slate-800">
+                                            <p className="text-white font-bold text-sm mb-2">Restore Points ({sortedBackups.length})</p>
+                                            <p className="text-xs text-slate-500 mb-3">Point-in-time recovery - roll inventory, clients, sales, and other records back to a specific backup. This replaces current data, so use with care.</p>
+                                            <div className="space-y-2 max-h-52 overflow-y-auto no-scrollbar">
+                                                {sortedBackups.map(b => (
+                                                    <div key={b.id} className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-2">
+                                                        <div className="flex-1">
+                                                            <p className="text-white font-bold text-xs">{new Date(b.timestamp).toLocaleString()}</p>
+                                                            <p className="text-[10px] text-slate-500">{b.triggeredBy === 'AUTO' ? 'Automatic' : 'Manual'} · {Object.values(b.counts || {}).reduce((a,c) => a + c, 0)} records</p>
+                                                        </div>
+                                                        {hasAccess('MANAGER') && <button onClick={() => { setShowRestorePointModal(b); setRestoreConfirmText(''); }} className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap">Restore</button>}
+                                                    </div>
+                                                ))}
+                                                {sortedBackups.length === 0 && <p className="text-center text-slate-500 text-xs py-2">No restore points yet - run a backup first.</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-black p-4 rounded-2xl border border-slate-800">
+                                            <p className="text-white font-bold text-sm mb-2">Export Backup (local file)</p>
                                             <p className="text-xs text-slate-500 mb-3">Download all inventory, clients, and suppliers as JSON</p>
                                             <button onClick={handleBackup} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Download Backup</button>
                                         </div>
                                         <div className="bg-black p-4 rounded-2xl border border-slate-800">
-                                            <p className="text-white font-bold text-sm mb-2">Restore from Backup</p>
+                                            <p className="text-white font-bold text-sm mb-2">Restore from Backup (local file)</p>
                                             <p className="text-xs text-slate-500 mb-3">Import JSON backup file (merges with existing data)</p>
                                             <input type="file" accept=".json" onChange={handleRestore} className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-emerald-600 file:text-white hover:file:bg-emerald-500" />
                                         </div>
@@ -5404,7 +5973,23 @@
                                     <button onClick={() => setShowBackupModal(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
                                 </div>
                             </div>
+                            );
+                        })()}
+
+                        {/* Restore Point Confirmation Modal */}
+                        {showRestorePointModal && (
+                            <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => { setShowRestorePointModal(null); setRestoreConfirmText(''); })}>
+                                <div className="bg-slate-900 border border-red-900 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
+                                    <h3 className="text-xl font-black text-red-400 uppercase mb-2 text-center">Confirm Restore</h3>
+                                    <p className="text-xs text-slate-400 text-center mb-4">This replaces ALL current inventory, clients, sales, and related records with the backup from <span className="text-white font-bold">{new Date(showRestorePointModal.timestamp).toLocaleString()}</span>. Anything recorded after that point will be lost. This cannot be undone.</p>
+                                    <p className="text-[10px] text-slate-500 text-center mb-3">Type <span className="text-red-400 font-black">RESTORE</span> to confirm</p>
+                                    <input value={restoreConfirmText} onChange={(e) => setRestoreConfirmText(e.target.value)} className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm text-center outline-none border border-red-900 focus:border-red-500 input-focus mb-4" />
+                                    <button onClick={() => restoreFromCloudBackup(showRestorePointModal)} disabled={restoreConfirmText !== 'RESTORE' || isRestoring} className="w-full bg-red-700 hover:bg-red-600 disabled:opacity-40 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">{isRestoring ? 'Restoring...' : 'Permanently Restore'}</button>
+                                    <button onClick={() => { setShowRestorePointModal(null); setRestoreConfirmText(''); }} className="mt-3 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Cancel</button>
+                                </div>
+                            </div>
                         )}
+
 
                         {/* Shift Modal */}
                         {showShiftModal && (
@@ -5493,6 +6078,15 @@
                                             <option value="UGX">UGX - Ugandan Shilling</option>
                                             <option value="RWF">RWF - Rwandan Franc</option>
                                         </select></div>
+                                        <div className="pt-2 border-t border-slate-800">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Data Retention (years)</label>
+                                            <input type="number" min="1" value={salesRetentionYears} onChange={(e) => setSalesRetentionYears(Number(e.target.value))} className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
+                                            <p className="text-[10px] text-slate-500 mt-1">Tanzania's Tax Administration Act requires business records to be kept at least 5 years - that's the default here. Confirm the exact period for your records (including any controlled-drug logs) with TMDA/TRA or your accountant, as requirements can differ by record type.</p>
+                                        </div>
+                                        <div>
+                                            <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider"><input type="checkbox" checked={autoBackupEnabled} onChange={(e) => setAutoBackupEnabled(e.target.checked)} className="w-4 h-4" /> Automatic Daily Cloud Backup</label>
+                                            <p className="text-[10px] text-slate-500 mt-1">When enabled, a snapshot is uploaded to cloud storage automatically once every 24 hours whenever someone is logged into APEX. Manage backups and restore points from Backup &amp; Restore.</p>
+                                        </div>
                                         <button onClick={() => { setShowSettingsModal(false); toast("Settings saved", 'success'); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Save Settings</button>
                                     </div>
                                     <button onClick={() => setShowSettingsModal(false)} className="mt-4 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-4 border-t border-slate-800">Close</button>
@@ -5571,6 +6165,7 @@
                                         </div>
                                     </div>
                                     {drugInteractions.length > 0 && <div className="mb-4 space-y-2">{drugInteractions.map((int, idx) => <div key={idx} className={`p-3 rounded-xl text-xs font-bold ${int.severity === 'SEVERE' ? 'interaction-severe text-red-200' : int.severity === 'MODERATE' ? 'interaction-moderate text-orange-200' : 'interaction-mild text-yellow-200'}`}>{int.severity}: {int.description}</div>)}</div>}
+                                    {patientSafetyWarnings.length > 0 && <div className="mb-4 space-y-2">{patientSafetyWarnings.map((w, idx) => <div key={idx} className={`p-3 rounded-xl text-xs font-bold ${w.severity === 'BLOCK' ? 'interaction-severe text-red-200' : 'interaction-mild text-yellow-200'}`}>{w.severity === 'BLOCK' ? 'BLOCKED' : 'CAUTION'} ({w.type}): {w.description}</div>)}{patientSafetyWarnings.some(w => w.severity === 'BLOCK') && <p className="text-[10px] text-red-400 font-bold uppercase text-center">Manager override required to complete this sale</p>}</div>}
                                     <div className="grid grid-cols-2 gap-3">
                                         <button onClick={() => finalizeSale('CASH')} className="bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Cash</button>
                                         <button onClick={() => finalizeSale('MOBILE')} className="bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Mobile</button>
@@ -5653,7 +6248,7 @@
                                         </form>
                                     )}
                                     {editing.type === 'PATIENT' && (
-                                        <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.target); const phone = fd.get('phone'); if (phone && !phone.match(/^\+?\d{10,15}$/)) { toast("Invalid phone number format", 'warning'); return; } const updated = { name: fd.get('name'), age: fd.get('age'), sex: fd.get('sex'), phone, email: fd.get('email'), address: fd.get('address'), allergies: fd.get('allergies'), clientType: fd.get('clientType') || 'PATIENT', insuranceProvider: fd.get('insuranceProvider'), insuranceId: fd.get('insuranceId'), updatedAt: new Date().toISOString() }; if (!editing.item.id) { safeAdd('patients', { ...updated, creditBalance: 0, loyaltyPoints: 0, createdAt: new Date().toISOString() }); toast("Client added", 'success'); } else { safeUpdate('patients', editing.item.id, updated); toast("Client updated", 'success'); } setEditing(null); logAudit(editing.item.id ? 'UPDATE_PATIENT' : 'ADD_PATIENT', { patientId: editing.item.id || 'new' }); }} className="space-y-3">
+                                        <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.target); const phone = fd.get('phone'); if (phone && !phone.match(/^\+?\d{10,15}$/)) { toast("Invalid phone number format", 'warning'); return; } const updated = { name: fd.get('name'), age: fd.get('age'), sex: fd.get('sex'), phone, email: fd.get('email'), address: fd.get('address'), allergies: fd.get('allergies'), pregnant: fd.get('pregnant') === 'on', breastfeeding: fd.get('breastfeeding') === 'on', clientType: fd.get('clientType') || 'PATIENT', insuranceProvider: fd.get('insuranceProvider'), insuranceId: fd.get('insuranceId'), updatedAt: new Date().toISOString() }; if (!editing.item.id) { safeAdd('patients', { ...updated, creditBalance: 0, loyaltyPoints: 0, createdAt: new Date().toISOString() }); toast("Client added", 'success'); } else { safeUpdate('patients', editing.item.id, updated); toast("Client updated", 'success'); } setEditing(null); logAudit(editing.item.id ? 'UPDATE_PATIENT' : 'ADD_PATIENT', { patientId: editing.item.id || 'new' }); }} className="space-y-3">
                                             <input name="name" defaultValue={editing.item.name} placeholder="Full Name *" required className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
                                             <div className="grid grid-cols-3 gap-3">
                                                 <input name="age" defaultValue={editing.item.age} placeholder="Age" className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
@@ -5666,12 +6261,17 @@
                                             </div>
                                             <input name="address" defaultValue={editing.item.address} placeholder="Address" className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
                                             <input name="allergies" defaultValue={editing.item.allergies} placeholder="Allergies / Contraindications" className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
+                                            {editing.item.sex !== 'Male' && <div className="grid grid-cols-2 gap-3 bg-rose-950/20 border border-rose-900/40 rounded-xl p-3">
+                                                <label className="flex items-center gap-2 text-xs font-bold text-rose-300"><input type="checkbox" name="pregnant" defaultChecked={!!editing.item.pregnant} className="w-4 h-4" /> Currently Pregnant</label>
+                                                <label className="flex items-center gap-2 text-xs font-bold text-rose-300"><input type="checkbox" name="breastfeeding" defaultChecked={!!editing.item.breastfeeding} className="w-4 h-4" /> Breastfeeding</label>
+                                            </div>}
                                             <div className="grid grid-cols-2 gap-3">
                                                 <input name="insuranceProvider" defaultValue={editing.item.insuranceProvider} placeholder="Insurance Provider" className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
                                                 <input name="insuranceId" defaultValue={editing.item.insuranceId} placeholder="Insurance ID" className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
                                             </div>
                                             <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">{editing.item.id ? 'Update Client' : 'Add Client'}</button>
                                         </form>
+
                                     )}
                                     {editing.type === 'USER' && (
                                         <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.target); const email = fd.get('email'); if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) { toast("Invalid email format", 'warning'); return; } const updated = { fullName: fd.get('fullName'), email, role: fd.get('role'), phone: fd.get('phone'), status: fd.get('status'), updatedAt: new Date().toISOString() }; if (!editing.item.id) { const password = prompt("Set initial password for new user:"); if (!password || password.length < 6) { toast("Password must be at least 6 characters", 'warning'); return; } firebase.auth().createUserWithEmailAndPassword(email, password).then(cred => { window.db.collection('users').doc(cred.user.uid).set({ ...updated, status: 'ACTIVE', createdAt: new Date().toISOString() }); toast("Personnel added", 'success'); }).catch(err => toast(err.message, 'error')); } else { safeUpdate('users', editing.item.id, updated); toast("Personnel updated", 'success'); } setEditing(null); logAudit(editing.item.id ? 'UPDATE_USER' : 'ADD_USER', { userId: editing.item.id || 'new' }); }} className="space-y-3">
@@ -5966,6 +6566,7 @@
                                             <button onClick={() => setShowStockTakeModal(true)} className="bg-teal-600 hover:bg-teal-500 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">Stock</button>
                                             <button onClick={() => setShowWastageModal(true)} className={`px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap ${systemAlerts.expired > 0 ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}>Wastage{systemAlerts.expired > 0 ? ` (${systemAlerts.expired})` : ''}</button>
                                             <button onClick={() => setShowPurchaseOrderModal(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">PO</button>
+                                            <button onClick={() => setShowQuotationModal(true)} className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">Quotes</button>
                                             <button onClick={() => exportToExcel(processedInventory.map(i => ({Brand: i.brandName, Generic: i.genericName, Category: i.category, Stock: i.stock, Price: i.price, Cost: i.costPrice, Expiry: i.expiryDate, Supplier: i.supplier, Batch: i.batchNumber})), 'Inventory')} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap">Excel</button>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -6025,6 +6626,7 @@
                                                         {p.age && <div className="flex justify-between"><span>Age:</span><span className="text-white">{p.age}</span></div>}
                                                         {p.sex && <div className="flex justify-between"><span>Sex:</span><span className="text-white">{p.sex}</span></div>}
                                                         {p.allergies && <div className="flex justify-between"><span>Allergies:</span><span className="text-rose-400 font-bold">{p.allergies}</span></div>}
+                                                        {(p.pregnant || p.breastfeeding) && <div className="flex justify-between"><span>Status:</span><span className="text-rose-400 font-bold">{[p.pregnant ? 'Pregnant' : null, p.breastfeeding ? 'Breastfeeding' : null].filter(Boolean).join(' / ')}</span></div>}
                                                         {p.insuranceProvider && <div className="flex justify-between"><span>Insurance:</span><span className="text-blue-400">{p.insuranceProvider}</span></div>}
                                                     </div>
                                                     {(p.creditBalance || 0) > 0 && (
@@ -6084,6 +6686,7 @@
                                                     <button onClick={handleClearClaims} className="bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Clear Insurance Claims ({data.insuranceClaims.length})</button>
                                                     <button onClick={handleClearClientHistory} className="bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Clear Client Medical History ({data.medicalHistory.length})</button>
                                                     <button onClick={handleClearSupplierHistory} className="bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Clear Supplier Order History ({data.purchaseOrders.length})</button>
+                                                    <button onClick={handlePurgeOldRecords} className="bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Purge Records Older Than {salesRetentionYears}y ({recordsDueForPurge.sales.length + recordsDueForPurge.expenses.length + recordsDueForPurge.returns.length + recordsDueForPurge.purchaseOrders.length + recordsDueForPurge.stockMovements.length})</button>
                                                 </div>
                                             </div>
                                         )}
@@ -6095,13 +6698,13 @@
                                     <div className="space-y-6 animate-fade-in">
                                         <div className="flex flex-col md:flex-row gap-3">
                                             <div className="flex flex-wrap gap-2">
-                                                {['SALES', 'RETURNS', 'EXPENSES', 'CLAIMS', 'STOCK', 'PURCHASE_ORDERS', 'TRANSFERS', 'STOCK_TAKE', 'WASTAGE'].map(tab => <button key={tab} onClick={() => setReportTab(tab)} className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all whitespace-nowrap ${reportTab === tab ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{tab.replace(/_/g, ' ')}</button>)}
+                                                {['SALES', 'RETURNS', 'EXPENSES', 'CLAIMS', 'STOCK', 'CONSUMPTION', 'PURCHASE_ORDERS', 'TRANSFERS', 'STOCK_TAKE', 'WASTAGE'].map(tab => <button key={tab} onClick={() => setReportTab(tab)} className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all whitespace-nowrap ${reportTab === tab ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{tab.replace(/_/g, ' ')}</button>)}
                                             </div>
                                             <div className="flex gap-2">
                                                 {['DAILY', 'WEEKLY', 'MONTHLY'].map(p => <button key={p} onClick={() => setReportPeriod(p)} className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all ${reportPeriod === p ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{p}</button>)}
                                             </div>
                                             <input value={reportSearch} onChange={(e) => setReportSearch(e.target.value)} placeholder="Search reports..." className="flex-1 p-3 bg-slate-800 rounded-xl text-white font-bold text-sm outline-none border border-slate-700 focus:border-emerald-500 input-focus" />
-                                            <button onClick={() => { if (reportTab === 'SALES') exportToExcel(filteredSales.map(s => ({Date: s.timestamp, Total: s.total, Profit: s.profit, Method: s.method, Cashier: s.soldBy, Items: s.items?.length, Status: (data.returns||[]).some(r => r.saleId === s.id) ? 'Returned' : 'Completed'})), 'Sales_Report'); else if (reportTab === 'RETURNS') exportToExcel(filteredReturns.map(r => ({Date: r.timestamp, Item: r.itemName, Qty: r.returnQty, Amount: r.returnAmount, ProfitImpact: r.returnProfit, Reason: r.reason, ProcessedBy: r.processedBy})), 'Returns_Report'); else if (reportTab === 'EXPENSES') exportToExcel(data.expenses.map(e => ({Description: e.description, Amount: e.amount, Category: e.category, Date: e.timestamp})), 'Expenses_Report'); else if (reportTab === 'CLAIMS') exportToExcel(data.insuranceClaims.map(c => ({Provider: c.provider, Patient: c.patientName, Amount: c.totalAmount, Claimed: c.claimedAmount, Status: c.status, Date: c.submittedAt})), 'Claims_Report'); else if (reportTab === 'PURCHASE_ORDERS') exportToExcel(filteredPurchaseOrders.map(po => ({PO: po.poNumber, Supplier: po.supplier, Items: po.items?.length, Total: po.total, Status: po.status, Created: po.createdAt, ReceivedBy: po.receivedBy || ''})), 'Purchase_Orders_Report'); else if (reportTab === 'TRANSFERS') exportToExcel(filteredTransfers.map(t => ({Date: t.timestamp, Item: t.itemName, Qty: Math.abs(t.quantity), Reason: t.reason, By: t.userName})), 'Stock_Transfers_Report'); else if (reportTab === 'STOCK_TAKE') exportToExcel(filteredStockTakes.map(t => ({Date: t.timestamp, Item: t.itemName, Difference: t.quantity, By: t.userName})), 'Stock_Take_Report'); else if (reportTab === 'WASTAGE') exportToExcel(filteredWastage.map(w => ({Date: w.timestamp, Item: w.itemName, Qty: Math.abs(w.quantity), Reason: w.reason, Notes: w.notes || '', Loss: w.costImpact || 0, By: w.userName})), 'Wastage_Disposal_Report'); else exportToExcel(data.inventory.map(i => ({Brand: i.brandName, Stock: i.stock, Price: i.price, Cost: i.costPrice, Value: i.stock * i.price})), 'Stock_Report'); }} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all whitespace-nowrap">Export Excel</button>
+                                            <button onClick={() => { if (reportTab === 'SALES') exportToExcel(filteredSales.map(s => ({Date: s.timestamp, Total: s.total, Profit: s.profit, Method: s.method, Cashier: s.soldBy, Items: s.items?.length, Status: (data.returns||[]).some(r => r.saleId === s.id) ? 'Returned' : 'Completed'})), 'Sales_Report'); else if (reportTab === 'RETURNS') exportToExcel(filteredReturns.map(r => ({Date: r.timestamp, Item: r.itemName, Qty: r.returnQty, Amount: r.returnAmount, ProfitImpact: r.returnProfit, Reason: r.reason, ProcessedBy: r.processedBy})), 'Returns_Report'); else if (reportTab === 'EXPENSES') exportToExcel(data.expenses.map(e => ({Description: e.description, Amount: e.amount, Category: e.category, Date: e.timestamp})), 'Expenses_Report'); else if (reportTab === 'CLAIMS') exportToExcel(data.insuranceClaims.map(c => ({Provider: c.provider, Patient: c.patientName, Amount: c.totalAmount, Claimed: c.claimedAmount, Status: c.status, Date: c.submittedAt})), 'Claims_Report'); else if (reportTab === 'CONSUMPTION') exportToExcel(monthlyConsumption.rows.map(r => { const row = { Item: r.name }; monthlyConsumption.monthKeys.forEach((mk, i) => { row[mk] = r.monthly[i]; }); row['Avg/Month'] = r.avgPerMonth; return row; }), 'Monthly_Consumption_Report'); else if (reportTab === 'PURCHASE_ORDERS') exportToExcel(filteredPurchaseOrders.map(po => ({PO: po.poNumber, Supplier: po.supplier, Items: po.items?.length, Total: po.total, Status: po.status, Created: po.createdAt, ReceivedBy: po.receivedBy || ''})), 'Purchase_Orders_Report'); else if (reportTab === 'TRANSFERS') exportToExcel(filteredTransfers.map(t => ({Date: t.timestamp, Item: t.itemName, Qty: Math.abs(t.quantity), Reason: t.reason, By: t.userName})), 'Stock_Transfers_Report'); else if (reportTab === 'STOCK_TAKE') exportToExcel(filteredStockTakes.map(t => ({Date: t.timestamp, Item: t.itemName, Difference: t.quantity, By: t.userName})), 'Stock_Take_Report'); else if (reportTab === 'WASTAGE') exportToExcel(filteredWastage.map(w => ({Date: w.timestamp, Item: w.itemName, Qty: Math.abs(w.quantity), Reason: w.reason, Notes: w.notes || '', Loss: w.costImpact || 0, By: w.userName})), 'Wastage_Disposal_Report'); else exportToExcel(data.inventory.map(i => ({Brand: i.brandName, Stock: i.stock, Price: i.price, Cost: i.costPrice, Value: i.stock * i.price})), 'Stock_Report'); }} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all whitespace-nowrap">Export Excel</button>
                                         </div>
                                         {reportTab === 'SALES' && (
                                             <div className="glass-panel p-6 rounded-3xl">
@@ -6151,11 +6754,40 @@
                                                 <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between text-sm font-bold"><span className="text-slate-400">Total Stock Value: <span className="text-emerald-400">{inventoryTotalValue.toLocaleString()} {currency}</span></span><span className="text-slate-400">Total Cost: <span className="text-rose-400">{inventoryTotalCost.toLocaleString()} {currency}</span></span></div>
                                             </div>
                                         )}
+                                        {reportTab === 'CONSUMPTION' && (
+                                            <div className="glass-panel p-6 rounded-3xl">
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider mb-1">Monthly Consumption by Item</h3>
+                                                <p className="text-[10px] text-slate-500 mb-4">Units sold per month over the last 6 months - use this for quantification and reorder forecasting.</p>
+                                                <div className="overflow-x-auto no-scrollbar">
+                                                    <table className="w-full text-xs">
+                                                        <thead>
+                                                            <tr className="text-slate-500 uppercase text-[9px] font-bold border-b border-slate-800">
+                                                                <th className="text-left py-2 pr-2">Item</th>
+                                                                {monthlyConsumption.monthKeys.map(mk => <th key={mk} className="text-right py-2 px-2 whitespace-nowrap">{mk}</th>)}
+                                                                <th className="text-right py-2 px-2">Avg/mo</th>
+                                                                <th className="text-right py-2 pl-2">Trend</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {monthlyConsumption.rows.slice(0, 100).map((r, idx) => (
+                                                                <tr key={idx} className="border-b border-slate-900">
+                                                                    <td className="py-2 pr-2 text-white font-bold whitespace-nowrap">{r.name}</td>
+                                                                    {r.monthly.map((v, i) => <td key={i} className="text-right py-2 px-2 text-slate-400">{v}</td>)}
+                                                                    <td className="text-right py-2 px-2 text-emerald-400 font-bold">{r.avgPerMonth}</td>
+                                                                    <td className="text-right py-2 pl-2 font-bold">{r.thisMonth > r.lastMonth ? <span className="text-emerald-400">▲</span> : r.thisMonth < r.lastMonth ? <span className="text-rose-400">▼</span> : <span className="text-slate-500">–</span>}</td>
+                                                                </tr>
+                                                            ))}
+                                                            {monthlyConsumption.rows.length === 0 && <tr><td colSpan={monthlyConsumption.monthKeys.length + 3} className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No sales in the last 6 months</td></tr>}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
                                         {reportTab === 'PURCHASE_ORDERS' && (
                                             <div className="glass-panel p-6 rounded-3xl">
                                                 <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Purchase Order Report ({reportPeriod})</h3>
                                                 <div className="space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">
-                                                    {filteredPurchaseOrders.map(po => <div key={po.id} className="bg-black p-4 rounded-2xl border border-slate-800"><div className="flex justify-between items-center mb-1"><span className="text-white font-bold text-xs">{po.poNumber} - {po.supplier}</span><span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${po.status === 'PENDING' ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{po.status}</span></div><div className="flex justify-between text-xs text-slate-400"><span>{po.items?.length} items</span><span className="text-indigo-400 font-bold">{Number(po.total).toLocaleString()} {currency}</span></div><p className="text-[10px] text-slate-500 mt-1">Created: {new Date(po.createdAt).toLocaleString()} by {po.createdBy}{po.receivedAt ? ` | Received: ${new Date(po.receivedAt).toLocaleString()}` : ''}</p></div>)}
+                                                    {filteredPurchaseOrders.map(po => <div key={po.id} className="bg-black p-4 rounded-2xl border border-slate-800"><div className="flex justify-between items-center mb-1"><span className="text-white font-bold text-xs">{po.poNumber} - {po.supplier}</span><span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${po.status === 'PENDING' ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{po.status}</span></div><div className="flex justify-between text-xs text-slate-400"><span>{po.items?.length} items</span><span className="text-indigo-400 font-bold">{Number(po.total).toLocaleString()} {currency}</span></div><p className="text-[10px] text-slate-500 mt-1">Created: {new Date(po.createdAt).toLocaleString()} by {po.createdBy}{po.receivedAt ? ` | Received: ${new Date(po.receivedAt).toLocaleString()}` : ''}</p>{po.actualLeadTimeDays != null && <p className="text-[10px] text-cyan-400 font-bold mt-1">Actual lead time: {po.actualLeadTimeDays} day{po.actualLeadTimeDays === 1 ? '' : 's'}</p>}{po.invoiceMatch && <p className={`text-[10px] font-bold mt-1 ${po.invoiceMatch.status === 'MATCHED' ? 'text-emerald-400' : 'text-amber-400'}`}>Invoice match: {po.invoiceMatch.status}{po.invoiceMatch.discrepancies?.length > 0 ? ` - ${po.invoiceMatch.discrepancies.length} discrepancy(ies)` : ''}</p>}</div>)}
                                                     {filteredPurchaseOrders.length === 0 && <p className="text-center py-6 text-slate-500 font-bold uppercase text-xs">No purchase orders in selected period</p>}
                                                 </div>
                                                 <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between text-sm font-bold"><span className="text-slate-400">Total Ordered: <span className="text-indigo-400">{filteredPurchaseOrders.reduce((a,b) => a + Number(b.total||0), 0).toLocaleString()} {currency}</span></span><span className="text-slate-400">Orders: <span className="text-white">{filteredPurchaseOrders.length}</span></span><span className="text-slate-400">Pending: <span className="text-amber-400">{filteredPurchaseOrders.filter(p => p.status === 'PENDING').length}</span></span></div>
