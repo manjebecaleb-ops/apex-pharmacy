@@ -61,10 +61,13 @@
 
         .input-focus:focus { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
 
+        #label-print-area { display: none; }
         @media print {
             body * { visibility: hidden !important; }
             #print-area, #print-area * { visibility: visible !important; }
             #print-area { position: absolute; left: 0; top: 0; width: 80mm; padding: 10px; margin: 0; background: white; color: black; font-family: 'Courier New', monospace; font-size: 12px; }
+            #label-print-area, #label-print-area * { visibility: visible !important; }
+            #label-print-area { display: block !important; position: absolute; left: 0; top: 0; margin: 0; background: white; }
             .no-print { display: none !important; }
         }
 
@@ -200,6 +203,90 @@
                 });
                 useEffect(() => localStorage.setItem(key, JSON.stringify(val)), [key, val]);
                 return [val, setVal];
+            };
+
+            // ==================== OFFLINE-FIRST INDEXEDDB LAYER ====================
+            // A dedicated IndexedDB store (separate from Firestore's own internal cache) used for:
+            //  1) an instant-load local mirror of inventory so the UI never blocks on network/Firestore
+            //     bootstrapping when the device opens the app offline, and
+            //  2) a visible, inspectable queue of writes that have not yet been confirmed by the server,
+            //     so cashiers/managers can SEE what is waiting to sync instead of just trusting a spinner.
+            const IDB_NAME = 'apex_offline_store';
+            const IDB_VERSION = 1;
+            let _idbPromise = null;
+            const openIDB = () => {
+                if (!('indexedDB' in window)) return Promise.reject(new Error('IndexedDB unsupported'));
+                if (_idbPromise) return _idbPromise;
+                _idbPromise = new Promise((resolve, reject) => {
+                    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+                    req.onupgradeneeded = () => {
+                        const idb = req.result;
+                        if (!idb.objectStoreNames.contains('inventoryCache')) idb.createObjectStore('inventoryCache', { keyPath: 'id' });
+                        if (!idb.objectStoreNames.contains('pendingOps')) idb.createObjectStore('pendingOps', { keyPath: 'opId' });
+                    };
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+                return _idbPromise;
+            };
+            const idbPut = async (store, value) => {
+                try {
+                    const idb = await openIDB();
+                    return await new Promise((res, rej) => {
+                        const tx = idb.transaction(store, 'readwrite');
+                        tx.objectStore(store).put(value);
+                        tx.oncomplete = () => res(true);
+                        tx.onerror = () => rej(tx.error);
+                    });
+                } catch (e) { return false; }
+            };
+            const idbBulkPut = async (store, values) => {
+                try {
+                    const idb = await openIDB();
+                    return await new Promise((res, rej) => {
+                        const tx = idb.transaction(store, 'readwrite');
+                        const os = tx.objectStore(store);
+                        os.clear();
+                        values.forEach(v => os.put(v));
+                        tx.oncomplete = () => res(true);
+                        tx.onerror = () => rej(tx.error);
+                    });
+                } catch (e) { return false; }
+            };
+            const idbGetAll = async (store) => {
+                try {
+                    const idb = await openIDB();
+                    return await new Promise((res, rej) => {
+                        const tx = idb.transaction(store, 'readonly');
+                        const req = tx.objectStore(store).getAll();
+                        req.onsuccess = () => res(req.result || []);
+                        req.onerror = () => rej(req.error);
+                    });
+                } catch (e) { return []; }
+            };
+            const idbDelete = async (store, key) => {
+                try {
+                    const idb = await openIDB();
+                    return await new Promise((res, rej) => {
+                        const tx = idb.transaction(store, 'readwrite');
+                        tx.objectStore(store).delete(key);
+                        tx.oncomplete = () => res(true);
+                        tx.onerror = () => rej(tx.error);
+                    });
+                } catch (e) { return false; }
+            };
+
+            // Stable per-device identifier, used to attribute offline sales to the device that made them
+            // so a manager reviewing a stock conflict can see "Device X and Device Y both sold the last unit".
+            const getDeviceId = () => {
+                let id = localStorage.getItem('apex_device_id');
+                if (!id) { id = 'DEV-' + Math.random().toString(36).slice(2, 8).toUpperCase(); localStorage.setItem('apex_device_id', id); }
+                return id;
+            };
+            const getDeviceLabel = () => {
+                let label = localStorage.getItem('apex_device_label');
+                if (!label) { label = (navigator.platform || 'Device') + ' ' + getDeviceId(); }
+                return label;
             };
 
             // ==================== COMPLETE TANZANIA DRUG DATABASE (STG/NEMLIT 2021) ====================
@@ -3807,9 +3894,42 @@
 
             // Safe Firebase helpers
             const safeDb = () => { try { return window.db; } catch(e) { return null; } };
-            const safeAdd = async (col, data) => { const db = safeDb(); if (!db) return null; try { return await db.collection(col).add(data); } catch(e) { console.error('DB add error:', e); return null; } };
-            const safeUpdate = async (col, id, data) => { const db = safeDb(); if (!db || !id) return false; try { await db.collection(col).doc(id).update(data); return true; } catch(e) { console.error('DB update error:', e); return false; } };
-            const safeDelete = async (col, id) => { const db = safeDb(); if (!db || !id) return false; try { await db.collection(col).doc(id).delete(); return true; } catch(e) { console.error('DB delete error:', e); return false; } };
+            // Every write goes through a visible IndexedDB "pending ops" queue: it is recorded BEFORE the
+            // network call is attempted, and removed once Firestore confirms it. If the device is offline,
+            // Firestore's own offline persistence queues the mutation internally and resolves the promise
+            // optimistically - so from the queue's point of view the op just sits there (still pending)
+            // until the 'online' handler's flushPendingOps() call confirms it went through. This is what
+            // powers the Sync Queue panel (Ops Hub > Sync) and is independent of the app's own React state.
+            const safeAdd = async (col, data) => {
+                const db = safeDb(); if (!db) return null;
+                const opId = 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                await idbPut('pendingOps', { opId, col, kind: 'ADD', payload: data, device: getDeviceId(), queuedAt: new Date().toISOString() });
+                try {
+                    const ref = await db.collection(col).add(data);
+                    await idbDelete('pendingOps', opId);
+                    return ref;
+                } catch(e) { console.error('DB add error:', e); return null; }
+            };
+            const safeUpdate = async (col, id, data) => {
+                const db = safeDb(); if (!db || !id) return false;
+                const opId = 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                await idbPut('pendingOps', { opId, col, kind: 'UPDATE', docId: id, payload: data, device: getDeviceId(), queuedAt: new Date().toISOString() });
+                try {
+                    await db.collection(col).doc(id).update(data);
+                    await idbDelete('pendingOps', opId);
+                    return true;
+                } catch(e) { console.error('DB update error:', e); return false; }
+            };
+            const safeDelete = async (col, id) => {
+                const db = safeDb(); if (!db || !id) return false;
+                const opId = 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                await idbPut('pendingOps', { opId, col, kind: 'DELETE', docId: id, device: getDeviceId(), queuedAt: new Date().toISOString() });
+                try {
+                    await db.collection(col).doc(id).delete();
+                    await idbDelete('pendingOps', opId);
+                    return true;
+                } catch(e) { console.error('DB delete error:', e); return false; }
+            };
 
             // Date helpers
             const parseDateLocal = (dateStr) => {
@@ -3831,6 +3951,82 @@
             };
 
             // ==================== ENHANCED DOSE CALCULATOR ====================
+            // ==================== RENAL / HEPATIC DOSE ADJUSTMENT REFERENCE ====================
+            // Cockcroft-Gault estimated creatinine clearance (mL/min) - the standard bedside eGFR proxy
+            // used for renal drug dosing decisions (as opposed to CKD-EPI/MDRD, which are for staging CKD).
+            const calcCrCl = ({ age, weightKg, sex, scr, scrUnit }) => {
+                const a = Number(age), w = Number(weightKg);
+                let scrMgDl = Number(scr);
+                if (scrUnit === 'umol') scrMgDl = scrMgDl / 88.4;
+                if (!a || !w || !scrMgDl || a <= 0 || w <= 0 || scrMgDl <= 0) return null;
+                let crcl = ((140 - a) * w) / (72 * scrMgDl);
+                if (sex === 'FEMALE') crcl *= 0.85;
+                return Math.round(crcl * 10) / 10;
+            };
+
+            const RENAL_DRUGS = [
+                {
+                    id: 'gentamicin-renal', name: 'Gentamicin', generic: 'Gentamicin sulfate',
+                    bands: [
+                        { min: 60, label: 'CrCl \u2265 60 mL/min', guidance: 'Standard once-daily dosing (5\u20137 mg/kg) at usual 24h interval. Still monitor levels/renal function with any course beyond 48h.' },
+                        { min: 40, label: 'CrCl 40\u201359 mL/min', guidance: 'Extend interval to every 36h at the same weight-based dose. Recheck renal function before each subsequent dose.' },
+                        { min: 20, label: 'CrCl 20\u201339 mL/min', guidance: 'Extend interval to every 48h. Prefer trough/peak level monitoring if available; involve a pharmacist/physician.' },
+                        { min: 0, label: 'CrCl < 20 mL/min', guidance: 'High toxicity risk - avoid if an alternative exists. If essential, dose by level monitoring only; consult a physician/renal specialist before each dose.' }
+                    ]
+                },
+                {
+                    id: 'vancomycin-renal', name: 'Vancomycin', generic: 'Vancomycin hydrochloride',
+                    bands: [
+                        { min: 60, label: 'CrCl \u2265 60 mL/min', guidance: 'Loading dose 25\u201330 mg/kg once, then ~15\u201320 mg/kg every 12h. Adjust to levels where available.' },
+                        { min: 40, label: 'CrCl 40\u201359 mL/min', guidance: 'Same loading dose, then 15\u201320 mg/kg every 24h.' },
+                        { min: 20, label: 'CrCl 20\u201339 mL/min', guidance: 'Same loading dose, then 15\u201320 mg/kg every 24\u201348h - space further apart if levels unavailable and monitor closely for accumulation.' },
+                        { min: 0, label: 'CrCl < 20 mL/min', guidance: 'Loading dose once, then redose only guided by trough levels (or dialysis schedule). Do not give routine maintenance doses without level monitoring.' }
+                    ]
+                },
+                {
+                    id: 'penicillins-renal', name: 'Penicillins (Benzylpenicillin / Ampicillin / Amoxicillin)', generic: 'Beta-lactams',
+                    bands: [
+                        { min: 30, label: 'CrCl \u2265 30 mL/min', guidance: 'No adjustment needed at standard STG doses.' },
+                        { min: 10, label: 'CrCl 10\u201329 mL/min', guidance: 'Give the usual dose but extend the interval (e.g. 8h \u2192 12h) or reduce the dose by ~50%.' },
+                        { min: 0, label: 'CrCl < 10 mL/min', guidance: 'Reduce dose by 50% AND extend the interval (e.g. every 12\u201324h). Watch for neurotoxicity (seizure risk) with high-dose beta-lactams in renal failure.' }
+                    ]
+                },
+                {
+                    id: 'ciprofloxacin-renal', name: 'Ciprofloxacin', generic: 'Ciprofloxacin',
+                    bands: [
+                        { min: 30, label: 'CrCl \u2265 30 mL/min', guidance: 'No adjustment needed at standard STG doses.' },
+                        { min: 0, label: 'CrCl < 30 mL/min', guidance: 'Reduce dose by ~50% or extend interval to every 24h.' }
+                    ]
+                }
+            ];
+            const HEPATIC_DRUGS = [
+                {
+                    id: 'metronidazole-hepatic', name: 'Metronidazole', generic: 'Metronidazole',
+                    classes: {
+                        A: 'Child-Pugh A: No dose adjustment typically required; monitor as usual.',
+                        B: 'Child-Pugh B: Consider reducing total daily dose by ~50% - metronidazole is largely hepatically cleared and can accumulate.',
+                        C: 'Child-Pugh C: Reduce dose by 50% and extend dosing interval; monitor closely for neurotoxicity (metallic taste, peripheral neuropathy, confusion) which can signal accumulation.'
+                    }
+                },
+                {
+                    id: 'chloramphenicol-hepatic', name: 'Chloramphenicol', generic: 'Chloramphenicol',
+                    classes: {
+                        A: 'Child-Pugh A: Use with caution; monitor full blood count.',
+                        B: 'Child-Pugh B: Reduce dose and monitor levels/FBC closely if any alternative is not suitable - bone marrow toxicity risk rises with impaired clearance.',
+                        C: 'Child-Pugh C: Avoid if possible. If no alternative exists, use the lowest effective dose under close specialist supervision.'
+                    }
+                },
+                {
+                    id: 'arvs-hepatic', name: 'ARVs (general)', generic: 'Antiretrovirals',
+                    classes: {
+                        A: 'Child-Pugh A: Most first-line ARVs (TDF/3TC/DTG) can continue at standard dose; monitor LFTs periodically.',
+                        B: 'Child-Pugh B: Avoid or use with caution - review each drug individually (e.g. some NNRTIs need caution); increase LFT monitoring frequency; involve a physician experienced in HIV care.',
+                        C: 'Child-Pugh C: Specialist input required before continuing or changing ART - several agents are not recommended in severe hepatic impairment.'
+                    }
+                }
+            ];
+            const getRenalBand = (drug, crcl) => drug.bands.find(b => crcl >= b.min) || drug.bands[drug.bands.length - 1];
+
             const DoseCalculatorModal = ({ onClose, toast }) => {
                 const [selectedDrugId, setSelectedDrugId] = useState('');
                 const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -3841,6 +4037,20 @@
                 const [history, setHistory] = useState(() => {
                     try { const h = localStorage.getItem('apex_dose_history_v2'); return h ? JSON.parse(h) : []; } catch { return []; }
                 });
+                // Renal / Hepatic Adjustment panel - self-contained, separate from the standard adult/pediatric calculator above
+                const [showRenalHepatic, setShowRenalHepatic] = useState(false);
+                const [rhAge, setRhAge] = useState('');
+                const [rhWeight, setRhWeight] = useState('');
+                const [rhSex, setRhSex] = useState('MALE');
+                const [rhScr, setRhScr] = useState('');
+                const [rhScrUnit, setRhScrUnit] = useState('umol');
+                const [rhRenalDrugId, setRhRenalDrugId] = useState('');
+                const [rhChildPugh, setRhChildPugh] = useState('A');
+                const [rhHepaticDrugId, setRhHepaticDrugId] = useState('');
+                const rhCrcl = useMemo(() => calcCrCl({ age: rhAge, weightKg: rhWeight, sex: rhSex, scr: rhScr, scrUnit: rhScrUnit }), [rhAge, rhWeight, rhSex, rhScr, rhScrUnit]);
+                const rhRenalDrug = RENAL_DRUGS.find(d => d.id === rhRenalDrugId);
+                const rhHepaticDrug = HEPATIC_DRUGS.find(d => d.id === rhHepaticDrugId);
+                const rhRenalBand = rhRenalDrug && rhCrcl != null ? getRenalBand(rhRenalDrug, rhCrcl) : null;
 
                 const drug = DRUG_DB.find(d => d.id === selectedDrugId);
 
@@ -4041,11 +4251,71 @@
                                 </select>
 
                                 {/* Mode Selection */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <button onClick={() => { setMode('ADULT'); setResult(null); }} className={`py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${mode === 'ADULT' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>Adult (≥12 yrs)</button>
-                                    <button onClick={() => { setMode('PEDIATRIC'); setResult(null); }} className={`py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${mode === 'PEDIATRIC' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>Pediatric (&lt;12 yrs)</button>
+                                <div className="grid grid-cols-3 gap-3">
+                                    <button onClick={() => { setShowRenalHepatic(false); setMode('ADULT'); setResult(null); }} className={`py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${!showRenalHepatic && mode === 'ADULT' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>Adult (≥12 yrs)</button>
+                                    <button onClick={() => { setShowRenalHepatic(false); setMode('PEDIATRIC'); setResult(null); }} className={`py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${!showRenalHepatic && mode === 'PEDIATRIC' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>Pediatric (&lt;12 yrs)</button>
+                                    <button onClick={() => setShowRenalHepatic(true)} className={`py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${showRenalHepatic ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>Renal / Hepatic</button>
                                 </div>
 
+                                {showRenalHepatic && (
+                                    <div className="bg-black p-4 rounded-2xl border border-amber-500/30 space-y-4">
+                                        <p className="text-[10px] text-amber-400 uppercase font-bold tracking-wider">Reference guidance only - confirm with a physician/pharmacist before dispensing an adjusted regimen.</p>
+
+                                        {/* eGFR / Cockcroft-Gault */}
+                                        <div>
+                                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">1. Estimate Creatinine Clearance (Cockcroft-Gault)</p>
+                                            <div className="grid grid-cols-2 gap-2 mb-2">
+                                                <input type="number" value={rhAge} onChange={e => setRhAge(e.target.value)} placeholder="Age (years)" className="p-3 bg-slate-900 rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-amber-500 input-focus" />
+                                                <input type="number" value={rhWeight} onChange={e => setRhWeight(e.target.value)} placeholder="Weight (kg)" className="p-3 bg-slate-900 rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-amber-500 input-focus" />
+                                                <select value={rhSex} onChange={e => setRhSex(e.target.value)} className="p-3 bg-slate-900 rounded-xl text-white font-bold text-xs outline-none border border-slate-800">
+                                                    <option value="MALE">Male</option><option value="FEMALE">Female</option>
+                                                </select>
+                                                <div className="flex gap-2">
+                                                    <input type="number" value={rhScr} onChange={e => setRhScr(e.target.value)} placeholder="Serum Creatinine" className="flex-1 p-3 bg-slate-900 rounded-xl text-white font-bold text-xs outline-none border border-slate-800 focus:border-amber-500 input-focus" />
+                                                    <select value={rhScrUnit} onChange={e => setRhScrUnit(e.target.value)} className="p-3 bg-slate-900 rounded-xl text-white font-bold text-xs outline-none border border-slate-800">
+                                                        <option value="umol">\u00b5mol/L</option><option value="mgdl">mg/dL</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            {rhCrcl != null && <div className="bg-amber-950/30 border border-amber-800 p-3 rounded-xl"><span className="text-amber-400 font-black text-sm">CrCl \u2248 {rhCrcl} mL/min</span></div>}
+                                        </div>
+
+                                        {/* Renal drug adjustment */}
+                                        <div>
+                                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">2. Renal Dose Adjustment</p>
+                                            <select value={rhRenalDrugId} onChange={e => setRhRenalDrugId(e.target.value)} className="w-full p-3 bg-slate-900 rounded-xl text-white font-bold text-xs outline-none border border-slate-800 mb-2">
+                                                <option value="">Select a drug...</option>
+                                                {RENAL_DRUGS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                            </select>
+                                            {rhRenalDrug && rhCrcl == null && <p className="text-[10px] text-slate-500">Enter age, weight and serum creatinine above to see the adjusted band.</p>}
+                                            {rhRenalBand && (
+                                                <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700">
+                                                    <p className="text-emerald-400 font-bold text-xs mb-1">{rhRenalBand.label}</p>
+                                                    <p className="text-slate-300 text-xs leading-relaxed">{rhRenalBand.guidance}</p>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Hepatic drug adjustment */}
+                                        <div>
+                                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">3. Hepatic Dose Adjustment (Child-Pugh Class)</p>
+                                            <div className="grid grid-cols-3 gap-2 mb-2">
+                                                {['A','B','C'].map(cls => <button key={cls} onClick={() => setRhChildPugh(cls)} className={`py-2 rounded-xl font-black text-xs uppercase transition-all ${rhChildPugh === cls ? 'bg-amber-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'}`}>Class {cls}</button>)}
+                                            </div>
+                                            <select value={rhHepaticDrugId} onChange={e => setRhHepaticDrugId(e.target.value)} className="w-full p-3 bg-slate-900 rounded-xl text-white font-bold text-xs outline-none border border-slate-800 mb-2">
+                                                <option value="">Select a drug...</option>
+                                                {HEPATIC_DRUGS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                            </select>
+                                            {rhHepaticDrug && (
+                                                <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700">
+                                                    <p className="text-slate-300 text-xs leading-relaxed">{rhHepaticDrug.classes[rhChildPugh]}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!showRenalHepatic && (<>
                                 {/* Weight and Age Inputs */}
                                 <div className="grid grid-cols-2 gap-3">
                                     {mode === 'PEDIATRIC' && (
@@ -4055,9 +4325,10 @@
                                 </div>
 
                                 <button onClick={calculate} className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Calculate Dose</button>
+                                </>)}
 
                                 {/* Results */}
-                                {result && (
+                                {!showRenalHepatic && result && (
                                     <div className="bg-black p-5 rounded-2xl border border-emerald-500/30 space-y-3">
                                         <div className="flex justify-between items-center border-b border-slate-800 pb-2">
                                             <div>
@@ -4102,7 +4373,7 @@
                                 )}
 
                                 {/* History */}
-                                {history.length > 0 && (
+                                {!showRenalHepatic && history.length > 0 && (
                                     <div className="border-t border-slate-800 pt-4">
                                         <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Calculation History ({history.length}/30)</h4>
                                         <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar">
@@ -4136,6 +4407,7 @@
                 const isDrawing = useRef(false);
                 const idleTimerRef = useRef(null);
                 const sessionWarningRef = useRef(null);
+                const flaggedConflictItemIds = useRef(new Set());
 
                 const [isInitializing, setIsInitializing] = useState(true);
                 const [syncStatus, setSyncStatus] = useState('ONLINE');
@@ -4143,7 +4415,7 @@
                 const [viewHistory, setViewHistory] = useState([]);
                 const [user, setUser] = useState(null);
                 const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-                const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [], suppliers: [], insuranceClaims: [], auditLogs: [], returns: [], purchaseOrders: [], stockMovements: [], shifts: [], prescriptions: [], quotations: [], backups: [] });
+                const [data, setData] = useState({ inventory: [], sales: [], patients: [], users: [], expenses: [], medicalHistory: [], suppliers: [], insuranceClaims: [], auditLogs: [], returns: [], purchaseOrders: [], stockMovements: [], shifts: [], prescriptions: [], quotations: [], backups: [], transferRequests: [], narcoticsLog: [], cycleCounts: [], syncConflicts: [] });
                 const [cart, setCart] = useState([]);
                 const [heldCarts, setHeldCarts] = useState([]);
                 const [search, setSearch] = useState("");
@@ -4227,6 +4499,33 @@
                 const [salesTarget, setSalesTarget] = useLocalStorage('apex_sales_target', 100000);
 
                 const [currentShift, setCurrentShift] = useState(null);
+
+                // ==================== EXTENDED OPERATIONS MODULE - STATE ====================
+                const [opsTab, setOpsTab] = useState('SYNC');
+                const [pendingSyncOps, setPendingSyncOps] = useState([]);
+                const [lastSyncedAt, setLastSyncedAt] = useLocalStorage('apex_last_synced_at', null);
+                const [inventoryHydratedFromCache, setInventoryHydratedFromCache] = useState(false);
+                // Transfers
+                const [transferDraft, setTransferDraft] = useState({ itemId: '', fromLocation: 'MAIN', toLocation: 'BRANCH_A', qty: 1, notes: '' });
+                const [stockLookupTerm, setStockLookupTerm] = useState('');
+                const [allocateItemId, setAllocateItemId] = useState('');
+                // Cycle counting
+                const [showCycleCountModal, setShowCycleCountModal] = useState(null); // holds the active cycleCount doc while counting
+                const [cycleCountEntries, setCycleCountEntries] = useState({}); // { itemId: countedQty }
+                const [cycleCountShelfFilter, setCycleCountShelfFilter] = useState('');
+                const [varianceApprovalThreshold, setVarianceApprovalThreshold] = useLocalStorage('apex_variance_threshold', 50000);
+                // Narcotics register
+                const [showNarcoticModal, setShowNarcoticModal] = useState(null); // { item, mode: 'DISPENSE'|'RECEIVE'|'DESTROY'|'RECONCILE' }
+                const [narcoticWitness, setNarcoticWitness] = useState('');
+                // Label generator
+                const [labelQueue, setLabelQueue] = useState(null); // array of {brandName, strength, qty, instructions, expiryDate, patientName}
+                const [labelSize, setLabelSize] = useState('50x30');
+                // AMS
+                const [amsCultureChecks, setAmsCultureChecks] = useLocalStorage('apex_ams_culture_checks', {});
+                // Adherence
+                const [chronicItemsConfig, setChronicItemsConfig] = useLocalStorage('apex_chronic_items', {}); // { itemBrandNameLower: standardDaysSupply }
+                // Conflict resolution
+                const [resolvingConflict, setResolvingConflict] = useState(null);
 
                 useEffect(() => { inventoryRef.current = data.inventory; }, [data.inventory]);
 
@@ -4351,19 +4650,93 @@
                     if (editing?.type === 'PATIENT') setEditClientType(editing.item.clientType || 'PATIENT');
                 }, [editing]);
 
+                // Re-attempts every still-pending write against Firestore. Firestore's own offline persistence
+                // already re-sends queued mutations once connectivity returns, so most of the time this just
+                // discovers ops that already succeeded and clears them from the visible queue - but it also
+                // catches ops that failed for a non-connectivity reason (e.g. a rule rejection) and keeps
+                // retrying genuinely-stuck writes instead of leaving the queue stuck silently.
+                const refreshPendingOpsView = useCallback(async () => {
+                    const ops = await idbGetAll('pendingOps');
+                    setPendingSyncOps(ops.sort((a, b) => new Date(a.queuedAt) - new Date(b.queuedAt)));
+                }, []);
+                const flushPendingOps = useCallback(async () => {
+                    const db = safeDb(); if (!db) return;
+                    const ops = await idbGetAll('pendingOps');
+                    if (ops.length === 0) { await refreshPendingOpsView(); return; }
+                    setSyncStatus('SYNCING');
+                    for (const op of ops.sort((a, b) => new Date(a.queuedAt) - new Date(b.queuedAt))) {
+                        try {
+                            if (op.kind === 'ADD') await db.collection(op.col).add(op.payload);
+                            else if (op.kind === 'UPDATE') await db.collection(op.col).doc(op.docId).update(op.payload);
+                            else if (op.kind === 'DELETE') await db.collection(op.col).doc(op.docId).delete();
+                            await idbDelete('pendingOps', op.opId);
+                        } catch (e) { /* still offline or genuinely failing - leave it queued and try again next pass */ }
+                    }
+                    await refreshPendingOpsView();
+                    setLastSyncedAt(new Date().toISOString());
+                    setSyncStatus(navigator.onLine ? 'ONLINE' : 'OFFLINE');
+                }, [refreshPendingOpsView, setLastSyncedAt]);
+
                 useEffect(() => {
                     const handleResize = () => setIsMobile(window.innerWidth < 768);
-                    const handleOnline = () => { setIsOnline(true); setSyncStatus('ONLINE'); toast('Connection restored', 'success'); };
-                    const handleOffline = () => { setIsOnline(false); setSyncStatus('OFFLINE'); toast('Working offline', 'warning'); };
+                    const handleOnline = () => { setIsOnline(true); setSyncStatus('ONLINE'); toast('Connection restored - syncing queued changes', 'success'); flushPendingOps(); };
+                    const handleOffline = () => { setIsOnline(false); setSyncStatus('OFFLINE'); toast('Working offline - sales & changes will queue locally and sync automatically', 'warning'); };
                     window.addEventListener('resize', handleResize);
                     window.addEventListener('online', handleOnline);
                     window.addEventListener('offline', handleOffline);
-                    return () => { window.removeEventListener('resize', handleResize); window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
-                }, []);
+                    refreshPendingOpsView();
+                    const pollInterval = setInterval(() => { refreshPendingOpsView(); if (navigator.onLine) flushPendingOps(); }, 20000);
+                    return () => { window.removeEventListener('resize', handleResize); window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); clearInterval(pollInterval); };
+                }, [flushPendingOps, refreshPendingOpsView]);
+
+                // Instant-load inventory from the local IndexedDB mirror while Firestore's listener is still
+                // bootstrapping (critical the first time the app is opened offline - Firestore's own cache
+                // may not have anything yet on a brand-new tab/profile). Once real data arrives from
+                // Firestore it takes over as the source of truth and this cache is refreshed to match it.
+                useEffect(() => {
+                    if (inventoryHydratedFromCache) return;
+                    (async () => {
+                        const cached = await idbGetAll('inventoryCache');
+                        if (cached.length > 0) setData(p => (p.inventory.length > 0 ? p : { ...p, inventory: cached }));
+                        setInventoryHydratedFromCache(true);
+                    })();
+                }, [inventoryHydratedFromCache]);
+                useEffect(() => {
+                    if (data.inventory && data.inventory.length > 0) idbBulkPut('inventoryCache', data.inventory);
+                }, [data.inventory]);
+
+                // ---- Offline sale/stock conflict detection ----
+                // decrementCartStockAtomic (below) uses a Firestore transaction when online, which is safe
+                // against two cashiers selling the same last unit. Transactions cannot run while offline, so
+                // offline sales instead apply an optimistic FieldValue.increment(-qty) that queues locally.
+                // Two offline devices can both "successfully" sell the last unit of something; when both
+                // queues sync, the increments both apply and stock can go negative. This effect watches for
+                // that and raises a manager-facing conflict record instead of silently leaving stock wrong.
+                useEffect(() => {
+                    if (!user || !hasAccess('PHARMACIST')) return;
+                    const negativeItems = (data.inventory || []).filter(i => Number(i.stock) < 0);
+                    const negativeIds = new Set(negativeItems.map(i => i.id));
+                    flaggedConflictItemIds.current.forEach(id => { if (!negativeIds.has(id)) flaggedConflictItemIds.current.delete(id); });
+                    negativeItems.forEach(item => {
+                        const alreadyFlagged = (data.syncConflicts || []).some(c => c.itemId === item.id && c.status === 'OPEN');
+                        if (alreadyFlagged || flaggedConflictItemIds.current.has(item.id)) return;
+                        flaggedConflictItemIds.current.add(item.id);
+                        const cutoff = Date.now() - (3 * 24 * 60 * 60 * 1000);
+                        const candidateSales = (data.sales || [])
+                            .filter(s => new Date(s.timestamp).getTime() >= cutoff && (s.items || []).some(li => li.id === item.id))
+                            .map(s => ({ saleId: s.id, timestamp: s.timestamp, soldBy: s.soldBy, qty: (s.items.find(li => li.id === item.id) || {}).qty || 0, total: s.total }))
+                            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                        safeAdd('syncConflicts', {
+                            itemId: item.id, itemName: item.brandName, overSoldBy: Math.abs(Number(item.stock)),
+                            detectedAt: new Date().toISOString(), status: 'OPEN', candidateSales, location: item.location || location
+                        });
+                        logAudit('SYNC_CONFLICT_DETECTED', { itemId: item.id, itemName: item.brandName, stock: item.stock });
+                    });
+                }, [data.inventory, data.syncConflicts, data.sales, user]);
 
                 useEffect(() => {
                     if (typeof window.db === 'undefined' || !user) return;
-                    const collections = ["inventory", "sales", "patients", "users", "expenses", "medicalHistory", "suppliers", "insuranceClaims", "auditLogs", "returns", "purchaseOrders", "stockMovements", "shifts", "prescriptions", "quotations", "backups"];
+                    const collections = ["inventory", "sales", "patients", "users", "expenses", "medicalHistory", "suppliers", "insuranceClaims", "auditLogs", "returns", "purchaseOrders", "stockMovements", "shifts", "prescriptions", "quotations", "backups", "transferRequests", "narcoticsLog", "cycleCounts", "syncConflicts"];
                     const unsubscribers = collections.map(col => 
                         window.db.collection(col).onSnapshot(
                             s => {
@@ -4670,6 +5043,64 @@
                     logAudit('DATA_RETENTION_PURGE', { total, retentionYears: salesRetentionYears });
                 };
 
+                // ==================== SUPPLIER PERFORMANCE ANALYTICS ====================
+                const supplierAnalytics = useMemo(() => {
+                    const names = new Set([...(data.suppliers || []).map(s => s.name), ...(data.purchaseOrders || []).map(po => po.supplier)].filter(Boolean));
+                    return Array.from(names).map(name => {
+                        const pos = (data.purchaseOrders || []).filter(po => po.supplier === name);
+                        const received = pos.filter(po => po.status === 'RECEIVED');
+                        const withDueDate = received.filter(po => po.expectedDeliveryDate);
+                        const onTime = withDueDate.filter(po => po.receivedAt && new Date(po.receivedAt) <= new Date(po.expectedDeliveryDate + 'T23:59:59'));
+                        const onTimeRate = withDueDate.length ? Math.round((onTime.length / withDueDate.length) * 100) : null;
+                        const withInvoice = received.filter(po => po.invoiceMatch && po.invoiceMatch.status);
+                        const matched = withInvoice.filter(po => po.invoiceMatch.status === 'MATCHED');
+                        const invoiceAccuracyRate = withInvoice.length ? Math.round((matched.length / withInvoice.length) * 100) : null;
+                        const supplierItemIds = new Set((data.inventory || []).filter(i => i.supplier === name).map(i => i.id));
+                        const unitsReceived = received.reduce((s, po) => s + (po.items || []).reduce((s2, it) => s2 + (Number(it.receivedQty ?? it.qty) || 0), 0), 0);
+                        const returnUnits = (data.returns || []).filter(r => supplierItemIds.has(r.itemId)).reduce((s, r) => s + (Number(r.returnQty) || 0), 0);
+                        const expiryUnits = (data.stockMovements || []).filter(m => m.reason === 'EXPIRY' && supplierItemIds.has(m.itemId)).reduce((s, m) => s + Math.abs(Number(m.quantity) || 0), 0);
+                        const returnRate = unitsReceived > 0 ? (returnUnits / unitsReceived) * 100 : 0;
+                        const expiryRate = unitsReceived > 0 ? (expiryUnits / unitsReceived) * 100 : 0;
+                        const qualityScore = unitsReceived > 0 ? Math.max(0, Math.round(100 - (returnRate * 0.5) - (expiryRate * 0.5))) : null;
+                        const avgLeadDays = supplierLeadTimes[name]?.avgDays ?? null;
+                        const components = [onTimeRate, invoiceAccuracyRate, qualityScore].filter(v => v != null);
+                        const reliabilityScore = components.length ? Math.round(components.reduce((a, b) => a + b, 0) / components.length) : null;
+                        return { name, poCount: pos.length, receivedCount: received.length, onTimeRate, invoiceAccuracyRate, qualityScore, returnRate: Math.round(returnRate * 10) / 10, expiryRate: Math.round(expiryRate * 10) / 10, avgLeadDays, reliabilityScore };
+                    }).sort((a, b) => (b.reliabilityScore ?? -1) - (a.reliabilityScore ?? -1));
+                }, [data.suppliers, data.purchaseOrders, data.inventory, data.returns, data.stockMovements, supplierLeadTimes]);
+
+                // Preferred-supplier suggestion per SKU: combines quoted price (lower is better) with each
+                // quoting supplier's overall reliability score computed above.
+                const preferredSupplierSuggestions = useMemo(() => {
+                    const byItem = {};
+                    (data.quotations || []).forEach(q => { if (!q.itemId) return; if (!byItem[q.itemId]) byItem[q.itemId] = { itemId: q.itemId, itemName: q.itemName || q.itemId, quotes: [] }; byItem[q.itemId].quotes.push(...(q.quotes || [])); });
+                    return Object.values(byItem).filter(g => g.quotes.length >= 2).map(g => {
+                        const prices = g.quotes.map(q => Number(q.unitPrice) || 0);
+                        const minP = Math.min(...prices), maxP = Math.max(...prices);
+                        const ranked = g.quotes.map(q => {
+                            const priceScore = maxP > minP ? (1 - (Number(q.unitPrice) - minP) / (maxP - minP)) * 100 : 100;
+                            const reliability = supplierAnalytics.find(s => s.name === q.supplier)?.reliabilityScore;
+                            const combined = reliability != null ? (priceScore * 0.5 + reliability * 0.5) : priceScore;
+                            return { ...q, combinedScore: Math.round(combined) };
+                        }).sort((a, b) => b.combinedScore - a.combinedScore);
+                        return { ...g, recommended: ranked[0], ranked };
+                    });
+                }, [data.quotations, supplierAnalytics]);
+
+                // ==================== CROSS-LOCATION STOCK VISIBILITY ====================
+                const LOCATION_LIST = ['MAIN', 'BRANCH_A', 'BRANCH_B'];
+                const crossLocationStock = useMemo(() => {
+                    const groups = {};
+                    (data.inventory || []).forEach(i => {
+                        const key = `${(i.brandName || '').trim().toLowerCase()}|${(i.genericName || '').trim().toLowerCase()}`;
+                        if (!groups[key]) groups[key] = { brandName: i.brandName, genericName: i.genericName, byLocation: { MAIN: 0, BRANCH_A: 0, BRANCH_B: 0 }, totalStock: 0 };
+                        const loc = i.location || 'MAIN';
+                        groups[key].byLocation[loc] = (groups[key].byLocation[loc] || 0) + (Number(i.stock) || 0);
+                        groups[key].totalStock += (Number(i.stock) || 0);
+                    });
+                    return Object.values(groups).sort((a, b) => (a.brandName || '').localeCompare(b.brandName || ''));
+                }, [data.inventory]);
+
                 const handleWhatsAppReminder = (pt) => {
                     if(!pt.phone) return toast("No phone number recorded.", 'warning');
                     const msg = `Hello ${pt.name},\n\nThis is a reminder from ${pharmacyName} Pharmacy. You have an outstanding balance of ${pt.creditBalance.toLocaleString()} ${currency}.\n\nPlease arrange payment at your earliest convenience. Thank you!`;
@@ -4710,6 +5141,324 @@
                     return batches[0].id !== p.id ? batches[0] : null;
                 };
 
+                // ==================== ANTIMICROBIAL STEWARDSHIP (AMS) ALERTS ====================
+                const isWatchGroupAntibiotic = (item) => /watch/i.test(item?.category || '') || /watch/i.test(item?.subcategory || '');
+                const isInjectableFormulation = (item) => /inj(ection)?\b|\biv\b|i\.v\.|vial|ampoule|ampule/i.test(`${item?.brandName || ''} ${item?.subcategory || ''}`);
+                const DURATION_RULES = [
+                    { match: /amoxicillin/i, maxDays: 7, note: 'Amoxicillin course should not exceed 7 days without clinical review.' },
+                    { match: /ciprofloxacin/i, maxDays: 14, note: 'Ciprofloxacin course beyond 14 days needs review.' },
+                    { match: /metronidazole/i, maxDays: 10, note: 'Metronidazole course should not exceed 10 days without review.' },
+                    { match: /doxycycline/i, maxDays: 14, note: 'Doxycycline course beyond 14 days needs review.' },
+                    { match: /ceftriaxone/i, maxDays: 14, note: 'Ceftriaxone (Watch group) beyond 14 days needs specialist review.' }
+                ];
+                const amsAlerts = useMemo(() => {
+                    const alerts = [];
+                    const cutoff = Date.now() - (14 * 24 * 60 * 60 * 1000);
+                    const recentSales = (data.sales || []).filter(s => new Date(s.timestamp).getTime() >= cutoff);
+                    recentSales.forEach(sale => {
+                        (sale.items || []).forEach(li => {
+                            const invItem = data.inventory.find(i => i.id === li.id) || li;
+                            const isWatch = isWatchGroupAntibiotic(invItem);
+                            const isAntibiotic = /antibiotic/i.test(invItem.category || '');
+                            if (!isAntibiotic && !isWatch) return;
+                            const key = `${sale.id}_${li.id}`;
+                            if (isWatch && !amsCultureChecks[key]) {
+                                alerts.push({ type: 'CULTURE', key, saleId: sale.id, itemName: li.brandName || invItem.brandName, patientId: sale.patientId, timestamp: sale.timestamp });
+                            }
+                            if (isAntibiotic && isInjectableFormulation(invItem)) {
+                                const hoursSince = (Date.now() - new Date(sale.timestamp).getTime()) / 36e5;
+                                if (hoursSince >= 48) {
+                                    alerts.push({ type: 'IV_TO_ORAL', key: key + '_ivo', saleId: sale.id, itemName: li.brandName || invItem.brandName, patientId: sale.patientId, hoursSince: Math.round(hoursSince), timestamp: sale.timestamp });
+                                }
+                            }
+                            const rule = DURATION_RULES.find(r => r.match.test(invItem.brandName || '') || r.match.test(invItem.genericName || ''));
+                            if (rule && sale.patientId) {
+                                const sameCourse = recentSales.filter(s2 => s2.patientId === sale.patientId && (s2.items || []).some(li2 => (li2.brandName || '').toLowerCase() === (li.brandName || '').toLowerCase()));
+                                if (sameCourse.length > 1) {
+                                    const span = (new Date(Math.max(...sameCourse.map(s => new Date(s.timestamp)))) - new Date(Math.min(...sameCourse.map(s => new Date(s.timestamp))))) / 86400000;
+                                    if (span > rule.maxDays) alerts.push({ type: 'DURATION', key: key + '_dur', saleId: sale.id, itemName: li.brandName || invItem.brandName, patientId: sale.patientId, days: Math.round(span), maxDays: rule.maxDays, note: rule.note, timestamp: sale.timestamp });
+                                }
+                            }
+                        });
+                    });
+                    return alerts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                }, [data.sales, data.inventory, amsCultureChecks]);
+                const handleConfirmCulture = (key) => { setAmsCultureChecks(p => ({ ...p, [key]: { confirmedAt: new Date().toISOString(), by: user.fullName || user.email } })); logAudit('AMS_CULTURE_CONFIRMED', { key }); toast('Culture confirmation recorded', 'success'); };
+
+                // ==================== INTER-STORE TRANSFER & CENTRAL WAREHOUSE ====================
+                const handleCreateTransferRequest = async () => {
+                    const item = data.inventory.find(i => i.id === transferDraft.itemId);
+                    if (!item) return toast('Select an item to transfer', 'warning');
+                    const qty = Number(transferDraft.qty) || 0;
+                    if (qty <= 0) return toast('Enter a valid quantity', 'warning');
+                    if (transferDraft.fromLocation === transferDraft.toLocation) return toast('Source and destination must differ', 'warning');
+                    await safeAdd('transferRequests', {
+                        itemId: item.id, itemName: item.brandName, genericName: item.genericName, qty,
+                        fromLocation: transferDraft.fromLocation, toLocation: transferDraft.toLocation,
+                        status: 'PENDING', notes: transferDraft.notes || '',
+                        requestedBy: user.fullName || user.email, requestedAt: new Date().toISOString()
+                    });
+                    logAudit('TRANSFER_REQUESTED', { itemName: item.brandName, qty, from: transferDraft.fromLocation, to: transferDraft.toLocation });
+                    toast('Transfer request submitted for approval', 'success');
+                    setTransferDraft({ itemId: '', fromLocation: 'MAIN', toLocation: 'BRANCH_A', qty: 1, notes: '' });
+                };
+                const handleApproveDispatchTransfer = async (tr) => {
+                    const sourceItem = data.inventory.find(i => i.id === tr.itemId && (i.location || 'MAIN') === tr.fromLocation) || data.inventory.find(i => i.id === tr.itemId);
+                    if (!sourceItem) return toast('Source stock record not found', 'error');
+                    if (Number(sourceItem.stock) < tr.qty) return toast(`Only ${sourceItem.stock} units available at ${tr.fromLocation}`, 'error');
+                    await safeUpdate('inventory', sourceItem.id, { stock: sourceItem.stock - tr.qty });
+                    await logStockMovement(sourceItem.id, sourceItem.brandName, 'TRANSFER_OUT', -tr.qty, 'TRANSFER', `To ${tr.toLocation} (req ${tr.id})`);
+                    await safeUpdate('transferRequests', tr.id, { status: 'IN_TRANSIT', approvedBy: user.fullName || user.email, approvedAt: new Date().toISOString(), dispatchedAt: new Date().toISOString() });
+                    logAudit('TRANSFER_DISPATCHED', { transferId: tr.id, itemName: tr.itemName, qty: tr.qty });
+                    toast(`${tr.itemName} dispatched - now in transit to ${tr.toLocation}`, 'success');
+                };
+                const handleRejectTransfer = async (tr) => { await safeUpdate('transferRequests', tr.id, { status: 'REJECTED', rejectedBy: user.fullName || user.email, rejectedAt: new Date().toISOString() }); toast('Transfer request rejected', 'warning'); };
+                const handleReceiveTransfer = async (tr) => {
+                    let destItem = data.inventory.find(i => i.id === tr.itemId && (i.location || 'MAIN') === tr.toLocation);
+                    if (!destItem) {
+                        const template = data.inventory.find(i => i.id === tr.itemId);
+                        const ref = await safeAdd('inventory', {
+                            brandName: template?.brandName || tr.itemName, genericName: template?.genericName || tr.genericName,
+                            category: template?.category || '', subcategory: template?.subcategory || '', price: template?.price || 0, costPrice: template?.costPrice || 0,
+                            stock: tr.qty, reorderPoint: template?.reorderPoint || 10, barcode: template?.barcode || '', expiryDate: template?.expiryDate || '',
+                            supplier: template?.supplier || '', location: tr.toLocation, batchNumber: template?.batchNumber || '',
+                            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+                        });
+                        if (ref) await logStockMovement(ref.id, template?.brandName || tr.itemName, 'TRANSFER_IN', tr.qty, 'TRANSFER', `From ${tr.fromLocation} (req ${tr.id})`);
+                    } else {
+                        await safeUpdate('inventory', destItem.id, { stock: (Number(destItem.stock) || 0) + tr.qty });
+                        await logStockMovement(destItem.id, destItem.brandName, 'TRANSFER_IN', tr.qty, 'TRANSFER', `From ${tr.fromLocation} (req ${tr.id})`);
+                    }
+                    await safeUpdate('transferRequests', tr.id, { status: 'RECEIVED', receivedBy: user.fullName || user.email, receivedAt: new Date().toISOString() });
+                    logAudit('TRANSFER_RECEIVED', { transferId: tr.id, itemName: tr.itemName, qty: tr.qty });
+                    toast(`${tr.itemName} received at ${tr.toLocation}`, 'success');
+                };
+                // Central warehouse (MAIN) push-allocation: distribute stock to branches below their reorder
+                // point, proportional to how far below reorder each branch is, capped by warehouse availability.
+                const handleAutoAllocateWarehouse = async (itemGroupKey) => {
+                    const group = crossLocationStock.find(g => `${g.brandName}|${g.genericName}`.toLowerCase() === itemGroupKey.toLowerCase());
+                    if (!group) return;
+                    const warehouseItem = data.inventory.find(i => (i.location || 'MAIN') === 'MAIN' && i.brandName === group.brandName && i.genericName === group.genericName);
+                    if (!warehouseItem || Number(warehouseItem.stock) <= 0) return toast('No warehouse (MAIN) stock available to allocate', 'warning');
+                    const branchNeeds = ['BRANCH_A', 'BRANCH_B'].map(loc => {
+                        const branchItem = data.inventory.find(i => (i.location || 'MAIN') === loc && i.brandName === group.brandName && i.genericName === group.genericName);
+                        const stock = branchItem ? Number(branchItem.stock) : 0;
+                        const reorderPoint = branchItem ? Number(branchItem.reorderPoint) || 10 : 10;
+                        return { loc, shortfall: Math.max(0, reorderPoint - stock) };
+                    }).filter(b => b.shortfall > 0);
+                    if (branchNeeds.length === 0) return toast('No branch is currently below its reorder point for this item', 'success');
+                    const totalShortfall = branchNeeds.reduce((s, b) => s + b.shortfall, 0);
+                    let remaining = Number(warehouseItem.stock);
+                    for (const b of branchNeeds) {
+                        const alloc = Math.min(remaining, Math.round((b.shortfall / totalShortfall) * Number(warehouseItem.stock)));
+                        if (alloc <= 0) continue;
+                        remaining -= alloc;
+                        await safeAdd('transferRequests', {
+                            itemId: warehouseItem.id, itemName: warehouseItem.brandName, genericName: warehouseItem.genericName, qty: alloc,
+                            fromLocation: 'MAIN', toLocation: b.loc, status: 'PENDING', notes: 'Auto-allocated from central warehouse based on branch reorder shortfall',
+                            requestedBy: user.fullName || user.email, requestedAt: new Date().toISOString()
+                        });
+                    }
+                    logAudit('WAREHOUSE_AUTO_ALLOCATE', { itemName: warehouseItem.brandName, branches: branchNeeds.map(b => b.loc) });
+                    toast('Allocation requests created for branches below reorder point', 'success');
+                };
+
+                // ==================== PATIENT ADHERENCE & REFILL REMINDERS ====================
+                // Built entirely from real sales history rather than requiring new patient fields: for every
+                // chronic-flagged item a patient has bought more than once, compare the actual gap between
+                // refills against the item's standard days supply.
+                const chronicRefillStatus = useMemo(() => {
+                    const rows = [];
+                    (data.patients || []).forEach(pt => {
+                        const ptSales = (data.sales || []).filter(s => s.patientId === pt.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                        const byDrug = {};
+                        ptSales.forEach(s => (s.items || []).forEach(li => {
+                            const invItem = data.inventory.find(i => i.id === li.id);
+                            if (!invItem || !invItem.isChronicMed) return;
+                            const key = (li.brandName || invItem.brandName || '').toLowerCase();
+                            if (!byDrug[key]) byDrug[key] = { drugName: li.brandName || invItem.brandName, standardDaysSupply: invItem.standardDaysSupply || 30, dates: [] };
+                            byDrug[key].dates.push(s.timestamp);
+                        }));
+                        Object.values(byDrug).forEach(d => {
+                            if (d.dates.length === 0) return;
+                            const lastRefill = d.dates[d.dates.length - 1];
+                            let adherencePct = null;
+                            if (d.dates.length >= 2) {
+                                const intervals = [];
+                                for (let i = 1; i < d.dates.length; i++) intervals.push((new Date(d.dates[i]) - new Date(d.dates[i - 1])) / 86400000);
+                                const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+                                adherencePct = Math.round(Math.min(100, (d.standardDaysSupply / avgInterval) * 100));
+                            }
+                            const daysSinceLastRefill = (Date.now() - new Date(lastRefill).getTime()) / 86400000;
+                            const dueInDays = Math.round(d.standardDaysSupply - daysSinceLastRefill);
+                            let status = 'ON_TRACK';
+                            if (dueInDays < 0 && daysSinceLastRefill > d.standardDaysSupply * 1.5) status = 'LOST_TO_FOLLOWUP';
+                            else if (dueInDays < 0) status = 'OVERDUE';
+                            else if (dueInDays <= 2) status = 'DUE_SOON';
+                            rows.push({ patientId: pt.id, patientName: pt.name, phone: pt.phone, drugName: d.drugName, standardDaysSupply: d.standardDaysSupply, lastRefill, dueInDays, adherencePct, status });
+                        });
+                    });
+                    return rows.sort((a, b) => a.dueInDays - b.dueInDays);
+                }, [data.patients, data.sales, data.inventory]);
+                const handleSendRefillReminder = (row) => {
+                    const msg = `Habari ${row.patientName}, dawa yako ya ${row.drugName} inaisha kesho. Tafadhali tembelea ${pharmacyName || 'duka letu la dawa'}.`;
+                    if (!row.phone) return toast('No phone number on file for this client', 'warning');
+                    window.open(`https://wa.me/${row.phone.replace(/[^0-9\+]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+                    logAudit('REFILL_REMINDER_SENT', { patientId: row.patientId, drugName: row.drugName });
+                };
+
+                // ==================== PHYSICAL STOCK COUNT (CYCLE COUNTING) ====================
+                const handleGenerateCountSheet = async (loc, shelfFilter) => {
+                    const items = data.inventory.filter(i => (i.location || 'MAIN') === loc && (!shelfFilter || (i.shelfLocation || '').toLowerCase().includes(shelfFilter.toLowerCase())));
+                    if (items.length === 0) return toast('No items match that location/shelf filter', 'warning');
+                    const lines = items.map(i => ({ itemId: i.id, name: i.brandName, shelfLocation: i.shelfLocation || '', systemQty: Number(i.stock) || 0, costPrice: Number(i.costPrice) || 0, countedQty: null }));
+                    const ref = await safeAdd('cycleCounts', { location: loc, shelfFilter: shelfFilter || '', lines, status: 'IN_PROGRESS', startedBy: user.fullName || user.email, startedAt: new Date().toISOString() });
+                    if (ref) { setShowCycleCountModal({ id: ref.id, location: loc, shelfFilter, lines, status: 'IN_PROGRESS' }); setCycleCountEntries({}); toast(`Count sheet generated: ${items.length} items`, 'success'); }
+                    logAudit('CYCLE_COUNT_STARTED', { location: loc, itemCount: items.length });
+                };
+                const handleSubmitCycleCount = async () => {
+                    const cc = showCycleCountModal; if (!cc) return;
+                    const missingCount = cc.lines.some(l => cycleCountEntries[l.itemId] === undefined || cycleCountEntries[l.itemId] === '');
+                    if (missingCount && !confirm('Some items have no counted quantity entered - submit anyway (missing lines will be treated as 0 counted)?')) return;
+                    const lines = cc.lines.map(l => {
+                        const counted = Number(cycleCountEntries[l.itemId] ?? 0);
+                        const variance = l.systemQty - counted;
+                        return { ...l, countedQty: counted, variance, varianceValue: variance * l.costPrice };
+                    });
+                    const totalVarianceValue = lines.reduce((s, l) => s + l.varianceValue, 0);
+                    const needsApproval = lines.some(l => Math.abs(l.varianceValue) > varianceApprovalThreshold);
+                    await safeUpdate('cycleCounts', cc.id, { lines, status: needsApproval ? 'PENDING_APPROVAL' : 'AUTO_APPROVED', submittedBy: user.fullName || user.email, submittedAt: new Date().toISOString(), totalVarianceValue });
+                    if (!needsApproval) { await applyCycleCountAdjustments(lines); toast('Count submitted - variances within threshold, stock adjusted automatically', 'success'); }
+                    else toast(`Count submitted - variance of ${totalVarianceValue.toLocaleString()} ${currency} requires manager approval before adjustment`, 'warning');
+                    logAudit('CYCLE_COUNT_SUBMITTED', { cycleCountId: cc.id, totalVarianceValue, needsApproval });
+                    setShowCycleCountModal(null); setCycleCountEntries({});
+                };
+                const applyCycleCountAdjustments = async (lines) => {
+                    for (const l of lines) {
+                        if (l.variance === 0) continue;
+                        await safeUpdate('inventory', l.itemId, { stock: l.countedQty });
+                        await logStockMovement(l.itemId, l.name, 'STOCK_TAKE_ADJUSTMENT', -l.variance, 'CYCLE_COUNT', `System ${l.systemQty} -> Counted ${l.countedQty}`);
+                    }
+                };
+                const handleApproveCycleCount = async (cc) => {
+                    if (!hasAccess('MANAGER')) return toast('Manager approval required', 'error');
+                    await applyCycleCountAdjustments(cc.lines);
+                    await safeUpdate('cycleCounts', cc.id, { status: 'APPROVED', approvedBy: user.fullName || user.email, approvedAt: new Date().toISOString() });
+                    logAudit('CYCLE_COUNT_APPROVED', { cycleCountId: cc.id, totalVarianceValue: cc.totalVarianceValue });
+                    toast('Variance approved - stock adjusted and journaled', 'success');
+                };
+
+                // ==================== CONTROLLED SUBSTANCES (NARCOTICS) REGISTER ====================
+                // A separate, append-only ledger. Note there is deliberately no delete/edit handler wired to
+                // this collection anywhere in the UI - entries are permanent once written, mirroring a
+                // physical bound narcotics register. (For a real deployment this must also be enforced with
+                // Firestore security rules that deny update/delete on this collection server-side.)
+                const controlledItems = useMemo(() => data.inventory.filter(i => i.isControlled), [data.inventory]);
+                const narcoticsBalances = useMemo(() => {
+                    const byItem = {};
+                    controlledItems.forEach(i => { byItem[i.id] = { item: i, runningBalance: Number(i.stock) || 0, entries: [] }; });
+                    (data.narcoticsLog || []).filter(e => byItem[e.itemId]).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).forEach(e => { byItem[e.itemId].entries.push(e); });
+                    return byItem;
+                }, [controlledItems, data.narcoticsLog]);
+                const handleNarcoticDispense = async (item, qty, patientName) => {
+                    const q = Number(qty) || 0;
+                    if (q <= 0) return toast('Enter a valid quantity', 'warning');
+                    if (q > Number(item.stock)) return toast('Insufficient controlled-substance stock', 'error');
+                    await safeUpdate('inventory', item.id, { stock: item.stock - q });
+                    await safeAdd('narcoticsLog', { itemId: item.id, itemName: item.brandName, type: 'DISPENSE', qty: q, balanceAfter: item.stock - q, patientName: patientName || '', dispensedBy: user.fullName || user.email, timestamp: new Date().toISOString() });
+                    logAudit('NARCOTIC_DISPENSED', { itemId: item.id, itemName: item.brandName, qty: q });
+                    toast(`${q} unit(s) of ${item.brandName} logged to narcotics register`, 'success');
+                };
+                const handleNarcoticReceive = async (item, qty) => {
+                    const q = Number(qty) || 0; if (q <= 0) return toast('Enter a valid quantity', 'warning');
+                    await safeUpdate('inventory', item.id, { stock: (Number(item.stock) || 0) + q });
+                    await safeAdd('narcoticsLog', { itemId: item.id, itemName: item.brandName, type: 'RECEIVE', qty: q, balanceAfter: Number(item.stock) + q, receivedBy: user.fullName || user.email, timestamp: new Date().toISOString() });
+                    logAudit('NARCOTIC_RECEIVED', { itemId: item.id, itemName: item.brandName, qty: q });
+                    toast('Receipt logged to narcotics register', 'success');
+                };
+                const handleNarcoticDestroy = async (item, qty, witnessName) => {
+                    const q = Number(qty) || 0;
+                    if (q <= 0) return toast('Enter a valid quantity', 'warning');
+                    if (!witnessName || !witnessName.trim()) return toast('A witness signature/name is required for destruction of controlled substances', 'error');
+                    if (q > Number(item.stock)) return toast('Cannot destroy more than current stock', 'error');
+                    await safeUpdate('inventory', item.id, { stock: item.stock - q });
+                    await safeAdd('narcoticsLog', { itemId: item.id, itemName: item.brandName, type: 'DESTROY', qty: q, balanceAfter: item.stock - q, witnessName: witnessName.trim(), destroyedBy: user.fullName || user.email, timestamp: new Date().toISOString() });
+                    logAudit('NARCOTIC_DESTROYED', { itemId: item.id, itemName: item.brandName, qty: q, witness: witnessName.trim() });
+                    toast('Destruction logged with witness signature', 'success');
+                };
+                const handleNarcoticReconcile = async (item, physicalCount) => {
+                    const bookBalance = Number(item.stock) || 0;
+                    const physical = Number(physicalCount);
+                    const discrepancy = physical - bookBalance;
+                    await safeAdd('narcoticsLog', { itemId: item.id, itemName: item.brandName, type: 'RECONCILE', bookBalance, physicalCount: physical, discrepancy, reconciledBy: user.fullName || user.email, timestamp: new Date().toISOString() });
+                    logAudit('NARCOTIC_RECONCILED', { itemId: item.id, itemName: item.brandName, discrepancy });
+                    if (discrepancy !== 0) toast(`DISCREPANCY of ${discrepancy} logged for ${item.brandName} - investigate immediately`, 'error');
+                    else toast('Reconciliation matches book balance - logged', 'success');
+                };
+
+                // ==================== EXPIRY & NEAR-EXPIRY INTELLIGENCE ====================
+                const expiryIntelligence = useMemo(() => {
+                    const now = Date.now();
+                    const withDays = (data.inventory || []).filter(i => i.expiryDate && Number(i.stock) > 0).map(i => {
+                        const days = Math.round((new Date(i.expiryDate).getTime() - now) / 86400000);
+                        const potentialLoss = (Number(i.stock) || 0) * (Number(i.costPrice) || 0);
+                        let suggestedDiscountPct = 0;
+                        if (days <= 30) suggestedDiscountPct = 50; else if (days <= 60) suggestedDiscountPct = 30; else if (days <= 90) suggestedDiscountPct = 15;
+                        return { ...i, daysToExpiry: days, potentialLoss, suggestedDiscountPct };
+                    }).filter(i => i.daysToExpiry <= 90 && i.daysToExpiry >= 0).sort((a, b) => a.daysToExpiry - b.daysToExpiry);
+                    return {
+                        d30: withDays.filter(i => i.daysToExpiry <= 30),
+                        d60: withDays.filter(i => i.daysToExpiry > 30 && i.daysToExpiry <= 60),
+                        d90: withDays.filter(i => i.daysToExpiry > 60 && i.daysToExpiry <= 90),
+                        totalPotentialLoss: withDays.reduce((s, i) => s + i.potentialLoss, 0),
+                        all: withDays
+                    };
+                }, [data.inventory]);
+
+                // ==================== DISPENSING LABEL GENERATOR ====================
+                // Builds a simple Swahili patient-instruction line from whatever adult/pediatric dosing text
+                // is available; falls back to a generic instruction if nothing more specific is known.
+                const buildSwahiliInstructions = (item, qty) => {
+                    const drugRef = DRUG_DB.find(d => (d.name || '').toLowerCase() === (item.genericName || item.brandName || '').toLowerCase());
+                    if (drugRef?.adult?.freq) {
+                        const freq = drugRef.adult.freq.toLowerCase();
+                        if (freq.includes('once')) return 'Chukua kidonge kimoja mara moja kwa siku baada ya chakula.';
+                        if (freq.includes('twice') || freq.includes('every 12')) return 'Chukua vidonge viwili mara mbili kwa siku baada ya chakula.';
+                        if (freq.includes('three') || freq.includes('every 8')) return 'Chukua dawa mara tatu kwa siku baada ya chakula.';
+                    }
+                    return 'Tumia dawa kama ilivyoelekezwa na mfamasia. Maliza dozi yote.';
+                };
+                const handleOpenLabelPrint = (cartOrSaleItems, patientName) => {
+                    const queue = (cartOrSaleItems || []).map(li => {
+                        const invItem = data.inventory.find(i => i.id === li.id) || li;
+                        return {
+                            brandName: li.brandName || invItem.brandName, strength: invItem.subcategory || '', qty: li.qty || 1,
+                            instructions: buildSwahiliInstructions(invItem, li.qty), expiryDate: invItem.expiryDate, patientName: patientName || ''
+                        };
+                    });
+                    setLabelQueue(queue);
+                };
+
+                // ==================== SYNC CONFLICT RESOLUTION ====================
+                const handleResolveConflictHonorEarliest = async (conflict) => {
+                    const toRefund = (conflict.candidateSales || []).slice(1); // keep the first, refund the rest
+                    for (const cs of toRefund) {
+                        await safeAdd('returns', { saleId: cs.saleId, itemId: conflict.itemId, returnQty: cs.qty, reason: 'STOCK_SYNC_CONFLICT', itemName: conflict.itemName, returnAmount: 0, returnProfit: 0, timestamp: new Date().toISOString(), processedBy: user.fullName || user.email, location });
+                    }
+                    await safeUpdate('inventory', conflict.itemId, { stock: 0 });
+                    await safeUpdate('syncConflicts', conflict.id, { status: 'RESOLVED', resolution: 'HONOR_EARLIEST', resolvedBy: user.fullName || user.email, resolvedAt: new Date().toISOString() });
+                    logAudit('SYNC_CONFLICT_RESOLVED', { conflictId: conflict.id, resolution: 'HONOR_EARLIEST' });
+                    toast('Conflict resolved - earliest sale honored, later sale(s) refunded', 'success');
+                    setResolvingConflict(null);
+                };
+                const handleResolveConflictBackorder = async (conflict) => {
+                    await safeUpdate('inventory', conflict.itemId, { stock: 0 });
+                    await safeUpdate('syncConflicts', conflict.id, { status: 'RESOLVED', resolution: 'BACKORDER', resolvedBy: user.fullName || user.email, resolvedAt: new Date().toISOString() });
+                    logAudit('SYNC_CONFLICT_RESOLVED', { conflictId: conflict.id, resolution: 'BACKORDER' });
+                    toast('Conflict resolved - both sales kept, item marked for reorder', 'success');
+                    setResolvingConflict(null);
+                };
+
                 const handleBarcodeSubmit = (e) => {
                     e.preventDefault();
                     const term = search.trim();
@@ -4725,7 +5474,14 @@
                     if (p.expiryDate && isItemExpired(p.expiryDate)) return toast(`Locked: this batch of ${p.brandName} expired on ${new Date(p.expiryDate).toLocaleDateString()}. Sale blocked.`, 'error');
                     const betterBatch = getFefoSuggestion(p);
                     if (betterBatch) {
-                        toast(`FEFO tip: an earlier-expiring batch of ${p.brandName} is available (${betterBatch.batchNumber ? 'Batch ' + betterBatch.batchNumber + ', ' : ''}exp ${new Date(betterBatch.expiryDate).toLocaleDateString()}). Dispense that one first if possible.`, 'warning');
+                        // FEFO hard block: selling a newer batch while an earlier-expiring one of the same
+                        // product still has stock is blocked outright. A manager can override (e.g. the older
+                        // batch is damaged/reserved) but the override is logged so it isn't a silent bypass.
+                        const msg = `FEFO block: an earlier-expiring batch of ${p.brandName} is still in stock (${betterBatch.batchNumber ? 'Batch ' + betterBatch.batchNumber + ', ' : ''}exp ${new Date(betterBatch.expiryDate).toLocaleDateString()}). Dispense that batch first.`;
+                        if (!hasAccess('MANAGER')) return toast(msg, 'error');
+                        if (!confirm(`${msg}\n\nMANAGER OVERRIDE: sell this later-expiring batch anyway? This will be logged.`)) return;
+                        logAudit('FEFO_OVERRIDE', { itemId: p.id, itemName: p.brandName, earlierBatch: betterBatch.batchNumber || betterBatch.id, earlierExpiry: betterBatch.expiryDate });
+                        toast(`FEFO override logged for ${p.brandName}.`, 'warning');
                     }
                     setCart(prev => {
                         const ex = prev.find(i => i.id === p.id);
@@ -4807,6 +5563,29 @@
                 const decrementCartStockAtomic = async (cartItems) => {
                     const db = safeDb();
                     if (!db) return { ok: false, error: 'No database connection' };
+
+                    // OFFLINE PATH: Firestore transactions require a round-trip to the server and cannot run
+                    // while offline, so falling through to runTransaction below would simply hang/fail and the
+                    // sale could never complete - unacceptable for intermittent-connectivity pharmacies. Instead,
+                    // apply an optimistic per-item decrement (queues via the safeUpdate/IndexedDB pending-ops
+                    // layer above and via Firestore's own offline persistence) using local known stock as the
+                    // guard. This can still race with another offline device selling the same last unit; that
+                    // case is caught after both devices resync by the negative-stock conflict detector above.
+                    if (!navigator.onLine) {
+                        const shortages = [];
+                        for (const ci of cartItems) {
+                            const local = data.inventory.find(i => i.id === ci.id);
+                            const wanted = Number(ci.qty) || 0;
+                            if (!local) { shortages.push({ id: ci.id, name: ci.brandName, reason: 'no_longer_exists' }); continue; }
+                            if (Number(local.stock) < wanted) { shortages.push({ id: ci.id, name: ci.brandName, available: local.stock, wanted }); }
+                        }
+                        if (shortages.length > 0) return { ok: false, shortages };
+                        for (const ci of cartItems) {
+                            await safeUpdate('inventory', ci.id, { stock: firebase.firestore.FieldValue.increment(-(Number(ci.qty) || 0)), version: firebase.firestore.FieldValue.increment(1), lastOfflineSaleDevice: getDeviceId() });
+                        }
+                        return { ok: true, offline: true };
+                    }
+
                     try {
                         await db.runTransaction(async (tx) => {
                             const refs = cartItems.map(i => db.collection('inventory').doc(i.id));
@@ -5400,12 +6179,13 @@
                     { n: 'POS', v: 'POS' },
                     { n: 'Inventory', v: 'STOO', a: 'TECHNICIAN' },
                     { n: 'Clients', v: 'PATIENTS' },
+                    { n: 'Ops+', v: 'OPSHUB', a: 'PHARMACIST' },
                     { n: 'Finance', v: 'FINANCE', a: 'MANAGER' },
                     { n: 'Reports', v: 'REPORTS', a: 'MANAGER' },
                     { n: 'Staff', v: 'USERS', a: 'MANAGER' }
                 ];
                 const getStatusBadgeClass = () => { if (syncStatus === 'SYNCING') return 'bg-syncing'; return isOnline ? 'bg-online' : 'bg-offline'; };
-                const notificationCount = systemAlerts.reorderNeeded + systemAlerts.outOfStock + systemAlerts.expired + systemAlerts.pendingClaims + (systemAlerts.openShifts > 0 ? 1 : 0);
+                const notificationCount = systemAlerts.reorderNeeded + systemAlerts.outOfStock + systemAlerts.expired + systemAlerts.pendingClaims + (systemAlerts.openShifts > 0 ? 1 : 0) + (data.syncConflicts || []).filter(c => c.status === 'OPEN').length;
 
                 return (
                     <div className={`flex h-screen overflow-hidden bg-slate-950 ${isMobile ? 'flex-col' : ''}`}>
@@ -5488,7 +6268,7 @@
 
                         {/* Receipt Modal */}
                         {receiptData && (
-                            <div className="fixed inset-0 z-[100] flex items-center justify-center modal-overlay no-print" onClick={(e) => handleModalClickOutside(e, () => setReceiptData(null))}>
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setReceiptData(null))}>
                                 <div className="bg-white text-black p-6 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col animate-slide-up">
                                     <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-black text-emerald-600 uppercase">Receipt</h3></div>
                                     <div id="print-area" className="flex flex-col text-sm space-y-2 mb-6 text-black bg-white">
@@ -5514,6 +6294,7 @@
                                     </div>
                                     <div className="flex gap-2">
                                         <button onClick={() => window.print()} className="flex-1 bg-emerald-600 text-white font-black py-4 rounded-xl hover:bg-emerald-500 shadow-lg transition-all">Print</button>
+                                        <button onClick={() => handleOpenLabelPrint(receiptData.items, data.patients.find(p => p.id === receiptData.patientId)?.name)} className="flex-1 bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-500 shadow-lg transition-all">Labels</button>
                                         <button onClick={() => setReceiptData(null)} className="flex-1 bg-slate-200 text-slate-800 font-black py-4 rounded-xl hover:bg-slate-300 transition-all">Close</button>
                                     </div>
                                 </div>
@@ -5752,13 +6533,17 @@
                             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, closePurchaseOrderModal)}>
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
                                     <h3 className="text-xl font-black text-indigo-500 uppercase mb-6 text-center">Purchase Order</h3>
-                                    <form onSubmit={(e) => { e.preventDefault(); if (poItems.length === 0) return toast("Add at least one item to the order", 'warning'); const fd = new FormData(e.target); const items = poItems.map(({itemId, name, qty, price}) => ({ itemId, name, qty, price })); safeAdd('purchaseOrders', { supplier: fd.get('supplier'), poNumber: fd.get('poNumber'), items, total: items.reduce((s,i) => s + (i.qty * i.price), 0), status: 'PENDING', createdAt: new Date().toISOString(), createdBy: user.fullName || user.email, location }); logAudit('CREATE_PURCHASE_ORDER', { poNumber: fd.get('poNumber'), supplier: fd.get('supplier'), itemCount: items.length }); toast("Purchase order created", 'success'); setPoItems([]); setPoDraft({ itemId: '', qty: 1, price: 0 }); setShowPurchaseOrderModal(false); }} className="space-y-4">
+                                    <form onSubmit={(e) => { e.preventDefault(); if (poItems.length === 0) return toast("Add at least one item to the order", 'warning'); const fd = new FormData(e.target); const items = poItems.map(({itemId, name, qty, price}) => ({ itemId, name, qty, price })); safeAdd('purchaseOrders', { supplier: fd.get('supplier'), poNumber: fd.get('poNumber'), items, total: items.reduce((s,i) => s + (i.qty * i.price), 0), status: 'PENDING', expectedDeliveryDate: fd.get('expectedDeliveryDate') || null, createdAt: new Date().toISOString(), createdBy: user.fullName || user.email, location }); logAudit('CREATE_PURCHASE_ORDER', { poNumber: fd.get('poNumber'), supplier: fd.get('supplier'), itemCount: items.length }); toast("Purchase order created", 'success'); setPoItems([]); setPoDraft({ itemId: '', qty: 1, price: 0 }); setShowPurchaseOrderModal(false); }} className="space-y-4">
                                         <div className="grid grid-cols-2 gap-3">
                                             <select name="supplier" required className="p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-indigo-500 input-focus">
                                                 <option value="">Select Supplier *</option>
                                                 {data.suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                             </select>
                                             <input name="poNumber" placeholder="PO Number *" required className="p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-indigo-500 input-focus" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Expected Delivery Date (for on-time tracking)</label>
+                                            <input name="expectedDeliveryDate" type="date" className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-indigo-500 input-focus" />
                                         </div>
 
                                         <div className="bg-black/30 border border-slate-800 rounded-2xl p-4 space-y-3">
@@ -6022,6 +6807,111 @@
                             </div>
                         )}
 
+                        {/* Cycle Count Entry Modal - blind: system quantity is hidden until submission */}
+                        {showCycleCountModal && (
+                            <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowCycleCountModal(null))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-lg p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[90vh] overflow-hidden">
+                                    <h3 className="text-xl font-black text-indigo-400 uppercase mb-1 text-center">Blind Count Entry</h3>
+                                    <p className="text-[10px] text-slate-500 text-center mb-4">{showCycleCountModal.location}{showCycleCountModal.shelfFilter ? ` · ${showCycleCountModal.shelfFilter}` : ''} · System quantities are hidden while counting</p>
+                                    <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
+                                        {showCycleCountModal.lines.map(l => (
+                                            <div key={l.itemId} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-3">
+                                                <div className="min-w-0 flex-1"><p className="text-white font-bold text-xs truncate">{l.name}</p><p className="text-[10px] text-slate-500">{l.shelfLocation}</p></div>
+                                                <input type="number" placeholder="Counted qty" value={cycleCountEntries[l.itemId] ?? ''} onChange={e => setCycleCountEntries(p => ({...p, [l.itemId]: e.target.value}))} className="w-28 p-2 bg-slate-800 rounded-lg text-white font-bold text-xs outline-none border border-slate-700 focus:border-indigo-500" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button onClick={handleSubmitCycleCount} className="mt-4 w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Submit Count</button>
+                                    <button onClick={() => setShowCycleCountModal(null)} className="mt-2 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-3 border-t border-slate-800">Cancel</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Narcotic Register Action Modal */}
+                        {showNarcoticModal && (
+                            <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => { setShowNarcoticModal(null); setNarcoticWitness(''); })}>
+                                <div className="bg-slate-900 border border-rose-900/50 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
+                                    <h3 className="text-xl font-black text-rose-400 uppercase mb-1 text-center">{showNarcoticModal.mode === 'DISPENSE' ? 'Dispense' : showNarcoticModal.mode === 'RECEIVE' ? 'Receive Stock' : showNarcoticModal.mode === 'DESTROY' ? 'Destroy (Witnessed)' : 'Daily Reconciliation'}</h3>
+                                    <p className="text-xs text-slate-500 text-center mb-4">{showNarcoticModal.item.brandName} · Current balance: {showNarcoticModal.item.stock}</p>
+                                    <form onSubmit={(e) => {
+                                        e.preventDefault(); const fd = new FormData(e.target);
+                                        if (showNarcoticModal.mode === 'DISPENSE') handleNarcoticDispense(showNarcoticModal.item, fd.get('qty'), fd.get('patientName'));
+                                        else if (showNarcoticModal.mode === 'RECEIVE') handleNarcoticReceive(showNarcoticModal.item, fd.get('qty'));
+                                        else if (showNarcoticModal.mode === 'DESTROY') handleNarcoticDestroy(showNarcoticModal.item, fd.get('qty'), fd.get('witness'));
+                                        else if (showNarcoticModal.mode === 'RECONCILE') handleNarcoticReconcile(showNarcoticModal.item, fd.get('physicalCount'));
+                                        setShowNarcoticModal(null); setNarcoticWitness('');
+                                    }} className="space-y-3">
+                                        {showNarcoticModal.mode === 'RECONCILE' ? (
+                                            <input name="physicalCount" type="number" placeholder="Physical count *" required className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-rose-500 input-focus" />
+                                        ) : (
+                                            <input name="qty" type="number" placeholder="Quantity *" required className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-rose-500 input-focus" />
+                                        )}
+                                        {showNarcoticModal.mode === 'DISPENSE' && <input name="patientName" placeholder="Patient name" className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-rose-500 input-focus" />}
+                                        {showNarcoticModal.mode === 'DESTROY' && <input name="witness" placeholder="Witness full name *" required className="w-full p-4 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-rose-500 input-focus" />}
+                                        <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Confirm & Log</button>
+                                    </form>
+                                    <button onClick={() => { setShowNarcoticModal(null); setNarcoticWitness(''); }} className="mt-3 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-3 border-t border-slate-800">Cancel</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Sync Conflict Resolution Modal */}
+                        {resolvingConflict && (
+                            <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setResolvingConflict(null))}>
+                                <div className="bg-slate-900 border border-rose-900/50 w-full max-w-lg p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up">
+                                    <h3 className="text-xl font-black text-rose-400 uppercase mb-1 text-center">Resolve Stock Conflict</h3>
+                                    <p className="text-xs text-slate-500 text-center mb-4">{resolvingConflict.itemName} was oversold by {resolvingConflict.overSoldBy} unit(s) across offline devices.</p>
+                                    <div className="bg-black rounded-xl border border-slate-800 divide-y divide-slate-800 mb-4 max-h-48 overflow-y-auto no-scrollbar">
+                                        {(resolvingConflict.candidateSales || []).map((cs, i) => (
+                                            <div key={i} className="p-3 flex justify-between text-xs"><span className="text-white font-bold">Sale #{i + 1} · {cs.qty} unit(s)</span><span className="text-slate-500">{new Date(cs.timestamp).toLocaleString()}</span></div>
+                                        ))}
+                                    </div>
+                                    <button onClick={() => handleResolveConflictHonorEarliest(resolvingConflict)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all mb-2">Honor Earliest Sale, Refund Others</button>
+                                    <button onClick={() => handleResolveConflictBackorder(resolvingConflict)} className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Keep Both Sales, Backorder Item</button>
+                                    <button onClick={() => setResolvingConflict(null)} className="mt-3 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-3 border-t border-slate-800">Cancel</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Dispensing Label Print Modal - thermal label format (50x30mm or 62mm continuous) */}
+                        {labelQueue && (
+                            <>
+                            <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 modal-overlay no-print" onClick={(e) => handleModalClickOutside(e, () => setLabelQueue(null))}>
+                                <div className="bg-slate-900 border border-slate-800 w-full max-w-md p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[90vh] overflow-hidden">
+                                    <h3 className="text-xl font-black text-emerald-400 uppercase mb-4 text-center">Dispensing Labels</h3>
+                                    <div className="flex gap-2 mb-4">
+                                        <button onClick={() => setLabelSize('50x30')} className={`flex-1 py-2 rounded-xl font-black text-[10px] uppercase transition-all ${labelSize === '50x30' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'}`}>50×30mm</button>
+                                        <button onClick={() => setLabelSize('62')} className={`flex-1 py-2 rounded-xl font-black text-[10px] uppercase transition-all ${labelSize === '62' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'}`}>62mm Continuous</button>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto no-scrollbar space-y-2 mb-4">
+                                        {labelQueue.map((l, i) => (
+                                            <div key={i} className="bg-black p-3 rounded-xl border border-slate-800 text-xs text-slate-300">{l.brandName} · Qty {l.qty}</div>
+                                        ))}
+                                    </div>
+                                    <button onClick={() => window.print()} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Print Labels</button>
+                                    <button onClick={() => setLabelQueue(null)} className="mt-2 w-full text-slate-500 hover:text-white font-bold text-xs uppercase pt-3 border-t border-slate-800">Close</button>
+                                </div>
+                            </div>
+
+                            {/* Rendered off-screen on the live page, but this is what @media print actually shows -
+                                deliberately kept OUTSIDE the .no-print wrapper above, since display:none on an
+                                ancestor would otherwise hide this regardless of its own visibility:visible rule. */}
+                            <div id="label-print-area" style={{ width: labelSize === '50x30' ? '50mm' : '62mm' }}>
+                                {labelQueue.map((l, i) => (
+                                    <div key={i} style={{ padding: '2mm', pageBreakAfter: 'always', fontFamily: "'Courier New', monospace", color: '#000', background: '#fff' }}>
+                                        <div style={{ fontSize: '9px', fontWeight: 900, textAlign: 'center' }}>{pharmacyName}</div>
+                                        {l.patientName && <div style={{ fontSize: '8px' }}>Patient: {l.patientName}</div>}
+                                        <div style={{ fontSize: '9px', fontWeight: 700 }}>{l.brandName} {l.strength}</div>
+                                        <div style={{ fontSize: '8px' }}>Qty: {l.qty}</div>
+                                        <div style={{ fontSize: '7px', marginTop: '1mm' }}>{l.instructions}</div>
+                                        {l.expiryDate && <div style={{ fontSize: '7px' }}>Exp: {new Date(l.expiryDate).toLocaleDateString()}</div>}
+                                        <div style={{ fontSize: '6px', marginTop: '1mm' }}>Dispensed: {new Date().toLocaleDateString()} · {(user?.fullName || '').split(' ').map(n=>n[0]).join('')}</div>
+                                    </div>
+                                ))}
+                            </div>
+                            </>
+                        )}
+
                         {/* Prescription Modal */}
                         {showPrescriptionModal && (
                             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 modal-overlay" onClick={(e) => handleModalClickOutside(e, () => setShowPrescriptionModal(false))}>
@@ -6212,7 +7102,7 @@
                                 <div className="bg-slate-900 border border-slate-800 w-full max-w-lg p-6 md:p-8 rounded-[3rem] shadow-2xl flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
                                     <h3 className="text-xl font-black text-emerald-500 uppercase mb-6 text-center">{editing.type === 'INVENTORY' ? 'Edit Product' : editing.type === 'PATIENT' ? 'Edit Client' : 'Edit Personnel'}</h3>
                                     {editing.type === 'INVENTORY' && (
-                                        <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.target); const price = Number(fd.get('price')); const costPrice = Number(fd.get('costPrice')); if (price < costPrice && !confirm(`Selling price (${price}) is less than cost (${costPrice}). Continue?`)) return; const updated = { brandName: fd.get('brandName'), genericName: fd.get('genericName'), category: fd.get('category'), subcategory: fd.get('subcategory'), price, costPrice, stock: Number(fd.get('stock')), reorderPoint: Number(fd.get('reorderPoint') || 10), barcode: fd.get('barcode'), expiryDate: fd.get('expiryDate'), supplier: fd.get('supplier'), location: fd.get('location') || location, batchNumber: fd.get('batchNumber'), updatedAt: new Date().toISOString() }; if (!editing.item.id) { safeAdd('inventory', { ...updated, createdAt: new Date().toISOString() }); toast("Product added", 'success'); } else { safeUpdate('inventory', editing.item.id, updated); toast("Product updated", 'success'); } setEditing(null); logAudit(editing.item.id ? 'UPDATE_PRODUCT' : 'ADD_PRODUCT', { productId: editing.item.id || 'new' }); }} className="space-y-3">
+                                        <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.target); const price = Number(fd.get('price')); const costPrice = Number(fd.get('costPrice')); if (price < costPrice && !confirm(`Selling price (${price}) is less than cost (${costPrice}). Continue?`)) return; const updated = { brandName: fd.get('brandName'), genericName: fd.get('genericName'), category: fd.get('category'), subcategory: fd.get('subcategory'), price, costPrice, stock: Number(fd.get('stock')), reorderPoint: Number(fd.get('reorderPoint') || 10), barcode: fd.get('barcode'), expiryDate: fd.get('expiryDate'), supplier: fd.get('supplier'), location: fd.get('location') || location, batchNumber: fd.get('batchNumber'), shelfLocation: fd.get('shelfLocation') || '', isChronicMed: fd.get('isChronicMed') === 'on', standardDaysSupply: fd.get('standardDaysSupply') ? Number(fd.get('standardDaysSupply')) : null, isControlled: fd.get('isControlled') === 'on', updatedAt: new Date().toISOString() }; if (!editing.item.id) { safeAdd('inventory', { ...updated, createdAt: new Date().toISOString() }); toast("Product added", 'success'); } else { safeUpdate('inventory', editing.item.id, updated); toast("Product updated", 'success'); } setEditing(null); logAudit(editing.item.id ? 'UPDATE_PRODUCT' : 'ADD_PRODUCT', { productId: editing.item.id || 'new' }); }} className="space-y-3">
                                             <div className="grid grid-cols-2 gap-3">
                                                 <input name="brandName" defaultValue={editing.item.brandName} placeholder="Brand Name *" required className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
                                                 <input name="genericName" defaultValue={editing.item.genericName} placeholder="Generic Name" className="p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
@@ -6241,6 +7131,12 @@
                                                 <option value="">Select Supplier</option>
                                                 {data.suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                             </select>
+                                            <input name="shelfLocation" defaultValue={editing.item.shelfLocation} placeholder="Shelf / Bin Location (e.g. A-3)" className="w-full p-3 bg-black rounded-xl text-white font-bold text-sm outline-none border border-slate-800 focus:border-emerald-500 input-focus" />
+                                            <div className="grid grid-cols-2 gap-3 bg-slate-800/40 p-3 rounded-xl border border-slate-800">
+                                                <label className="flex items-center gap-2 text-[11px] font-bold text-slate-300"><input type="checkbox" name="isChronicMed" defaultChecked={!!editing.item.isChronicMed} className="w-4 h-4" /> Chronic medication</label>
+                                                <input name="standardDaysSupply" type="number" defaultValue={editing.item.standardDaysSupply || ''} placeholder="Std days supply" className="p-2 bg-black rounded-lg text-white font-bold text-xs outline-none border border-slate-800" />
+                                                <label className="flex items-center gap-2 text-[11px] font-bold text-rose-300 col-span-2"><input type="checkbox" name="isControlled" defaultChecked={editing.item.isControlled != null ? editing.item.isControlled : /morphine|pethidine|tramadol|diazepam|codeine|fentanyl|methadone/i.test(`${editing.item.brandName||''} ${editing.item.genericName||''}`)} className="w-4 h-4" /> Controlled substance / narcotic (tracked in Narcotics Register)</label>
+                                            </div>
                                             <div className="flex gap-2">
                                                 <button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">{editing.item.id ? 'Update Product' : 'Add Product'}</button>
                                                 {editing.item.id && <button type="button" onClick={() => handleDeleteProduct(editing.item.id)} className="bg-rose-600 hover:bg-rose-500 text-white py-3 px-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all">Del</button>}
@@ -6640,6 +7536,252 @@
                                             ))}
                                         </div>
                                         {(data.patients || []).filter(p => !search || (p.name || '').toLowerCase().includes(search.toLowerCase())).length === 0 && <p className="text-center py-12 text-slate-500 font-bold uppercase text-xs">No clients found</p>}
+                                    </div>
+                                )}
+
+                                {/* ========== OPS+ HUB VIEW ========== */}
+                                {view === 'OPSHUB' && (
+                                    <div className="space-y-6 animate-fade-in">
+                                        <div className="flex gap-2 flex-wrap">
+                                            {[
+                                                ['SYNC', 'Sync Queue'], ['SUPPLIERS', 'Supplier Analytics'], ['AMS', 'AMS Alerts'],
+                                                ['TRANSFERS', 'Transfers'], ['ADHERENCE', 'Adherence'], ['CYCLECOUNT', 'Cycle Count'],
+                                                ['EXPIRY', 'Expiry Intel'], ['NARCOTICS', 'Narcotics']
+                                            ].map(([key, label]) => (
+                                                <button key={key} onClick={() => setOpsTab(key)} className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all ${opsTab === key ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{label}</button>
+                                            ))}
+                                        </div>
+
+                                        {/* ---- SYNC QUEUE ---- */}
+                                        {opsTab === 'SYNC' && (
+                                            <div className="space-y-4">
+                                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                                    <div className="bg-slate-900 rounded-2xl p-5 border border-slate-800"><p className="text-[10px] text-slate-500 uppercase font-bold">Connection</p><p className={`text-lg font-black mt-1 ${isOnline ? 'text-emerald-400' : 'text-rose-400'}`}>{isOnline ? 'Online' : 'Offline'}</p></div>
+                                                    <div className="bg-slate-900 rounded-2xl p-5 border border-slate-800"><p className="text-[10px] text-slate-500 uppercase font-bold">Pending Writes</p><p className="text-lg font-black text-white mt-1">{pendingSyncOps.length}</p></div>
+                                                    <div className="bg-slate-900 rounded-2xl p-5 border border-slate-800"><p className="text-[10px] text-slate-500 uppercase font-bold">Last Synced</p><p className="text-xs font-bold text-white mt-1">{lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : 'Never'}</p></div>
+                                                    <div className="bg-slate-900 rounded-2xl p-5 border border-slate-800"><p className="text-[10px] text-slate-500 uppercase font-bold">This Device</p><p className="text-xs font-bold text-white mt-1">{getDeviceId()}</p></div>
+                                                </div>
+                                                <button onClick={flushPendingOps} className="bg-emerald-600 hover:bg-emerald-500 text-white py-3 px-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">Retry Sync Now</button>
+                                                <div className="bg-slate-900 rounded-2xl border border-slate-800 divide-y divide-slate-800">
+                                                    <div className="p-4"><h4 className="font-black text-white text-sm">Queued Changes ({pendingSyncOps.length})</h4></div>
+                                                    {pendingSyncOps.length === 0 && <p className="p-6 text-center text-slate-500 text-xs font-bold uppercase">Everything is synced</p>}
+                                                    {pendingSyncOps.map(op => (
+                                                        <div key={op.opId} className="p-4 flex justify-between items-center text-xs">
+                                                            <div><span className="text-white font-bold">{op.kind}</span><span className="text-slate-500"> · {op.col}</span></div>
+                                                            <span className="text-slate-500">{new Date(op.queuedAt).toLocaleTimeString()}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="bg-slate-900 rounded-2xl border border-rose-900/50 divide-y divide-slate-800">
+                                                    <div className="p-4"><h4 className="font-black text-rose-400 text-sm">Stock Conflicts ({(data.syncConflicts || []).filter(c => c.status === 'OPEN').length} open)</h4><p className="text-[10px] text-slate-500 mt-1">Raised when two offline devices both sold the last unit of something.</p></div>
+                                                    {(data.syncConflicts || []).filter(c => c.status === 'OPEN').length === 0 && <p className="p-6 text-center text-slate-500 text-xs font-bold uppercase">No open conflicts</p>}
+                                                    {(data.syncConflicts || []).filter(c => c.status === 'OPEN').map(c => (
+                                                        <div key={c.id} className="p-4 flex justify-between items-center">
+                                                            <div><p className="text-white font-bold text-xs">{c.itemName}</p><p className="text-[10px] text-rose-400">Oversold by {c.overSoldBy} · {c.candidateSales?.length || 0} candidate sale(s)</p></div>
+                                                            <button onClick={() => setResolvingConflict(c)} className="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all">Resolve</button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* ---- SUPPLIER ANALYTICS ---- */}
+                                        {opsTab === 'SUPPLIERS' && (
+                                            <div className="space-y-4">
+                                                <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-x-auto">
+                                                    <table className="w-full text-xs">
+                                                        <thead><tr className="text-slate-500 uppercase text-[10px] border-b border-slate-800">
+                                                            <th className="p-3 text-left">Supplier</th><th className="p-3">On-Time %</th><th className="p-3">Invoice Accuracy %</th><th className="p-3">Quality Score</th><th className="p-3">Avg Lead (d)</th><th className="p-3">Reliability</th>
+                                                        </tr></thead>
+                                                        <tbody>
+                                                            {supplierAnalytics.map(s => (
+                                                                <tr key={s.name} className="border-b border-slate-800/50">
+                                                                    <td className="p-3 text-white font-bold">{s.name}</td>
+                                                                    <td className="p-3 text-center">{s.onTimeRate != null ? s.onTimeRate + '%' : '—'}</td>
+                                                                    <td className="p-3 text-center">{s.invoiceAccuracyRate != null ? s.invoiceAccuracyRate + '%' : '—'}</td>
+                                                                    <td className="p-3 text-center">{s.qualityScore != null ? s.qualityScore : '—'}</td>
+                                                                    <td className="p-3 text-center">{s.avgLeadDays ?? '—'}</td>
+                                                                    <td className="p-3 text-center"><span className={`font-black ${s.reliabilityScore >= 80 ? 'text-emerald-400' : s.reliabilityScore >= 50 ? 'text-amber-400' : 'text-rose-400'}`}>{s.reliabilityScore ?? '—'}</span></td>
+                                                                </tr>
+                                                            ))}
+                                                            {supplierAnalytics.length === 0 && <tr><td colSpan="6" className="p-6 text-center text-slate-500 font-bold uppercase">No supplier data yet</td></tr>}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                {preferredSupplierSuggestions.length > 0 && (
+                                                    <div className="bg-slate-900 rounded-2xl border border-slate-800 p-4">
+                                                        <h4 className="font-black text-white text-sm mb-3">Preferred Supplier Suggestions (Price + Reliability)</h4>
+                                                        <div className="space-y-2">
+                                                            {preferredSupplierSuggestions.map(g => (
+                                                                <div key={g.itemId} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+                                                                    <div><p className="text-white font-bold text-xs">{g.itemName}</p><p className="text-[10px] text-emerald-400">Recommended: {g.recommended.supplier} · {currency}{g.recommended.unitPrice} · score {g.recommended.combinedScore}</p></div>
+                                                                    <span className="text-[10px] text-slate-500">{g.ranked.length} quotes compared</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* ---- AMS ALERTS ---- */}
+                                        {opsTab === 'AMS' && (
+                                            <div className="bg-slate-900 rounded-2xl border border-slate-800 divide-y divide-slate-800">
+                                                <div className="p-4"><h4 className="font-black text-white text-sm">Antimicrobial Stewardship Alerts (last 14 days)</h4></div>
+                                                {amsAlerts.length === 0 && <p className="p-6 text-center text-slate-500 text-xs font-bold uppercase">No AMS alerts</p>}
+                                                {amsAlerts.map(a => (
+                                                    <div key={a.key} className="p-4 flex justify-between items-center">
+                                                        <div>
+                                                            <span className={`text-[9px] px-2 py-1 rounded-lg font-bold uppercase mr-2 ${a.type === 'CULTURE' ? 'bg-amber-900/50 text-amber-400' : a.type === 'IV_TO_ORAL' ? 'bg-sky-900/50 text-sky-400' : 'bg-rose-900/50 text-rose-400'}`}>{a.type === 'CULTURE' ? 'Culture Check' : a.type === 'IV_TO_ORAL' ? 'IV→Oral Switch' : 'Duration Review'}</span>
+                                                            <span className="text-white font-bold text-xs">{a.itemName}</span>
+                                                            {a.type === 'IV_TO_ORAL' && <p className="text-[10px] text-slate-500 mt-1">{a.hoursSince}h since dose - consider switching to oral if clinically improved.</p>}
+                                                            {a.type === 'DURATION' && <p className="text-[10px] text-slate-500 mt-1">{a.note} (course so far: {a.days}d, guideline max: {a.maxDays}d)</p>}
+                                                        </div>
+                                                        {a.type === 'CULTURE' && <button onClick={() => handleConfirmCulture(a.key)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all">Culture Confirmed</button>}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* ---- TRANSFERS ---- */}
+                                        {opsTab === 'TRANSFERS' && (
+                                            <div className="space-y-4">
+                                                <div className="bg-slate-900 rounded-2xl border border-slate-800 p-4 space-y-3">
+                                                    <h4 className="font-black text-white text-sm">New Transfer Request</h4>
+                                                    <select value={transferDraft.itemId} onChange={e => setTransferDraft(p => ({...p, itemId: e.target.value}))} className="w-full p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800">
+                                                        <option value="">Select item...</option>
+                                                        {data.inventory.map(i => <option key={i.id} value={i.id}>{i.brandName} ({i.location || 'MAIN'}, stock {i.stock})</option>)}
+                                                    </select>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        <select value={transferDraft.fromLocation} onChange={e => setTransferDraft(p => ({...p, fromLocation: e.target.value}))} className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800">{LOCATION_LIST.map(l => <option key={l} value={l}>{l}</option>)}</select>
+                                                        <select value={transferDraft.toLocation} onChange={e => setTransferDraft(p => ({...p, toLocation: e.target.value}))} className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800">{LOCATION_LIST.map(l => <option key={l} value={l}>{l}</option>)}</select>
+                                                        <input type="number" value={transferDraft.qty} onChange={e => setTransferDraft(p => ({...p, qty: e.target.value}))} placeholder="Qty" className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800" />
+                                                    </div>
+                                                    <button onClick={handleCreateTransferRequest} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all">Submit Request</button>
+                                                </div>
+
+                                                <div className="bg-slate-900 rounded-2xl border border-slate-800 divide-y divide-slate-800">
+                                                    <div className="p-4"><h4 className="font-black text-white text-sm">Transfer Requests</h4></div>
+                                                    {(data.transferRequests || []).length === 0 && <p className="p-6 text-center text-slate-500 text-xs font-bold uppercase">No transfer requests</p>}
+                                                    {(data.transferRequests || []).slice().sort((a,b) => new Date(b.requestedAt) - new Date(a.requestedAt)).map(tr => (
+                                                        <div key={tr.id} className="p-4 flex justify-between items-center">
+                                                            <div>
+                                                                <p className="text-white font-bold text-xs">{tr.itemName} · {tr.qty} units</p>
+                                                                <p className="text-[10px] text-slate-500">{tr.fromLocation} → {tr.toLocation} · <span className={tr.status === 'RECEIVED' ? 'text-emerald-400' : tr.status === 'REJECTED' ? 'text-rose-400' : 'text-amber-400'}>{tr.status}</span></p>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                {tr.status === 'PENDING' && hasAccess('MANAGER') && <><button onClick={() => handleApproveDispatchTransfer(tr)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase transition-all">Approve & Dispatch</button><button onClick={() => handleRejectTransfer(tr)} className="bg-rose-600 hover:bg-rose-500 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase transition-all">Reject</button></>}
+                                                                {tr.status === 'IN_TRANSIT' && <button onClick={() => handleReceiveTransfer(tr)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase transition-all">Confirm Receipt</button>}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                <div className="bg-slate-900 rounded-2xl border border-slate-800 p-4">
+                                                    <h4 className="font-black text-white text-sm mb-3">Cross-Location Stock Lookup</h4>
+                                                    <input value={stockLookupTerm} onChange={e => setStockLookupTerm(e.target.value)} placeholder="Search product..." className="w-full p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800 mb-3" />
+                                                    <div className="space-y-2 max-h-72 overflow-y-auto no-scrollbar">
+                                                        {crossLocationStock.filter(g => !stockLookupTerm || (g.brandName||'').toLowerCase().includes(stockLookupTerm.toLowerCase())).slice(0, 30).map(g => (
+                                                            <div key={g.brandName + g.genericName} className="bg-black p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+                                                                <div><p className="text-white font-bold text-xs">{g.brandName}</p><p className="text-[10px] text-slate-500">MAIN: {g.byLocation.MAIN} · Branch A: {g.byLocation.BRANCH_A} · Branch B: {g.byLocation.BRANCH_B}</p></div>
+                                                                {hasAccess('MANAGER') && <button onClick={() => handleAutoAllocateWarehouse(`${g.brandName}|${g.genericName}`.toLowerCase())} className="bg-slate-800 hover:bg-slate-700 text-white px-3 py-2 rounded-xl font-black text-[9px] uppercase transition-all">Auto-Allocate</button>}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* ---- ADHERENCE ---- */}
+                                        {opsTab === 'ADHERENCE' && (
+                                            <div className="bg-slate-900 rounded-2xl border border-slate-800 divide-y divide-slate-800">
+                                                <div className="p-4"><h4 className="font-black text-white text-sm">Chronic Medication Refill Tracker</h4><p className="text-[10px] text-slate-500 mt-1">Based on refill history for items flagged "Chronic medication" in Inventory.</p></div>
+                                                {chronicRefillStatus.length === 0 && <p className="p-6 text-center text-slate-500 text-xs font-bold uppercase">No chronic-medication refill history yet</p>}
+                                                {chronicRefillStatus.map((row, idx) => (
+                                                    <div key={idx} className="p-4 flex justify-between items-center">
+                                                        <div>
+                                                            <p className="text-white font-bold text-xs">{row.patientName} · {row.drugName}</p>
+                                                            <p className="text-[10px] text-slate-500">Last refill {new Date(row.lastRefill).toLocaleDateString()} · {row.adherencePct != null ? `Adherence ${row.adherencePct}%` : 'First refill'} · <span className={row.status === 'LOST_TO_FOLLOWUP' ? 'text-rose-400' : row.status === 'OVERDUE' ? 'text-amber-400' : row.status === 'DUE_SOON' ? 'text-sky-400' : 'text-emerald-400'}>{row.status.replace(/_/g, ' ')}</span></p>
+                                                        </div>
+                                                        <button onClick={() => handleSendRefillReminder(row)} className="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase transition-all">WhatsApp</button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* ---- CYCLE COUNT ---- */}
+                                        {opsTab === 'CYCLECOUNT' && (
+                                            <div className="space-y-4">
+                                                <div className="bg-slate-900 rounded-2xl border border-slate-800 p-4 space-y-3">
+                                                    <h4 className="font-black text-white text-sm">Generate Count Sheet</h4>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <select id="cc-loc" defaultValue={location} className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800">{LOCATION_LIST.map(l => <option key={l} value={l}>{l}</option>)}</select>
+                                                        <input value={cycleCountShelfFilter} onChange={e => setCycleCountShelfFilter(e.target.value)} placeholder="Shelf filter (optional)" className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800" />
+                                                    </div>
+                                                    <button onClick={() => handleGenerateCountSheet(document.getElementById('cc-loc').value, cycleCountShelfFilter)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all">Generate Sheet</button>
+                                                </div>
+                                                <div className="bg-slate-900 rounded-2xl border border-slate-800 divide-y divide-slate-800">
+                                                    <div className="p-4"><h4 className="font-black text-white text-sm">Count History</h4></div>
+                                                    {(data.cycleCounts || []).length === 0 && <p className="p-6 text-center text-slate-500 text-xs font-bold uppercase">No cycle counts yet</p>}
+                                                    {(data.cycleCounts || []).slice().sort((a,b) => new Date(b.startedAt) - new Date(a.startedAt)).map(cc => (
+                                                        <div key={cc.id} className="p-4 flex justify-between items-center">
+                                                            <div><p className="text-white font-bold text-xs">{cc.location} {cc.shelfFilter ? `· ${cc.shelfFilter}` : ''} · {cc.lines?.length || 0} items</p><p className="text-[10px] text-slate-500">{cc.status}{cc.totalVarianceValue != null ? ` · Variance ${currency}${cc.totalVarianceValue.toLocaleString()}` : ''}</p></div>
+                                                            <div className="flex gap-2">
+                                                                {cc.status === 'IN_PROGRESS' && <button onClick={() => { setShowCycleCountModal(cc); setCycleCountEntries({}); }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase transition-all">Enter Counts</button>}
+                                                                {cc.status === 'PENDING_APPROVAL' && hasAccess('MANAGER') && <button onClick={() => handleApproveCycleCount(cc)} className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase transition-all">Approve Variance</button>}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* ---- EXPIRY INTELLIGENCE ---- */}
+                                        {opsTab === 'EXPIRY' && (
+                                            <div className="space-y-4">
+                                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                                    <div className="bg-slate-900 rounded-2xl p-5 border border-rose-900/50"><p className="text-[10px] text-slate-500 uppercase font-bold">Expiring ≤30d</p><p className="text-lg font-black text-rose-400 mt-1">{expiryIntelligence.d30.length}</p></div>
+                                                    <div className="bg-slate-900 rounded-2xl p-5 border border-amber-900/50"><p className="text-[10px] text-slate-500 uppercase font-bold">Expiring 31-60d</p><p className="text-lg font-black text-amber-400 mt-1">{expiryIntelligence.d60.length}</p></div>
+                                                    <div className="bg-slate-900 rounded-2xl p-5 border border-sky-900/50"><p className="text-[10px] text-slate-500 uppercase font-bold">Expiring 61-90d</p><p className="text-lg font-black text-sky-400 mt-1">{expiryIntelligence.d90.length}</p></div>
+                                                    <div className="bg-slate-900 rounded-2xl p-5 border border-slate-800"><p className="text-[10px] text-slate-500 uppercase font-bold">Potential Loss</p><p className="text-lg font-black text-white mt-1">{currency}{Math.round(expiryIntelligence.totalPotentialLoss).toLocaleString()}</p></div>
+                                                </div>
+                                                <div className="bg-slate-900 rounded-2xl border border-slate-800 divide-y divide-slate-800">
+                                                    {expiryIntelligence.all.length === 0 && <p className="p-6 text-center text-slate-500 text-xs font-bold uppercase">Nothing expiring within 90 days</p>}
+                                                    {expiryIntelligence.all.map(i => (
+                                                        <div key={i.id} className="p-4 flex justify-between items-center">
+                                                            <div><p className="text-white font-bold text-xs">{i.brandName} · {i.stock} units</p><p className="text-[10px] text-slate-500">Expires in {i.daysToExpiry}d · Loss if unsold: {currency}{Math.round(i.potentialLoss).toLocaleString()}</p></div>
+                                                            <span className="bg-amber-900/50 text-amber-400 px-3 py-1.5 rounded-xl font-black text-[10px] uppercase">Suggest {i.suggestedDiscountPct}% off</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* ---- NARCOTICS REGISTER ---- */}
+                                        {opsTab === 'NARCOTICS' && (
+                                            <div className="bg-slate-900 rounded-2xl border border-slate-800 divide-y divide-slate-800">
+                                                <div className="p-4"><h4 className="font-black text-white text-sm">Controlled Substances Register</h4><p className="text-[10px] text-slate-500 mt-1">Permanent ledger - entries cannot be edited or deleted from this app.</p></div>
+                                                {controlledItems.length === 0 && <p className="p-6 text-center text-slate-500 text-xs font-bold uppercase">No items flagged as controlled substances (flag in Inventory)</p>}
+                                                {controlledItems.map(item => (
+                                                    <div key={item.id} className="p-4">
+                                                        <div className="flex justify-between items-center mb-2">
+                                                            <div><p className="text-white font-bold text-xs">{item.brandName}</p><p className="text-[10px] text-slate-500">Running balance: {item.stock} units</p></div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => setShowNarcoticModal({ item, mode: 'DISPENSE' })} className="bg-rose-600 hover:bg-rose-500 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase transition-all">Dispense</button>
+                                                                <button onClick={() => setShowNarcoticModal({ item, mode: 'RECEIVE' })} className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase transition-all">Receive</button>
+                                                                <button onClick={() => setShowNarcoticModal({ item, mode: 'RECONCILE' })} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase transition-all">Reconcile</button>
+                                                                <button onClick={() => setShowNarcoticModal({ item, mode: 'DESTROY' })} className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-xl font-black text-[10px] uppercase transition-all">Destroy</button>
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-[10px] text-slate-500 space-y-1 max-h-32 overflow-y-auto no-scrollbar">
+                                                            {(narcoticsBalances[item.id]?.entries || []).slice(-5).reverse().map((e, i) => (
+                                                                <div key={i} className="flex justify-between"><span>{e.type} {e.qty ? `· ${e.qty} units` : ''} {e.discrepancy ? `· discrepancy ${e.discrepancy}` : ''}</span><span>{new Date(e.timestamp).toLocaleString()}</span></div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
