@@ -151,14 +151,55 @@
 
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('data:text/javascript;base64,' + btoa(`
-                self.addEventListener('install', e => self.skipWaiting());
-                self.addEventListener('activate', e => e.waitUntil(clients.claim()));
+                const CACHE_NAME = 'apex-v2';
+                const PRECACHE_URLS = [
+                    self.registration.scope,
+                    'https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js',
+                    'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js',
+                    'https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js',
+                    'https://cdn.tailwindcss.com',
+                    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+                    'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js',
+                    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+                    'https://unpkg.com/html5-qrcode',
+                    'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
+                    'https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js',
+                    'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js',
+                    'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js',
+                    'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js'
+                ];
+                // Precache the app shell + every CDN dependency on install, so the very first offline
+                // reload after a successful online visit still has everything it needs to boot - not just
+                // whatever happened to be fetched already. Best-effort per-file: one CDN hiccup during
+                // install shouldn't block the whole service worker from activating.
+                self.addEventListener('install', e => {
+                    e.waitUntil(caches.open(CACHE_NAME).then(cache => Promise.all(
+                        PRECACHE_URLS.map(url => fetch(url).then(res => cache.put(url, res)).catch(() => {}))
+                    )).then(() => self.skipWaiting()));
+                });
+                self.addEventListener('activate', e => {
+                    e.waitUntil(caches.keys().then(names => Promise.all(
+                        names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n))
+                    )).then(() => clients.claim()));
+                });
                 self.addEventListener('fetch', e => {
                     e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).then(res => {
                         const clone = res.clone();
-                        caches.open('apex-v1').then(cache => cache.put(e.request, clone));
+                        caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
                         return res;
-                    }).catch(() => new Response('Offline', {status: 503}))));
+                    }).catch(() => {
+                        if (e.request.mode === 'navigate') return caches.match(self.registration.scope).then(shell => shell || new Response('Offline', {status: 503}));
+                        return new Response('Offline', {status: 503});
+                    })));
+                });
+                // Real Background Sync: the browser can fire this even if the tab isn't in the foreground.
+                // The service worker itself can't safely replay Firestore writes (the Firestore SDK isn't
+                // loaded here), so it just wakes any open page and asks it to flush its own pending-ops
+                // queue - a signal on top of that page's own online-event/polling flush, not a replacement.
+                self.addEventListener('sync', e => {
+                    if (e.tag === 'apex-flush-pending-ops') {
+                        e.waitUntil(self.clients.matchAll().then(list => list.forEach(c => c.postMessage({ type: 'APEX_FLUSH_PENDING_OPS' }))));
+                    }
                 });
             `)).catch(() => {});
         }
@@ -287,6 +328,17 @@
                 let label = localStorage.getItem('apex_device_label');
                 if (!label) { label = (navigator.platform || 'Device') + ' ' + getDeviceId(); }
                 return label;
+            };
+            // Best-effort Background Sync registration - asks the browser to wake the service worker (which
+            // then postMessages any open page) once connectivity returns, even if the tab isn't focused.
+            // Feature-detected since Background Sync isn't supported everywhere (notably Safari/Firefox);
+            // the App component's online-event + polling flush already covers those browsers regardless.
+            const requestBackgroundSync = async () => {
+                try {
+                    if (!('serviceWorker' in navigator) || !('SyncManager' in window)) return;
+                    const reg = await navigator.serviceWorker.ready;
+                    await reg.sync.register('apex-flush-pending-ops');
+                } catch (e) { /* unsupported or blocked - the fallback polling still covers this */ }
             };
 
             // ==================== COMPLETE TANZANIA DRUG DATABASE (STG/NEMLIT 2021) ====================
@@ -3904,6 +3956,7 @@
                 const db = safeDb(); if (!db) return null;
                 const opId = 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
                 await idbPut('pendingOps', { opId, col, kind: 'ADD', payload: data, device: getDeviceId(), queuedAt: new Date().toISOString() });
+                if (!navigator.onLine) requestBackgroundSync();
                 try {
                     const ref = await db.collection(col).add(data);
                     await idbDelete('pendingOps', opId);
@@ -3914,6 +3967,7 @@
                 const db = safeDb(); if (!db || !id) return false;
                 const opId = 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
                 await idbPut('pendingOps', { opId, col, kind: 'UPDATE', docId: id, payload: data, device: getDeviceId(), queuedAt: new Date().toISOString() });
+                if (!navigator.onLine) requestBackgroundSync();
                 try {
                     await db.collection(col).doc(id).update(data);
                     await idbDelete('pendingOps', opId);
@@ -3924,6 +3978,7 @@
                 const db = safeDb(); if (!db || !id) return false;
                 const opId = 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
                 await idbPut('pendingOps', { opId, col, kind: 'DELETE', docId: id, device: getDeviceId(), queuedAt: new Date().toISOString() });
+                if (!navigator.onLine) requestBackgroundSync();
                 try {
                     await db.collection(col).doc(id).delete();
                     await idbDelete('pendingOps', opId);
@@ -4513,6 +4568,7 @@
                 const [showCycleCountModal, setShowCycleCountModal] = useState(null); // holds the active cycleCount doc while counting
                 const [cycleCountEntries, setCycleCountEntries] = useState({}); // { itemId: countedQty }
                 const [cycleCountShelfFilter, setCycleCountShelfFilter] = useState('');
+                const [cycleCountLocation, setCycleCountLocation] = useState(() => { try { return JSON.parse(localStorage.getItem('apex_location')) || 'MAIN'; } catch { return 'MAIN'; } });
                 const [varianceApprovalThreshold, setVarianceApprovalThreshold] = useLocalStorage('apex_variance_threshold', 50000);
                 // Narcotics register
                 const [showNarcoticModal, setShowNarcoticModal] = useState(null); // { item, mode: 'DISPENSE'|'RECEIVE'|'DESTROY'|'RECONCILE' }
@@ -4680,13 +4736,19 @@
                 useEffect(() => {
                     const handleResize = () => setIsMobile(window.innerWidth < 768);
                     const handleOnline = () => { setIsOnline(true); setSyncStatus('ONLINE'); toast('Connection restored - syncing queued changes', 'success'); flushPendingOps(); };
-                    const handleOffline = () => { setIsOnline(false); setSyncStatus('OFFLINE'); toast('Working offline - sales & changes will queue locally and sync automatically', 'warning'); };
+                    const handleOffline = () => { setIsOnline(false); setSyncStatus('OFFLINE'); toast('Working offline - sales & changes will queue locally and sync automatically', 'warning'); requestBackgroundSync(); };
+                    const handleSwMessage = (e) => { if (e.data?.type === 'APEX_FLUSH_PENDING_OPS') flushPendingOps(); };
                     window.addEventListener('resize', handleResize);
                     window.addEventListener('online', handleOnline);
                     window.addEventListener('offline', handleOffline);
+                    if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', handleSwMessage);
                     refreshPendingOpsView();
                     const pollInterval = setInterval(() => { refreshPendingOpsView(); if (navigator.onLine) flushPendingOps(); }, 20000);
-                    return () => { window.removeEventListener('resize', handleResize); window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); clearInterval(pollInterval); };
+                    return () => {
+                        window.removeEventListener('resize', handleResize); window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline);
+                        if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+                        clearInterval(pollInterval);
+                    };
                 }, [flushPendingOps, refreshPendingOpsView]);
 
                 // Instant-load inventory from the local IndexedDB mirror while Firestore's listener is still
@@ -7312,6 +7374,25 @@
                                             </div>
                                         </div>
 
+                                        {hasAccess('PHARMACIST') && (() => {
+                                            const openConflicts = (data.syncConflicts || []).filter(c => c.status === 'OPEN').length;
+                                            const pendingTransfers = (data.transferRequests || []).filter(t => t.status === 'PENDING' || t.status === 'IN_TRANSIT').length;
+                                            const anyHighlight = openConflicts > 0 || amsAlerts.length > 0 || expiryIntelligence.d30.length > 0 || pendingTransfers > 0;
+                                            if (!anyHighlight) return null;
+                                            const jump = (tab) => { handleSetView('OPSHUB'); setOpsTab(tab); };
+                                            return (
+                                                <div className="glass-panel p-5 rounded-3xl border border-amber-500/20">
+                                                    <h3 className="text-sm font-black text-amber-400 uppercase tracking-wider mb-3">Ops+ Needs Attention</h3>
+                                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                                                        {openConflicts > 0 && <div onClick={() => jump('SYNC')} className="bg-black p-3 rounded-2xl cursor-pointer hover:border-rose-500 border border-transparent transition-all"><p className="text-xl font-black text-rose-400">{openConflicts}</p><p className="text-[10px] font-bold text-slate-500 uppercase">Stock Conflicts</p></div>}
+                                                        {amsAlerts.length > 0 && <div onClick={() => jump('AMS')} className="bg-black p-3 rounded-2xl cursor-pointer hover:border-sky-500 border border-transparent transition-all"><p className="text-xl font-black text-sky-400">{amsAlerts.length}</p><p className="text-[10px] font-bold text-slate-500 uppercase">AMS Alerts</p></div>}
+                                                        {expiryIntelligence.d30.length > 0 && <div onClick={() => jump('EXPIRY')} className="bg-black p-3 rounded-2xl cursor-pointer hover:border-amber-500 border border-transparent transition-all"><p className="text-xl font-black text-amber-400">{expiryIntelligence.d30.length}</p><p className="text-[10px] font-bold text-slate-500 uppercase">Expiring ≤30d</p></div>}
+                                                        {pendingTransfers > 0 && <div onClick={() => jump('TRANSFERS')} className="bg-black p-3 rounded-2xl cursor-pointer hover:border-indigo-500 border border-transparent transition-all"><p className="text-xl font-black text-indigo-400">{pendingTransfers}</p><p className="text-[10px] font-bold text-slate-500 uppercase">Transfers Pending</p></div>}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+
                                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                             <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total Sales</p><p className="text-2xl font-black text-emerald-400">{netTotalSales.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
                                             <div className="glass-panel p-5 rounded-3xl"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Net Profit</p><p className={`text-2xl font-black ${totalNetProfit >= 0 ? 'text-blue-400' : 'text-rose-400'}`}>{totalNetProfit.toLocaleString()} <span className="text-xs text-slate-500">{currency}</span></p></div>
@@ -7728,10 +7809,10 @@
                                                 <div className="bg-slate-900 rounded-2xl border border-slate-800 p-4 space-y-3">
                                                     <h4 className="font-black text-white text-sm">Generate Count Sheet</h4>
                                                     <div className="grid grid-cols-2 gap-2">
-                                                        <select id="cc-loc" defaultValue={location} className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800">{LOCATION_LIST.map(l => <option key={l} value={l}>{l}</option>)}</select>
+                                                        <select value={cycleCountLocation} onChange={e => setCycleCountLocation(e.target.value)} className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800">{LOCATION_LIST.map(l => <option key={l} value={l}>{l}</option>)}</select>
                                                         <input value={cycleCountShelfFilter} onChange={e => setCycleCountShelfFilter(e.target.value)} placeholder="Shelf filter (optional)" className="p-3 bg-black rounded-xl text-white font-bold text-xs outline-none border border-slate-800" />
                                                     </div>
-                                                    <button onClick={() => handleGenerateCountSheet(document.getElementById('cc-loc').value, cycleCountShelfFilter)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all">Generate Sheet</button>
+                                                    <button onClick={() => handleGenerateCountSheet(cycleCountLocation, cycleCountShelfFilter)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all">Generate Sheet</button>
                                                 </div>
                                                 <div className="bg-slate-900 rounded-2xl border border-slate-800 divide-y divide-slate-800">
                                                     <div className="p-4"><h4 className="font-black text-white text-sm">Count History</h4></div>
