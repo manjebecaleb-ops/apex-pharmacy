@@ -5214,11 +5214,14 @@
                 };
                 const handleRejectTransfer = async (tr) => { await safeUpdate('transferRequests', tr.id, { status: 'REJECTED', rejectedBy: user.fullName || user.email, rejectedAt: new Date().toISOString() }); toast('Transfer request rejected', 'warning'); };
                 const handleReceiveTransfer = async (tr) => {
-                    let destItem = data.inventory.find(i => i.id === tr.itemId && (i.location || 'MAIN') === tr.toLocation);
+                    const template = data.inventory.find(i => i.id === tr.itemId);
+                    // The destination branch's stock record for this product (if any) necessarily has its own
+                    // separate document/ID from the source - inventory is per-location, not a shared row - so
+                    // this must match on product identity, never on tr.itemId (that's the SOURCE item's id).
+                    let destItem = data.inventory.find(i => (i.location || 'MAIN') === tr.toLocation && i.brandName === (template?.brandName || tr.itemName) && i.genericName === (template?.genericName || tr.genericName || ''));
                     if (!destItem) {
-                        const template = data.inventory.find(i => i.id === tr.itemId);
                         const ref = await safeAdd('inventory', {
-                            brandName: template?.brandName || tr.itemName, genericName: template?.genericName || tr.genericName,
+                            brandName: template?.brandName || tr.itemName, genericName: template?.genericName || tr.genericName || '',
                             category: template?.category || '', subcategory: template?.subcategory || '', price: template?.price || 0, costPrice: template?.costPrice || 0,
                             stock: tr.qty, reorderPoint: template?.reorderPoint || 10, barcode: template?.barcode || '', expiryDate: template?.expiryDate || '',
                             supplier: template?.supplier || '', location: tr.toLocation, batchNumber: template?.batchNumber || '',
@@ -5489,6 +5492,7 @@
                             if (ex.qty + 1 > p.stock) { toast(`Only ${p.stock} units available!`, 'warning'); return prev; }
                             return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
                         }
+                        if (p.isControlled) toast(`${p.brandName} is a controlled substance - this sale will be logged to the Narcotics Register.`, 'warning');
                         return [...prev, {...p, qty: 1, currentPrice: p.price}];
                     });
                 };
@@ -5679,6 +5683,12 @@
                             logStockMovement(i.id, i.brandName, 'SALE', -i.qty, 'POS Sale', saleData.timestamp);
                             const newStock = Math.max(0, (invItem.stock || 0) - i.qty);
                             if (i.reorderPoint && newStock <= i.reorderPoint) toast(`${i.brandName} below reorder point (${i.reorderPoint})!`, 'warning');
+                            // Controlled substances must be tracked in the narcotics register regardless of
+                            // which screen dispensed them - not only the manual Narcotics tab actions.
+                            if (invItem.isControlled) {
+                                const patientName = checkoutPatient ? (data.patients.find(p => p.id === checkoutPatient)?.name || '') : '';
+                                safeAdd('narcoticsLog', { itemId: i.id, itemName: invItem.brandName, type: 'DISPENSE', qty: i.qty, balanceAfter: newStock, patientName, saleId: null, dispensedBy: user.fullName || user.email, timestamp: saleData.timestamp, source: 'POS_SALE' });
+                            }
                         }
                     }
                     if (currentShift) safeUpdate('shifts', currentShift.id, { totalSales: (currentShift.totalSales || 0) + totalDue, transactionCount: (currentShift.transactionCount || 0) + 1 });
@@ -5848,6 +5858,7 @@
                 const CLOUD_BACKUP_COLLECTIONS = ['inventory', 'patients', 'suppliers', 'sales', 'expenses', 'medicalHistory', 'insuranceClaims', 'returns', 'purchaseOrders', 'stockMovements', 'shifts', 'prescriptions', 'quotations'];
 
                 const performCloudBackup = async (triggeredBy) => {
+                    if (!hasAccess('MANAGER')) { toast('Manager access required to create cloud backups', 'error'); return false; }
                     if (!window.cloudStorage) { toast("Cloud storage isn't available right now - check your connection and try again.", 'error'); return false; }
                     setIsBackingUp(true);
                     try {
@@ -5914,7 +5925,7 @@
 
                 const autoBackupTriggeredRef = useRef(false);
                 useEffect(() => {
-                    if (!user || !autoBackupEnabled) return;
+                    if (!user || !autoBackupEnabled || !hasAccess('MANAGER')) return;
                     const t = setTimeout(() => {
                         if (autoBackupTriggeredRef.current) return;
                         const lastBackup = [...(data.backups || [])].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
@@ -7224,9 +7235,11 @@
                                     <button onClick={() => setShowDoseCalc(true)} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/30 transition-all">
                                         <span className="hidden lg:block">Rx Dose Calc</span>
                                     </button>
+                                    {hasAccess('MANAGER') && (
                                     <button onClick={() => setShowBackupModal(true)} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
                                         <span className="hidden lg:block">Backup</span>
                                     </button>
+                                    )}
                                     <button onClick={() => setShowAuditLog(true)} className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
                                         <span className="hidden lg:block">Audit</span>
                                     </button>
